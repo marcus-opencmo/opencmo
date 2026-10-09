@@ -367,3 +367,84 @@ Two rules from §2 still hold:
 A 3D scene is just another generation: its spec hash (JCS) is the cache key, and the editor
 and exporter treat the result like any generated video. three.js does not run inside the
 exporter because software WebGL measured 178–531 ms per frame, far above the 150 ms budget.
+
+---
+
+## 11. AI CMO: scheduling, providers and roadmap
+
+Status: **proposed**. The full review (diagrams, current state, trade-offs) is the
+"Kiến trúc AI CMO" artifact linked in the PR that added this section.
+
+### Problem
+
+- Scheduling lives in two places: two Vercel Crons (`apps/web/vercel.json`) and Modal's
+  `sweep()`. The CMO cron runs once a day as one 300 s function that walks every user in
+  sequence; whatever does not fit waits until the user opens the app.
+- Several providers do the same job: two text-LLM providers, three media-AI providers.
+
+### Decision: Modal is the only scheduler; Vercel runs the CMO jobs
+
+| Option | Cadence | Already in the stack | Verdict |
+|---|---|---|---|
+| Vercel Cron | Hobby: once a day; 15 min needs Pro | yes, but one 300 s function, sequential | drop |
+| **Modal schedule** | every minute, already running | `sweep()`, secrets, Supabase access | **pick** |
+| Supabase `pg_cron` + `pg_net` | every minute | needs two extensions and a secret in the DB | fallback |
+
+CMO jobs only call LLMs and the database (I/O-bound), and they are TypeScript. They stay on
+Vercel: no Python rewrite and no second runtime. Modal only keeps time and dispatches:
+
+```
+Modal sweep() ──every 15 min──▶ POST /api/internal/cmo/schedule   (dueLoops → enqueue_cmo_run_for)
+              ──every minute──▶ POST /api/internal/cmo/run  ×N      (one queued cmo_runs row each,
+                                                                    own 300 s function, in parallel)
+Vercel ──reads/writes──▶ Supabase (cmo_runs lease, steps, credits — unchanged)
+```
+
+`enqueue_cmo_run_for` already de-duplicates and enforces daily caps, so running the
+scheduler every 15 minutes is safe.
+
+### Three core layers, one provider per function
+
+| Layer / function | Provider | Note |
+|---|---|---|
+| Web, API, CMO chat and CMO jobs | Vercel | no crons left |
+| Data, auth, storage, queues, memory | Supabase | add `pgvector` only past ~200 memory rows; no separate vector DB |
+| Scheduling, clipping, export, 3D | Modal | budgets in §2 unchanged |
+| Agent LLM | one default provider | the registry stays so env can switch it; choose with the W2 eval |
+| Moderation | OpenAI moderations | free; revisit once the LLM is chosen |
+| Image, video, voice generation | fal as the main door | fold Gemini media and ElevenLabs in only after verifying model coverage and word timestamps |
+| Social reading · payments · errors | ScrapeCreators · Polar · Sentry | unchanged |
+
+Nothing here adds a provider or an outbound action: posting stays with the user via
+`x.com/intent`.
+
+### Roadmap
+
+**P0 — Modal schedules, Vercel runs in parallel**
+- [ ] `app/api/internal/cmo/schedule/route.ts`: the enqueue half of `app/api/cron/cmo/route.ts`
+      (`dueLoops` + `enqueue_cmo_run_for`), guarded by `cronAuthorized`.
+- [ ] `app/api/internal/cmo/run/route.ts`: `drainCmoQueue(store, { runId })` for one run.
+- [ ] RPC to list queued `cmo_runs` ids for dispatch (service role only) + pgTAP test.
+- [ ] `modal_app.py` `sweep()`: call `schedule` every 15 minutes, call `run` for queued runs
+      (bounded batch), call `/api/cron/cleanup` once a day; transient errors only warn.
+- [ ] Remove `crons` from `apps/web/vercel.json`; delete `/api/cron/cmo` once Modal is live.
+- [ ] Cap `read_site` calls per turn.
+- [ ] W2 eval in `lib/cmo/jobs/jobs.check.ts`, run on both providers to choose the default LLM.
+
+**P1 — Memory, step 1**
+- [ ] `cmo_memories`: add `kind`, `topic`, `importance`, `expires_at`, `source_run` (+ pgTAP).
+- [ ] `cmo_lessons` table and a weekly `summarize_memory` job.
+- [ ] Chat and jobs read lessons + top-k events by topic instead of the latest N rows.
+
+**P1+ — Fewer providers**
+- [ ] Set one default agent LLM from the W2 eval.
+- [ ] Verify fal covers image, video and voice with word timestamps; if so move those entries in
+      `packages/contracts/ai-models.json` to fal.
+
+**P2 — Weekly goal loop**
+- [ ] Tools `get_run_result` and `review_week`; a Sunday review job reads W6 metrics and skips,
+      writes lessons; W1 reads lessons before planning.
+
+**P3 — CMO → editor assistant bridge** (after v1 sells)
+- [ ] Tool `create_video_brief` creates an approval card; on approval the server opens an
+      editor-assistant session on the clip with that brief, reusing `apply_to_clips`.
