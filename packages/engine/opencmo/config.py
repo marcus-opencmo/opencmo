@@ -28,6 +28,11 @@ class Config:
     # dùng key đó; nếu có cả hai, Gemini được ưu tiên (rẻ hơn, quota free rộng).
     gemini_api_key: str = field(default_factory=lambda: os.getenv("GEMINI_API_KEY", ""))
     anthropic_api_key: str = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY", ""))
+    # The one default LLM provider (same choice as CMO_LLM_PROVIDER on the web app). Empty keeps
+    # the old rule: Gemini when its key exists, else Anthropic.
+    llm_provider: str = field(
+        default_factory=lambda: os.getenv("OPENCMO_LLM_PROVIDER", "").strip().lower()
+    )
 
     # Bỏ trống -> tự chọn theo provider: Gemini 2.5 Flash hoặc Claude Haiku 4.5.
     # Transcript 45 phút ~12k token vào, chi phí chọn khoảnh khắc ~$0.01–0.02/video
@@ -121,6 +126,10 @@ class Config:
             )
 
     def validate_for_select(self) -> None:
+        if self.llm_provider == "gemini" and not self.gemini_api_key:
+            raise RuntimeError("OPENCMO_LLM_PROVIDER is gemini but GEMINI_API_KEY is missing.")
+        if self.llm_provider == "anthropic" and not self.anthropic_api_key:
+            raise RuntimeError("OPENCMO_LLM_PROVIDER is anthropic but ANTHROPIC_API_KEY is missing.")
         if not self.gemini_api_key and not self.anthropic_api_key:
             raise RuntimeError(
                 "Missing GEMINI_API_KEY or ANTHROPIC_API_KEY — "
@@ -129,7 +138,13 @@ class Config:
 
     @property
     def select_provider(self) -> str:
-        """Provider dùng cho bước chọn khoảnh khắc: 'gemini' hoặc 'anthropic'."""
+        """Provider for moment selection: 'gemini' or 'anthropic'.
+
+        OPENCMO_LLM_PROVIDER wins so the whole product runs on one LLM; without it, the key
+        that exists decides.
+        """
+        if self.llm_provider in ("gemini", "anthropic"):
+            return self.llm_provider
         return "gemini" if self.gemini_api_key else "anthropic"
 
     @property
