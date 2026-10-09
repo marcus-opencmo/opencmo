@@ -3,11 +3,13 @@
  * Supabase. Not `server-only`, so `tsx` scripts can import it.
  */
 
-import { isoDay, type ClipJob, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type ItemRow, type Opportunity, type PlatformCaptions, type QueuedRun, type Step } from "./types";
+import { latestPerTopic } from "./context";
+import { isoDay, type ClipJob, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type ItemRow, type Lesson, type MemoryEvent, type Opportunity, type PlatformCaptions, type QueuedRun, type Step } from "./types";
 
 export type RunState = QueuedRun & { status: string; steps: Step[]; error: string | null; output: unknown; notBefore?: number };
 
-export function memoryStore(docs: Documents, memories: string[] = ["Skipped the X post \"Pricing\": too salesy"]) {
+export function memoryStore(docs: Documents, memories: string[] = ["Skipped the X post \"Pricing\": too salesy"], events: MemoryEvent[] = []) {
+  const lessons: Lesson[] = [];
   const runs: RunState[] = [];
   const items: ItemRow[] = [];
   const opps: Opportunity[] = [];
@@ -40,6 +42,16 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
     },
     documents: async () => docs,
     memories: async () => memories,
+    memoryEvents: async () => events,
+    lessons: async () => latestPerTopic([...lessons].sort((a, b) => b.week.localeCompare(a.week))),
+    async saveLessons(_u, _run, week, list) {
+      for (const l of list) {
+        const at = lessons.findIndex((x) => x.week === week && x.topic === l.topic);
+        if (at >= 0) lessons.splice(at, 1);
+        lessons.push({ week, topic: l.topic, body: l.body });
+      }
+      return list.length;
+    },
     async items(_u, f) {
       return items.filter((i) => (!f.statuses || f.statuses.includes(i.status)) && (!f.department || i.department === f.department));
     },
@@ -92,5 +104,5 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
     runs.push(run);
     return run;
   };
-  return { store, runs, items, opps, jobs, packs, insights, metrics, enqueue };
+  return { store, runs, items, opps, jobs, packs, insights, metrics, lessons, enqueue };
 }

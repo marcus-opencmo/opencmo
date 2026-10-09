@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { documentsBlock, insightBlock, memoriesBlock } from "./context";
+import { documentsBlock, insightBlock, recall } from "./context";
 import { skillText } from "../skills";
 import { fakeAllowed, structured } from "./llm";
 import type { JobContext, JobOutput } from "./runner";
@@ -82,7 +82,7 @@ export async function planWeek(ctx: JobContext): Promise<JobOutput> {
     "Looked at last week",
     async () => ({
       recent: await store.items(run.user_id, { statuses: ["approved", "published", "skipped"], since, limit: 50 }),
-      memories: await store.memories(run.user_id, 20),
+      memories: await recall(store, run.user_id, 20),
       insight: await store.latestInsight(run.user_id),
     }),
     ({ recent: r }) => {
@@ -99,7 +99,7 @@ export async function planWeek(ctx: JobContext): Promise<JobOutput> {
     return structured({
       agent: "planner",
       system: SYSTEM,
-      prompt: `${documentsBlock(docs)}\n\n${memoriesBlock(memories)}\n\n${insightBlock(insight)}\n\n<last_week>\n${lastWeek}\n</last_week>\n\n${typeof run.input.brief === "string" && run.input.brief ? `Your CMO's brief for this week: "${run.input.brief.slice(0, 300)}"\n\n` : ""}Today is ${isoDay()}. Plan the next seven days.`,
+      prompt: `${documentsBlock(docs)}\n\n${memories}\n\n${insightBlock(insight)}\n\n<last_week>\n${lastWeek}\n</last_week>\n\n${typeof run.input.brief === "string" && run.input.brief ? `Your CMO's brief for this week: "${run.input.brief.slice(0, 300)}"\n\n` : ""}Today is ${isoDay()}. Plan the next seven days.`,
       schema: PlanSchema,
       label: "plan_week",
       failure: "We could not plan your week. Try again in a minute.",

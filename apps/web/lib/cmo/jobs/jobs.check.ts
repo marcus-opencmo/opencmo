@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 process.env.OPENCMO_AGENT_FAKE = "1";
 
 import { checkPost } from "./check-post";
-import { knownNumbers } from "./context";
+import { mondayOf } from "./summarize-memory";
+import { knownNumbers, recall } from "./context";
 import { pickDueItem } from "./draft-post";
 import { toPlanItems } from "./plan-week";
 import { drainCmoQueue } from "./runner";
@@ -16,7 +17,7 @@ import { PASS_SCORE, quoteIn, reachScore, scoreThread, timingScore } from "./sal
 import { parseRedditSearch } from "../social/reddit";
 import { checkCaptions } from "./video-pack";
 import { memoryStore } from "./memory-store";
-import { isoDay, type ClipJob, type Documents, type ItemRow, type PlatformCaptions } from "./types";
+import { isoDay, type ClipJob, type Documents, type ItemRow, type MemoryEvent, type PlatformCaptions } from "./types";
 
 async function main() {
   const docs: Documents = {
@@ -252,12 +253,36 @@ async function main() {
   const base = { weekday: 3, duePost: null, dueSales: null, competitorHandles: 0, publishedRecently: 0, socialReader: true };
   assert.deepEqual(dueLoops(base), []);
   assert.deepEqual(dueLoops({ ...base, weekday: 1 }).map((r) => r.kind), ["plan_week", "post_draft"]);
-  assert.deepEqual(dueLoops({ ...base, weekday: 0, competitorHandles: 2, publishedRecently: 3 }).map((r) => r.kind), ["competitor_research", "pull_metrics"]);
+  assert.deepEqual(
+    dueLoops({ ...base, weekday: 0, competitorHandles: 2, publishedRecently: 3 }).map((r) => r.kind),
+    ["competitor_research", "summarize_memory", "pull_metrics"],
+  );
   const sales = dueLoops({ ...base, dueSales: { idea: "People chasing late invoices" } });
   assert.deepEqual([sales[0]!.kind, sales[0]!.input.brief], ["sales_scan", "People chasing late invoices"]);
   assert.deepEqual(dueLoops({ ...base, dueSales: { idea: "x" }, socialReader: false }), [], "không khoá ScrapeCreators thì không tự tiêu credit");
 
-  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
+  // Memory tiers: the weekly summary writes one lesson per topic; jobs then read lessons for their topic.
+  assert.equal(mondayOf(new Date(Date.UTC(2026, 10, 15))), "2026-11-09", "Sunday belongs to the week that started Monday");
+  assert.equal(mondayOf(new Date(Date.UTC(2026, 10, 9))), "2026-11-09", "Monday is its own week");
+  const events: MemoryEvent[] = [
+    { kind: "feedback", topic: "post", body: "Skipped the X post \"Launch\": too hypey", created_at: new Date().toISOString() },
+    { kind: "feedback", topic: "sales", body: "Dismissed the Reddit thread \"Help\": not our buyer", created_at: new Date().toISOString() },
+  ];
+  const mem8 = memoryStore(docs, ["Never mention competitors by name."], events);
+  const w8 = mem8.enqueue("summarize_memory");
+  await drainCmoQueue(mem8.store);
+  assert.equal(w8.status, "done", `weekly memory done (${w8.error})`);
+  assert.deepEqual(mem8.lessons.map((l) => l.topic).sort(), ["post", "sales"]);
+  const postRecall = await recall(mem8.store, "u1", 10, "post");
+  assert.ok(postRecall.includes("<lessons>") && postRecall.includes("post (week of"), "post jobs read the post lesson");
+  assert.ok(!postRecall.includes("sales (week of"), "and not the sales one");
+  assert.ok((await recall(mem8.store, "u1", 10)).includes("sales (week of"), "the weekly plan reads every topic");
+  const quiet = memoryStore(docs, [], []);
+  const w8q = quiet.enqueue("summarize_memory");
+  await drainCmoQueue(quiet.store);
+  assert.deepEqual([w8q.status, quiet.lessons.length], ["done", 0], "a quiet week writes nothing");
+
+  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, W8 memory, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
 }
 
 main().catch((error) => {

@@ -6,7 +6,7 @@
 
 import { z } from "zod";
 
-import { avoidList, documentsBlock, insightBlock, knownNumbers, memoriesBlock, postText } from "./context";
+import { avoidList, documentsBlock, insightBlock, knownNumbers, postText, recall } from "./context";
 import { checkPost, X_LIMIT } from "./check-post";
 import { fakeAllowed, LlmError, structured } from "./llm";
 import { skillText } from "../skills";
@@ -80,7 +80,7 @@ export async function draftPost(ctx: JobContext): Promise<JobOutput> {
     "Read your strategy and the X playbook",
     async () => ({
       docs: await store.documents(run.user_id),
-      memories: await store.memories(run.user_id, 15),
+      memories: await recall(store, run.user_id, 15, "post"),
       recent: await store.items(run.user_id, { statuses: ["approved", "published"], department: "post", limit: 10 }),
       insight: await store.latestInsight(run.user_id),
     }),
@@ -91,7 +91,7 @@ export async function draftPost(ctx: JobContext): Promise<JobOutput> {
 
   const context = [
     documentsBlock(docs),
-    memoriesBlock(memories),
+    memories,
     insightBlock(insight),
     `<recent_posts>\n${recent.map((i) => `- ${postText(i)}`).join("\n") || "(none)"}\n</recent_posts>`,
   ].filter(Boolean).join("\n\n");

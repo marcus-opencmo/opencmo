@@ -14,9 +14,9 @@ import { z } from "zod";
 import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { DOCUMENT_KINDS, DOCUMENTS } from "@/lib/cmo/documents";
 import { startCmoRun } from "@/lib/cmo/jobs/start";
-import { insightBlock } from "@/lib/cmo/jobs/context";
+import { insightBlock, latestPerTopic } from "@/lib/cmo/jobs/context";
 import { readSite, SiteError } from "@/lib/cmo/site";
-import { isoDay, type CompetitorInsight } from "@/lib/cmo/jobs/types";
+import { isoDay, type CompetitorInsight, type Lesson } from "@/lib/cmo/jobs/types";
 
 import { CMO_SKILLS } from "@/lib/cmo/skills/index.gen";
 import { SKILL_NAMES, skillText, type SkillName } from "@/lib/cmo/skills";
@@ -82,14 +82,18 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "remember",
-    description: "Save a short note the user asked you to remember (a preference, a fact, something to avoid). It is used in every future plan and draft.",
+    description:
+      "Save a short note the user asked you to remember (a preference, a fact, something to avoid). It is used in every future plan and draft. Set topic when the note is only about one area: post (X posts), sales (Reddit), video, or research.",
     schema: {
       type: "object",
-      properties: { note: { type: "string" } },
+      properties: {
+        note: { type: "string" },
+        topic: { type: "string", enum: ["general", "post", "sales", "video", "research"] },
+      },
       required: ["note"],
       additionalProperties: false,
     },
-    strict: true,
+    strict: false,
   },
   {
     name: "read_skill",
@@ -134,7 +138,7 @@ const taskInput = z.object({
 });
 const JOB_OF = { planner: "plan_week", x_writer: "post_draft", sales: "sales_scan", research: "competitor_research" } as const;
 const DEPARTMENT_OF = { x_writer: "post", sales: "sales", video: "video" } as const;
-const rememberInput = z.object({ note: z.string().trim().min(1).max(600) });
+const rememberInput = z.object({ note: z.string().trim().min(1).max(600), topic: z.enum(["general", "post", "sales", "video", "research"]).default("general") });
 const siteInput = z.object({ url: z.string().trim().min(3).max(300) });
 
 const invalid = (message: string): ToolOutcome => ({ ok: false, content: JSON.stringify({ INVALID_INPUT: message }), summary: "Invalid request" });
@@ -234,7 +238,7 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
     case "remember": {
       const parsed = rememberInput.safeParse(input);
       if (!parsed.success) return invalid("note must be 1 to 600 characters.");
-      await rpcOrThrow(supabase, "cmo_remember", { p_body: parsed.data.note });
+      await rpcOrThrow(supabase, "cmo_remember", { p_body: parsed.data.note, p_topic: parsed.data.topic });
       return { ok: true, content: JSON.stringify({ saved: true }), summary: "Saved to memory" };
     }
     case "read_site": {
@@ -270,8 +274,16 @@ export async function cmoState(supabase: SupabaseClient): Promise<string> {
     supabase.from("video_packs").select("id").eq("status", "in_review").limit(5),
     supabase.from("content_items").select("department, platform, idea, status").eq("day", isoDay()).limit(10),
     supabase.from("cmo_runs").select("kind, status").in("status", ["queued", "running"]).limit(5),
-    supabase.from("cmo_memories").select("body").order("created_at", { ascending: false }).limit(10),
+    // Most important unexpired notes first (memory tier 2); lessons below are tier 3.
+    supabase
+      .from("cmo_memories")
+      .select("body")
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
+  const { data: lessonRows } = await supabase.from("cmo_lessons").select("week, topic, body").order("week", { ascending: false }).limit(20);
   return `<cmo_state>${JSON.stringify({
     today: isoDay(),
     awaiting_approval: pending?.length ?? 0,
@@ -280,6 +292,7 @@ export async function cmoState(supabase: SupabaseClient): Promise<string> {
     calendar_today: today ?? [],
     jobs_running: runs ?? [],
     memories: ((memories ?? []) as { body: string }[]).map((m) => m.body),
+    lessons: latestPerTopic((lessonRows ?? []) as Lesson[]).map((l) => `${l.topic}: ${l.body}`),
   })}</cmo_state>`;
 }
 

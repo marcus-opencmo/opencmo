@@ -11,7 +11,7 @@
 import type { DocumentKind } from "./documents";
 
 export type Department = "post" | "sales" | "video";
-export type JobId = "W0" | "W1" | "W2" | "W3" | "W4" | "W5" | "W6" | "W7";
+export type JobId = "W0" | "W1" | "W2" | "W3" | "W4" | "W5" | "W6" | "W7" | "W8";
 
 /** Một agent trong danh sách "Your agents": department × nền tảng. */
 export type AgentSummary = {
@@ -191,4 +191,5 @@ export const JOB_TITLE: Record<JobId, string> = {
   W5: "Video pack",
   W6: "Pull numbers",
   W7: "Competitor research",
+  W8: "Weekly memory",
 };

@@ -12,6 +12,7 @@ import { LlmError } from "./llm-error";
 import { planWeek } from "./plan-week";
 import { pullMetrics } from "./pull-metrics";
 import { salesScan } from "./sales-scan";
+import { summarizeMemory } from "./summarize-memory";
 import { videoPack } from "./video-pack";
 import type { CmoJobKind, CmoStore, QueuedRun, Step } from "./types";
 
@@ -42,6 +43,7 @@ export const JOBS: Record<CmoJobKind, Job> = {
   video_pack: videoPack,
   competitor_research: competitorResearch,
   pull_metrics: pullMetrics,
+  summarize_memory: summarizeMemory,
 };
 
 /** Lượt bị nhận lại bởi một worker khác (lease hết): dừng im lặng, không ghi gì nữa. */

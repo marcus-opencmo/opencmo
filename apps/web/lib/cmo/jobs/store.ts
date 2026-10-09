@@ -3,7 +3,8 @@ import "server-only";
 import type { SupabaseClient as BaseClient } from "@supabase/supabase-js";
 
 import { DOCUMENT_KINDS, type DocumentKind } from "../documents";
-import type { ClipJob, CmoStore, CompetitorInsight, Documents, ItemRow, QueuedRun } from "./types";
+import { latestPerTopic } from "./context";
+import type { ClipJob, CmoStore, CompetitorInsight, Documents, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
 
 const ITEM_COLUMNS =
   "id, run_id, department, platform, day, idea, reason, status, priority, body, final_text, external_url, decided_at, published_at, created_at";
@@ -37,10 +38,32 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       }
       return out;
     },
-    async memories(userId, limit) {
-      const { data } = await admin.from("cmo_memories").select("body").eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+    async memories(userId, limit, topic) {
+      let query = admin
+        .from("cmo_memories")
+        .select("body")
+        .eq("user_id", userId)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+      if (topic) query = query.in("topic", topic === "general" ? ["general"] : [topic, "general"]);
+      const { data } = await query.order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(limit);
       return ((data ?? []) as { body: string }[]).map((m) => m.body);
     },
+    async memoryEvents(userId, since) {
+      const { data, error } = await admin
+        .from("cmo_memories")
+        .select("kind, topic, body, created_at")
+        .eq("user_id", userId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw new Error(`memoryEvents: ${error.message}`);
+      return (data ?? []) as MemoryEvent[];
+    },
+    async lessons(userId) {
+      const { data } = await admin.from("cmo_lessons").select("week, topic, body").eq("user_id", userId).order("week", { ascending: false }).limit(20);
+      return latestPerTopic((data ?? []) as Lesson[]);
+    },
+    saveLessons: (userId, runId, week, lessons) => rpc<number>("cmo_save_lessons", { p_user: userId, p_run: runId, p_week: week, p_lessons: lessons }),
     async items(userId, filter) {
       let query = admin.from("content_items").select(ITEM_COLUMNS).eq("user_id", userId);
       if (filter.statuses) query = query.in("status", filter.statuses);

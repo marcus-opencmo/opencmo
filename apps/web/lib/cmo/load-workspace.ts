@@ -5,7 +5,7 @@ import { agentChatProvider } from "@/lib/agent/model";
 
 import { DEMO_CHAT_TITLE, demoAllowed, demoCalendar, demoChat, demoInbox, demoLinks, demoLog, demoMetrics, demoSeo } from "./demo";
 import { llmReady } from "./jobs/llm";
-import { isoDay, type CompetitorInsight, type ItemRow, type ScorePart, type Step } from "./jobs/types";
+import { isoDay, type CmoJobKind, type CompetitorInsight, type ItemRow, type ScorePart, type Step } from "./jobs/types";
 import { socialReaderReady } from "./social/reddit";
 import { loadCmoState } from "./state";
 import { suggestFixes } from "./suggest";
@@ -13,7 +13,7 @@ import { AGENTS, type CalendarItem, type ClipPreview, type InboxCard, type Insig
 
 type CmoRunRow = {
   id: string;
-  kind: "onboard" | "plan_week" | "post_draft" | "sales_scan" | "video_pack" | "competitor_research" | "pull_metrics";
+  kind: "onboard" | CmoJobKind;
   status: LogEntry["status"];
   input: { site?: string; idea?: string; source?: string };
   error: string | null;
@@ -22,7 +22,7 @@ type CmoRunRow = {
   created_at: string;
 };
 
-const JOB_OF: Record<CmoRunRow["kind"], JobId> = { onboard: "W0", plan_week: "W1", post_draft: "W2", sales_scan: "W4", video_pack: "W5", pull_metrics: "W6", competitor_research: "W7" };
+const JOB_OF: Record<CmoRunRow["kind"], JobId> = { onboard: "W0", plan_week: "W1", post_draft: "W2", sales_scan: "W4", video_pack: "W5", pull_metrics: "W6", competitor_research: "W7", summarize_memory: "W8" };
 
 type VideoPackRow = {
   id: string;
@@ -155,7 +155,7 @@ function clipsHref(body: Record<string, unknown>): string {
 function statusLine(runs: CmoRunRow[], awaiting: number): Workspace["status"] {
   const active = runs.find((r) => r.status === "running" || r.status === "queued");
   if (active) {
-    const what = { plan_week: "planning your week", post_draft: "drafting a post for X", sales_scan: "scanning Reddit for conversations", video_pack: "making your video pack", onboard: "building your plan", competitor_research: "studying your competitors on X", pull_metrics: "reading the numbers on your posts" }[active.kind];
+    const what = { plan_week: "planning your week", post_draft: "drafting a post for X", sales_scan: "scanning Reddit for conversations", video_pack: "making your video pack", onboard: "building your plan", competitor_research: "studying your competitors on X", pull_metrics: "reading the numbers on your posts", summarize_memory: "writing this week's lessons" }[active.kind];
     return { text: `Your CMO is ${what}. Follow along in Activity.`, tone: "running" };
   }
   const latest = runs[0];

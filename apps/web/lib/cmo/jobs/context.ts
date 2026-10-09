@@ -1,7 +1,7 @@
 /** Chữ đưa vào prompt: document, trí nhớ, bài gần đây. Gom một chỗ để W1/W2 (và chat) nói cùng một thứ. */
 
 import { DOCUMENTS } from "../documents";
-import type { CompetitorInsight, Documents, ItemRow } from "./types";
+import type { CmoStore, CompetitorInsight, Documents, ItemRow, Lesson, MemoryTopic } from "./types";
 
 const DOC_ORDER = ["product", "strategy", "content_strategy", "competitors"] as const;
 
@@ -16,6 +16,28 @@ export function documentsBlock(docs: Documents): string {
 export function memoriesBlock(memories: string[]): string {
   if (!memories.length) return "<memories>(none)</memories>";
   return `<memories>\n${memories.map((m) => `- ${m}`).join("\n")}\n</memories>`;
+}
+
+/** Keeps the newest lesson per topic (rows must come newest week first). */
+export function latestPerTopic(rows: Lesson[]): Lesson[] {
+  const seen = new Set<string>();
+  return rows.filter((row) => (seen.has(row.topic) ? false : (seen.add(row.topic), true)));
+}
+
+/** Weekly lessons (memory tier 3): what the summary learned, read before every plan or draft. */
+export function lessonsBlock(lessons: Lesson[]): string {
+  if (!lessons.length) return "";
+  return `<lessons>\n${lessons.map((l) => `- ${l.topic} (week of ${l.week}): ${l.body}`).join("\n")}\n</lessons>`;
+}
+
+/**
+ * What a job remembers: the latest lessons for its topic and `general`, then the most important
+ * unexpired notes for that topic. Without a topic (the weekly plan) it reads every topic.
+ */
+export async function recall(store: CmoStore, userId: string, limit: number, topic?: MemoryTopic): Promise<string> {
+  const [lessons, memories] = await Promise.all([store.lessons(userId), store.memories(userId, limit, topic)]);
+  const relevant = topic ? lessons.filter((l) => l.topic === topic || l.topic === "general") : lessons;
+  return [lessonsBlock(relevant), memoriesBlock(memories)].filter(Boolean).join("\n\n");
 }
 
 /**

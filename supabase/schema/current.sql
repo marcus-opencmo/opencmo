@@ -1647,7 +1647,7 @@ CREATE TABLE public.cmo_runs (
     CONSTRAINT cmo_runs_credits_check CHECK ((credits >= 0)),
     CONSTRAINT cmo_runs_error_check CHECK ((char_length(error) <= 500)),
     CONSTRAINT cmo_runs_input_check CHECK (((jsonb_typeof(input) = 'object'::text) AND (octet_length((input)::text) <= 4096))),
-    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text]))),
+    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text, 'summarize_memory'::text]))),
     CONSTRAINT cmo_runs_output_check CHECK (((output IS NULL) OR ((jsonb_typeof(output) = 'object'::text) AND (octet_length((output)::text) <= 16384)))),
     CONSTRAINT cmo_runs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
     CONSTRAINT cmo_runs_steps_check CHECK (((jsonb_typeof(steps) = 'array'::text) AND (octet_length((steps)::text) <= 16384)))
@@ -2114,7 +2114,7 @@ declare
   v_row public.cmo_runs;
   v_price integer := public.cmo_job_price(p_kind);
 begin
-  if p_kind is null or p_kind not in ('plan_week', 'post_draft', 'sales_scan', 'video_pack', 'competitor_research', 'pull_metrics') then
+  if p_kind is null or p_kind = 'onboard' or public.cmo_job_daily_limit(p_kind) <= 0 then
     raise exception 'Unknown task.' using errcode = '22023';
   end if;
   if p_input is null or jsonb_typeof(p_input) <> 'object' or octet_length(p_input::text) > 4096 then
@@ -2158,7 +2158,7 @@ CREATE FUNCTION public.cmo_job_daily_limit(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 5 when 'post_draft' then 10 when 'sales_scan' then 3 when 'video_pack' then 3
-    when 'competitor_research' then 2 when 'pull_metrics' then 2 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 2 when 'summarize_memory' then 1 else 0 end
 $$;
 
 
@@ -2170,7 +2170,7 @@ CREATE FUNCTION public.cmo_job_price(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 1 when 'post_draft' then 1 when 'sales_scan' then 5 when 'video_pack' then 1
-    when 'competitor_research' then 2 when 'pull_metrics' then 0 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 0 when 'summarize_memory' then 0 else 0 end
 $$;
 
 
@@ -2199,6 +2199,31 @@ begin
   insert into public.operation_log (user_id, platform, action, target) values (v_user, 'x', 'publish', p_id::text)
   on conflict do nothing;
   return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_memories_classify(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_memories_classify() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+begin
+  if new.type = 'feedback' then
+    new.kind := 'feedback';
+    if new.topic = 'general' then
+      new.topic := case
+        when new.body like 'Skipped the X post%' then 'post'
+        when new.body like 'Dismissed the Reddit thread%' then 'sales'
+        when new.body like 'Skipped a video pack%' then 'video'
+        else 'general' end;
+    end if;
+    new.expires_at := coalesce(new.expires_at, now() + interval '90 days');
+  end if;
+  return new;
 end;
 $$;
 
@@ -2263,16 +2288,24 @@ CREATE TABLE public.cmo_memories (
     type text NOT NULL,
     body text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    kind text DEFAULT 'fact'::text NOT NULL,
+    topic text DEFAULT 'general'::text NOT NULL,
+    importance smallint DEFAULT 2 NOT NULL,
+    expires_at timestamp with time zone,
+    source_run uuid,
     CONSTRAINT cmo_memories_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 600))),
+    CONSTRAINT cmo_memories_importance_check CHECK (((importance >= 1) AND (importance <= 3))),
+    CONSTRAINT cmo_memories_kind_check CHECK ((kind = ANY (ARRAY['preference'::text, 'fact'::text, 'feedback'::text, 'result'::text]))),
+    CONSTRAINT cmo_memories_topic_check CHECK ((topic = ANY (ARRAY['general'::text, 'post'::text, 'sales'::text, 'video'::text, 'research'::text]))),
     CONSTRAINT cmo_memories_type_check CHECK ((type = ANY (ARRAY['feedback'::text, 'user'::text])))
 );
 
 
 --
--- Name: cmo_remember(text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: cmo_remember(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.cmo_remember(p_body text) RETURNS public.cmo_memories
+CREATE FUNCTION public.cmo_remember(p_body text, p_topic text DEFAULT 'general'::text) RETURNS public.cmo_memories
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -2283,12 +2316,18 @@ begin
   if p_body is null or char_length(trim(p_body)) = 0 or char_length(p_body) > 600 then
     raise exception 'Keep the note under 600 characters.' using errcode = '22023';
   end if;
+  if p_topic is null or p_topic not in ('general', 'post', 'sales', 'video', 'research') then
+    raise exception 'Unknown topic.' using errcode = '22023';
+  end if;
+  -- At the cap, drop the least important, oldest note rather than simply the oldest one.
   if (select count(*) from public.cmo_memories where user_id = v_user) >= 200 then
     delete from public.cmo_memories where id in (
-      select id from public.cmo_memories where user_id = v_user order by created_at limit 1
+      select id from public.cmo_memories where user_id = v_user order by importance, created_at limit 1
     );
   end if;
-  insert into public.cmo_memories (user_id, type, body) values (v_user, 'user', trim(p_body)) returning * into v_row;
+  insert into public.cmo_memories (user_id, type, kind, topic, importance, body)
+  values (v_user, 'user', 'preference', p_topic, 3, trim(p_body))
+  returning * into v_row;
   return v_row;
 end;
 $$;
@@ -2395,6 +2434,41 @@ begin
     select id from public.cmo_insights where user_id = p_user and kind = p_kind order by created_at desc offset 20
   );
   return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_save_lessons(uuid, uuid, date, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_save_lessons(p_user uuid, p_run uuid, p_week date, p_lessons jsonb) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_item jsonb;
+  v_count integer := 0;
+begin
+  if p_week is null or extract(isodow from p_week) <> 1 then
+    raise exception 'The week must start on a Monday.' using errcode = '22023';
+  end if;
+  if p_lessons is null or jsonb_typeof(p_lessons) <> 'array' or jsonb_array_length(p_lessons) > 5 then
+    raise exception 'These lessons are not valid.' using errcode = '22023';
+  end if;
+  for v_item in select * from jsonb_array_elements(p_lessons) loop
+    if coalesce(v_item->>'topic', '') not in ('general', 'post', 'sales', 'video', 'research')
+       or char_length(trim(coalesce(v_item->>'body', ''))) = 0 then
+      continue;
+    end if;
+    insert into public.cmo_lessons (user_id, run_id, week, topic, body)
+    values (p_user, p_run, p_week, v_item->>'topic', left(trim(v_item->>'body'), 600))
+    on conflict (user_id, week, topic) do update set body = excluded.body, run_id = excluded.run_id, created_at = now();
+    v_count := v_count + 1;
+  end loop;
+  -- Keep a year of lessons; older weeks no longer describe the business.
+  delete from public.cmo_lessons where user_id = p_user and week < p_week - 364;
+  return v_count;
 end;
 $$;
 
@@ -6929,6 +7003,24 @@ CREATE TABLE public.caption_translations (
 
 
 --
+-- Name: cmo_lessons; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_lessons (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    run_id uuid,
+    week date NOT NULL,
+    topic text NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cmo_lessons_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 600))),
+    CONSTRAINT cmo_lessons_topic_check CHECK ((topic = ANY (ARRAY['general'::text, 'post'::text, 'sales'::text, 'video'::text, 'research'::text]))),
+    CONSTRAINT cmo_lessons_week_check CHECK ((EXTRACT(isodow FROM week) = (1)::numeric))
+);
+
+
+--
 -- Name: credit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7440,6 +7532,22 @@ ALTER TABLE ONLY public.cmo_insights
 
 
 --
+-- Name: cmo_lessons cmo_lessons_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_lessons cmo_lessons_user_id_week_topic_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_user_id_week_topic_key UNIQUE (user_id, week, topic);
+
+
+--
 -- Name: cmo_memories cmo_memories_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7862,6 +7970,20 @@ CREATE INDEX cmo_insights_user_idx ON public.cmo_insights USING btree (user_id, 
 
 
 --
+-- Name: cmo_lessons_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_lessons_user_idx ON public.cmo_lessons USING btree (user_id, week DESC);
+
+
+--
+-- Name: cmo_memories_topic_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_memories_topic_idx ON public.cmo_memories USING btree (user_id, topic, importance DESC, created_at DESC);
+
+
+--
 -- Name: cmo_memories_user_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8142,6 +8264,13 @@ CREATE TRIGGER clips_record_storage_deletions BEFORE DELETE ON public.clips FOR 
 
 
 --
+-- Name: cmo_memories cmo_memories_classify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER cmo_memories_classify BEFORE INSERT ON public.cmo_memories FOR EACH ROW EXECUTE FUNCTION public.cmo_memories_classify();
+
+
+--
 -- Name: editor_revisions editor_revisions_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8338,6 +8467,30 @@ ALTER TABLE ONLY public.cmo_insights
 
 ALTER TABLE ONLY public.cmo_insights
     ADD CONSTRAINT cmo_insights_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_lessons cmo_lessons_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: cmo_lessons cmo_lessons_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_memories cmo_memories_source_run_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_memories
+    ADD CONSTRAINT cmo_memories_source_run_fkey FOREIGN KEY (source_run) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
 
 
 --
@@ -8795,6 +8948,12 @@ ALTER TABLE public.clips ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cmo_insights ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cmo_lessons; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_lessons ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: cmo_memories; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -8937,6 +9096,13 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cmo_lessons read own CMO lessons; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own CMO lessons" ON public.cmo_lessons FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
 
 --
 -- Name: scene_codes; Type: ROW SECURITY; Schema: public; Owner: -

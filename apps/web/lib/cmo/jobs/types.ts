@@ -5,8 +5,18 @@
 
 import type { DocumentKind } from "../documents";
 
-export type CmoJobKind = "plan_week" | "post_draft" | "sales_scan" | "video_pack" | "competitor_research" | "pull_metrics";
-export const CMO_JOB_KINDS: CmoJobKind[] = ["plan_week", "post_draft", "sales_scan", "video_pack", "competitor_research", "pull_metrics"];
+export type CmoJobKind = "plan_week" | "post_draft" | "sales_scan" | "video_pack" | "competitor_research" | "pull_metrics" | "summarize_memory";
+export const CMO_JOB_KINDS: CmoJobKind[] = ["plan_week", "post_draft", "sales_scan", "video_pack", "competitor_research", "pull_metrics", "summarize_memory"];
+
+/** What a memory or a lesson is about; a job reads its own topic plus `general`. */
+export type MemoryTopic = "general" | "post" | "sales" | "video" | "research";
+export const MEMORY_TOPICS: MemoryTopic[] = ["general", "post", "sales", "video", "research"];
+
+/** Tier 2: one event (a preference the founder typed, a skip reason, a result). */
+export type MemoryEvent = { kind: "preference" | "fact" | "feedback" | "result"; topic: MemoryTopic; body: string; created_at: string };
+
+/** Tier 3: a weekly lesson for one topic; `week` is the Monday it covers. */
+export type Lesson = { week: string; topic: MemoryTopic; body: string };
 
 /** Điều W7 học được từ đối thủ: mọi mẫu đều có URL bài làm bằng chứng. */
 export type CompetitorInsight = {
@@ -87,7 +97,13 @@ export interface CmoStore {
   step(run: QueuedRun, steps: Step[]): Promise<boolean>;
   complete(run: QueuedRun, ok: boolean, output: Record<string, unknown> | null, error: string | null): Promise<boolean>;
   documents(userId: string): Promise<Documents>;
-  memories(userId: string, limit: number): Promise<string[]>;
+  /** Unexpired notes, most important first; with a topic, that topic plus `general`. */
+  memories(userId: string, limit: number, topic?: MemoryTopic): Promise<string[]>;
+  /** Every note written since `since` (ISO), newest first, for the weekly summary. */
+  memoryEvents(userId: string, since: string): Promise<MemoryEvent[]>;
+  /** The latest lesson for each topic. */
+  lessons(userId: string): Promise<Lesson[]>;
+  saveLessons(userId: string, runId: string, week: string, lessons: { topic: MemoryTopic; body: string }[]): Promise<number>;
   items(userId: string, filter: { statuses?: ItemStatus[]; since?: string; department?: ItemRow["department"]; limit?: number }): Promise<ItemRow[]>;
   planWeek(userId: string, runId: string, items: PlanItem[]): Promise<number>;
   saveDraft(userId: string, runId: string, itemId: string | null, idea: string, body: Record<string, unknown>, priority: ItemRow["priority"]): Promise<ItemRow>;

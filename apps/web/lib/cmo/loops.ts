@@ -54,6 +54,13 @@ export const LOOPS: Loop[] = [
     run: () => ({ loop: "competitor-research", kind: "competitor_research", input: { source: "schedule" } }),
   },
   {
+    // Before the Monday plan: the planner reads the lessons this writes.
+    name: "memory-summary",
+    cadence: "Sunday (free)",
+    when: (s) => s.weekday === 0,
+    run: () => ({ loop: "memory-summary", kind: "summarize_memory", input: { source: "schedule" } }),
+  },
+  {
     name: "post-metrics",
     cadence: "daily, when something was published in the last 14 days (free)",
     when: (s) => s.socialReader && s.publishedRecently > 0,
