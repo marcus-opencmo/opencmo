@@ -24,7 +24,12 @@ export type OpContext = {
 	 * gian bằng đúng luật của clip-render. Thiếu thì nguồn coi như chưa biết độ
 	 * dài (16 giây), như renderer.
 	 */
-	media?: { duration(src: AssetInput): number | null; transcript?(src: string): RenderTranscript | null };
+	media?: {
+		duration(src: AssetInput): number | null;
+		transcript?(src: string): RenderTranscript | null;
+		/** Transcript này ĐÃ thử đọc và hỏng (không phải "nơi này không đọc loại file đó"). */
+		transcriptFailed?(src: string): boolean;
+	};
 };
 
 /**

@@ -511,6 +511,7 @@ export async function runCheck(workspace: AgentWorkspace): Promise<CheckReport> 
   return checkDocument(snapshot.document, {
     duration: (src) => ctx.media?.duration(src) ?? null,
     transcript: (src) => ctx.media?.transcript?.(src) ?? null,
+    transcriptFailed: (src) => ctx.media?.transcriptFailed?.(src) ?? false,
     exists: (src) => paths.has(src) || /^https?:/.test(src),
   });
 }

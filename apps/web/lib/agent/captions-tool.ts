@@ -93,7 +93,7 @@ export async function prepareCaptions(
     const media = mediaOf(found.entity);
     if (!media || typeof media.src !== "string") return "add_captions works on a video or audio element from the library.";
     const record = ((snapshot.manifest as { assets?: Record<string, unknown>[] }).assets ?? []).find((asset) => asset.path === media.src);
-    if (!record) return "This element does not play a library file. The clip's own speaker already has captions.";
+    if (!record) return "This element does not play a library file. The clip's own speaker has a captions layer already; if check reports captions-empty for it, tell the user its captions file is missing instead of adding captions.";
     const cloud = record.cloud as { state?: string; mediaId?: string } | undefined;
     if (cloud?.state !== "synced" || !cloud.mediaId) return "This file is still uploading. Try again when it is stored with the project.";
     const range = sourceRange(media.timing, typeof record.duration === "number" ? record.duration : undefined);
