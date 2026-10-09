@@ -5,7 +5,7 @@
 Please **do not** open a public issue for security problems.
 
 Report privately through GitHub's
-[private vulnerability reporting](https://github.com/OpenCMO-AI/opencmo/security/advisories/new)
+[private vulnerability reporting](https://github.com/marcus-opencmo/opencmo/security/advisories/new)
 (Security tab → "Report a vulnerability"), or email **support@opencmo.io** with the subject
 line "Security".
 
