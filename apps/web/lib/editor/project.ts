@@ -8,13 +8,13 @@
  */
 
 import type { ClipDocument } from "@opencmo/clip-doc";
-import { applyOps, type OpContext } from "@opencmo/editor-core";
+import { applyOps, captionsOnTop, type OpContext } from "@opencmo/editor-core";
 
 import { ApiError } from "@/lib/api/errors";
 import { CLIP_NOT_FOUND, sourceDuration, type ClipContext } from "@/lib/api/clips";
 import { notFound, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { defaultBrandKit } from "@/lib/brand";
-import { generatedDocument, PROJECT_COLUMNS, withDocument } from "@/lib/editor/document";
+import { generatedDocument, PROJECT_COLUMNS, saveDocument, withDocument } from "@/lib/editor/document";
 import { editorSource, signedTranscriptUrl } from "@/lib/editor/media";
 import { generateProject } from "@/lib/editor/generate-project";
 import { parseSettings, SettingsError } from "@/lib/settings-schema";
@@ -64,6 +64,24 @@ async function branded(supabase: SupabaseClient, document: ClipDocument, source:
   }
 }
 
+/**
+ * Project lưu trước bất biến `captionsOnTop` (02/10) có thể còn b-roll/visual vẽ
+ * ĐÈ lên phụ đề: bất biến chỉ chạy sau một lượt op, nên project chưa sửa lại lần
+ * nào giữ nguyên thứ tự cũ — phụ đề có trên timeline mà không thấy trên khung.
+ * Mở ra là sửa và lưu một lần (cả bản export đọc document đã lưu). Lưu hỏng vì
+ * khoá lạc quan thì trả bản đang có: lượt op kế tiếp sẽ sửa.
+ */
+async function captionsUp(supabase: SupabaseClient, project: EditorProject): Promise<EditorProject> {
+  const fixed = captionsOnTop(project.document);
+  if (fixed === project.document) return project;
+  try {
+    return { ...project, ...(await saveDocument(supabase, project.clip_id, project.version, fixed)) };
+  } catch (err) {
+    console.error("[editor] could not move captions above other layers", err);
+    return project;
+  }
+}
+
 /** Project hiện có, hoặc sinh lần đầu. `transcript`: clip có transcript để gắn `<captions>` không. */
 export async function ensureEditorProject(
   supabase: SupabaseClient,
@@ -76,7 +94,7 @@ export async function ensureEditorProject(
     .select(PROJECT_COLUMNS)
     .eq("clip_id", clipId)
     .maybeSingle();
-  if (existing) return withDocument(existing as EditorProject);
+  if (existing) return captionsUp(supabase, withDocument(existing as EditorProject));
 
   const { data: row } = await supabase
     .from("clips")
@@ -149,7 +167,7 @@ export function blankDocument(aspect: string): ClipDocument {
 /** Project của clip `blank`: không có settings gốc (không có video để cắt). */
 export async function ensureBlankProject(supabase: SupabaseClient, context: ClipContext, clipId: string): Promise<EditorProject> {
   const { data: existing } = await supabase.from("editor_projects").select(PROJECT_COLUMNS).eq("clip_id", clipId).maybeSingle();
-  if (existing) return withDocument(existing as EditorProject);
+  if (existing) return captionsUp(supabase, withDocument(existing as EditorProject));
   const created = await rpcOrThrow<EditorProject>(supabase, "get_or_create_editor_project", {
     p_clip_id: clipId,
     p_document: blankDocument(context.job.aspect),

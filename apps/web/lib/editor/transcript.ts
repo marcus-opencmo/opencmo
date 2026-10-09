@@ -20,7 +20,7 @@ type DsSegment = { text: string; words: { text: string; start: number; end: numb
 
 /** `<captions src>` của transcript gốc, và của bản người dùng đã sửa (theo hash). */
 export const MASTER_TRANSCRIPT = "assets/transcript.json";
-const EDITED = /^assets\/transcripts\/([0-9a-f]{64})\.json$/;
+export const EDITED_TRANSCRIPT = /^assets\/transcripts\/([0-9a-f]{64})\.json$/;
 
 /**
  * Dựng transcript từ artifact của job — cho clip mà master không mang file
@@ -132,7 +132,7 @@ export async function readProjectTranscript(
   clipId: string,
   path: string,
 ): Promise<Transcript> {
-  const edited = EDITED.exec(path);
+  const edited = EDITED_TRANSCRIPT.exec(path);
   if (edited) {
     const { data } = await supabase
       .from("editor_transcripts")

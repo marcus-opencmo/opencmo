@@ -105,7 +105,8 @@ Times after cuts: get_transcript and find_silences use SOURCE seconds; everythin
 - highlight: "block" (box behind the spoken word) or "pop" (the spoken word grows and turns yellow) with set_props on the captions element; censor: true masks swear words on screen (the transcript keeps them).
 - Fix misheard words with edit_words; split long lines with split_line and join short ones with merge_lines.
 - Keep captions off faces: they sit at the bottom by default; move them with set_props on the captions element (verticalAlign, offsetY).
-- Titles must not overlap the captions: check reports caption-overlap.`,
+- Titles must not overlap the captions: check reports caption-overlap.
+- A captions layer on the timeline is not proof the captions show on the video. Before telling the user the clip has captions, run check: captions-empty means the layer shows no words (its transcript could not be loaded, or its sourceIn/sourceOut miss every word), captions-covered means another layer is drawn over them. Tell the user exactly that; never say captions are on screen when check reports either.`,
 
   script: `# From the script to visuals
 

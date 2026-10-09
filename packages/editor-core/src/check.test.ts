@@ -192,3 +192,51 @@ describe('remove_ranges', () => {
     expect(checkDocument(document, media).issues.filter((issue) => issue.code === 'black-gap')).toEqual([]);
   });
 });
+
+describe('phụ đề trống / bị đè', () => {
+	const words: Transcript = [
+		{ text: 'hello there', words: [{ text: 'hello', start: 10.2, end: 10.6 }, { text: 'there', start: 10.6, end: 11.2 }] },
+	];
+	const withTranscript = (transcript: Transcript | null) => ({
+		...media({ 'assets/master.mp4': 20 }),
+		transcript: (src: string) => (src === 'assets/transcript.json' ? transcript : null),
+		transcriptFailed: (src: string) => src === 'assets/transcript.json' && transcript === null,
+	});
+	const master = { kind: 'video', id: 'v', src: 'assets/master.mp4', width: 1080, height: 1920, sourceIn: 10, sourceOut: 13 };
+	const captions = { kind: 'captions', id: 'c', src: 'assets/transcript.json', start: 0, sourceIn: 10, sourceOut: 13 };
+
+	it('phụ đề có chữ trong cửa sổ, nằm trên video: sạch', () => {
+		const report = checkDocument(doc([master, captions]), withTranscript(words));
+		expect(codes(report)).not.toContain('captions-empty');
+		expect(codes(report)).not.toContain('captions-covered');
+	});
+
+	it('transcript không nạp được: captions-empty nói rõ lý do', () => {
+		const issue = checkDocument(doc([master, captions]), withTranscript(null)).issues.find((item) => item.code === 'captions-empty');
+		expect(issue?.node_id).toBe('c');
+		expect(issue?.message).toContain('could not be loaded');
+	});
+
+	it('cửa sổ nguồn lệch thang transcript: captions-empty', () => {
+		const shifted = { ...captions, sourceIn: 0, sourceOut: 3 };
+		const issue = checkDocument(doc([master, shifted]), withTranscript(words)).issues.find((item) => item.code === 'captions-empty');
+		expect(issue?.message).toContain('sourceIn/sourceOut');
+	});
+
+	it('transcript null mà không biết là hỏng (file thư viện server không đọc): không báo', () => {
+		const report = checkDocument(doc([master, captions]), { ...media({ 'assets/master.mp4': 20 }), transcript: () => null });
+		expect(codes(report)).not.toContain('captions-empty');
+	});
+
+	it('phụ đề bị ẩn có chủ ý (voiceover replace): không báo', () => {
+		const report = checkDocument(doc([master, { ...captions, hidden: true }]), withTranscript(null));
+		expect(codes(report)).not.toContain('captions-empty');
+	});
+
+	it('lớp đặc vẽ sau phụ đề: captions-covered', () => {
+		const report = checkDocument(doc([captions, master]), withTranscript(words));
+		const issue = report.issues.find((item) => item.code === 'captions-covered');
+		expect(issue?.node_id).toBe('c');
+		expect(report.ok).toBe(false);
+	});
+});

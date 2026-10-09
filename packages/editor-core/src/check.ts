@@ -31,6 +31,8 @@ export type CheckIssue = {
 		| 'covers-speaker'
 		| 'text-overflow'
 		| 'caption-overlap'
+		| 'captions-empty'
+		| 'captions-covered'
 		| 'subject-offscreen';
 	node_id?: string;
 	/** Giây trên timeline của scene. */
@@ -50,6 +52,11 @@ export type CheckReport = {
 export type CheckMedia = {
 	duration(src: AssetInput): number | null;
 	transcript?(src: string): Transcript | null;
+	/**
+	 * Transcript đã thử đọc và hỏng. Thiếu hàm thì transcript null được coi là "không
+	 * biết" (server không đọc file .srt của thư viện) — không báo `captions-empty`.
+	 */
+	transcriptFailed?(src: string): boolean;
 	/** Nguồn có tồn tại không (thư viện/manifest). Thiếu hàm thì không kiểm `missing-source`. */
 	exists?(src: string): boolean;
 };
@@ -87,6 +94,21 @@ const overlap = (a: Rect, b: Rect): Rect => ({
 	x1: Math.min(a.x1, b.x1),
 	y1: Math.min(a.y1, b.y1),
 });
+
+/**
+ * Node bị ẩn, tính cả khi hàng/nhóm chứa nó bị ẩn. `layout()` không bỏ chúng
+ * (renderer bỏ ở lượt vẽ), nên mọi phép đo "có hiện không" phải loại ra trước.
+ */
+function hiddenNodes(scene: ClipNode): Set<ClipNode> {
+	const out = new Set<ClipNode>();
+	const visit = (node: ClipNode, parentHidden: boolean) => {
+		const hidden = parentHidden || (node as { hidden?: boolean }).hidden === true;
+		if (hidden) out.add(node);
+		for (const child of (node as { children?: ClipNode[] }).children ?? []) visit(child, hidden);
+	};
+	for (const child of (scene as { children?: ClipNode[] }).children ?? []) visit(child, false);
+	return out;
+}
 
 const idOf = (node: ClipNode): string | undefined => (node as { id?: string }).id;
 const label = (node: ClipNode): string => {
@@ -227,8 +249,30 @@ export function checkDocument(document: ClipDocument, media: CheckMedia, options
 	const overflow = new Map<ClipNode, { start: number; end: number }>();
 	// Visual đè lên dải người nói khi đang chia đôi khung (`layout.ts`).
 	const onSpeaker = new Map<ClipNode, { start: number; end: number }>();
+	// Phụ đề trống là lỗi im lặng nhất của editor: lớp vẫn nằm trên timeline, khung
+	// vẫn có hộp, chỉ không có chữ nào (transcript không nạp được, cửa sổ nguồn lệch
+	// thang transcript). Đếm lớp nào từng có chữ, và chữ nào bị một lớp đặc vẽ đè.
+	const hidden = hiddenNodes(scene);
+	const spoken = new Set<ClipNode>();
+	const captionLayers = new Set<ClipNode>();
+	const covered = new Map<ClipNode, { by: ClipNode; start: number; end: number }>();
 	for (let frame = 0; frame < end; frame += STEP) {
-		const boxes = renderer.layout(frame, options.measurer).filter((box) => box.visible);
+		const boxes = renderer.layout(frame, options.measurer).filter((box) => box.visible && !hidden.has(box.node));
+		for (const [index, box] of boxes.entries()) {
+			if (box.node.kind !== 'captions' || box.values.opacity <= 0) continue;
+			captionLayers.add(box.node);
+			if (!box.caption) continue;
+			spoken.add(box.node);
+			const rect = bounds(box);
+			// Vẽ theo thứ tự cây: lớp đặc đứng SAU phụ đề trong danh sách là vẽ đè lên nó.
+			const cover = boxes
+				.slice(index + 1)
+				.find((other) => BACKDROP.has(other.node.kind) && opaque(other.node) && other.values.opacity > 0.5 && area(rect) > 0 && area(overlap(bounds(other), rect)) >= area(rect) * 0.5);
+			if (!cover) continue;
+			const run = covered.get(box.node);
+			if (run && run.end === frame) run.end = frame + STEP;
+			else if (!run) covered.set(box.node, { by: cover.node, start: frame, end: frame + STEP });
+		}
 		const band = speakerBandAt(document, frame / FPS);
 		const bandRect: Rect | null = band ? { x0: 0, y0: band.y * scene.height, x1: scene.width, y1: (band.y + band.height) * scene.height } : null;
 		const texts: { node: ClipNode; rect: Rect }[] = [];
@@ -332,6 +376,35 @@ export function checkDocument(document: ClipDocument, media: CheckMedia, options
 			start: seconds(run.start),
 			end: seconds(Math.min(run.end, end)),
 			message: `${label(node)} runs past the edge of the frame.`,
+		});
+	}
+	for (const node of captionLayers) {
+		if (spoken.has(node)) continue;
+		const src = (node as { src?: unknown }).src;
+		const transcript = typeof src === 'string' ? (media.transcript?.(src) ?? null) : null;
+		// Chưa có `src`: phụ đề của voiceover đang sinh, `sync_voiceover` gắn transcript khi giọng về.
+		if (typeof src !== 'string' || (!transcript && !media.transcriptFailed?.(src))) continue;
+		const words = transcript?.reduce((sum, segment) => sum + segment.words.length, 0) ?? 0;
+		issues.push({
+			severity: 'error',
+			code: 'captions-empty',
+			node_id: idOf(node),
+			message:
+				!transcript
+						? `${label(node)} shows no words: its transcript "${src}" could not be loaded. The captions are not on screen.`
+						: !words
+							? `${label(node)} shows no words: its transcript "${src}" is empty.`
+							: `${label(node)} shows no words: none of its ${words} transcript words fall inside the part of the source it plays (sourceIn/sourceOut). The captions are not on screen.`,
+		});
+	}
+	for (const [node, run] of covered) {
+		issues.push({
+			severity: 'error',
+			code: 'captions-covered',
+			node_id: idOf(node),
+			start: seconds(run.start),
+			end: seconds(Math.min(run.end, end)),
+			message: `${label(run.by)} is drawn on top of the captions from ${seconds(run.start)}s to ${seconds(Math.min(run.end, end))}s, so viewers cannot read them.`,
 		});
 	}
 	for (const run of overlaps.values()) {

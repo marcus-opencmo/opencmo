@@ -250,6 +250,12 @@ export class BrowserMedia implements MediaHost {
     return found === undefined || found === "loading" || found === "failed" ? null : found;
   }
 
+  /** Trạng thái nạp của một transcript — để timeline nói lý do phụ đề trống thay vì để khung trống. */
+  transcriptStatus(src: string): "loading" | "failed" | "ready" {
+    const found = this.transcripts.get(src);
+    return found === "failed" ? "failed" : found === undefined || found === "loading" ? "loading" : "ready";
+  }
+
   // ------------------------------------------------------------ nạp trước
 
   /** Độ dài mọi nguồn và mọi transcript — renderer cần chúng lúc dựng cây. */

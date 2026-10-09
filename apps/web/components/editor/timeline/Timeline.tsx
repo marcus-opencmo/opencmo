@@ -971,7 +971,10 @@ function Bar({
     >
       {src !== undefined ? <Wave src={src} t={t} media={media} width={width} height={height - 6} /> : null}
       {kind === "captions" && typeof entity.src === "string" ? (
-        <Words transcript={media.transcript(entity.src)} t={t} ppf={ppf} />
+        <>
+          <Words transcript={media.transcript(entity.src)} t={t} ppf={ppf} />
+          <CaptionsProblem status={media.transcriptStatus(entity.src)} transcript={media.transcript(entity.src)} t={t} id={String(entity.id ?? "")} />
+        </>
       ) : null}
       <FadeShades entity={entity} ppf={ppf} width={width} />
       <span className="ed2-bar-label">{label}</span>
@@ -1108,6 +1111,32 @@ function Wave({ src, t, media, width, height }: { src: AssetInput; t: TimeNode; 
   }, [peaks, pixels, height, t.start, t.end, t.origin, t.rate, key, t.node.kind, theme]);
   if (!peaks) return null;
   return <canvas ref={canvas} className="ed2-wave" data-testid="waveform" />;
+}
+
+/** Thời gian (frame scene) của các từ rơi vào thanh `t`. */
+const wordsInside = (transcript: Transcript, t: TimeNode): number =>
+  transcript
+    .flatMap((segment) => segment.words)
+    .filter((word) => t.origin + (word.end * FPS) / t.rate > t.start && t.origin + (word.start * FPS) / t.rate < t.end).length;
+
+/**
+ * Phụ đề không có chữ nào để hiện: nói ra trên thanh. Không có dòng này thì lớp
+ * phụ đề vẫn nằm trên timeline, khung có hộp mà trống — người dùng (và agent)
+ * tưởng phụ đề đang chạy (UAT 09/10 trên project cũ).
+ */
+function CaptionsProblem({ status, transcript, t, id }: { status: "loading" | "failed" | "ready"; transcript: Transcript | null; t: TimeNode; id: string }) {
+  const message =
+    status === "failed"
+      ? "The captions file could not be loaded, so no captions show on the video."
+      : status === "ready" && transcript && wordsInside(transcript, t) === 0
+        ? "No spoken words fall inside this captions layer, so nothing shows on the video."
+        : null;
+  if (!message) return null;
+  return (
+    <span className="ed2-bar-ai is-error" role="status" title={message} data-testid={`captions-problem-${id}`}>
+      {status === "failed" ? "Captions not loaded" : "No words here"}
+    </span>
+  );
 }
 
 function Words({ transcript, t, ppf }: { transcript: Transcript | null; t: TimeNode; ppf: number }) {

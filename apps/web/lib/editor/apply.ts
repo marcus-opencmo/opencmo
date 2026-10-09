@@ -16,7 +16,7 @@ import type { ClipContext } from "@/lib/api/clips";
 import { notFound, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { projectDocument, saveDocument } from "@/lib/editor/document";
 import { editorSource, NoEditorSourceError } from "@/lib/editor/media";
-import { readProjectTranscript } from "@/lib/editor/transcript";
+import { EDITED_TRANSCRIPT, MASTER_TRANSCRIPT, readProjectTranscript } from "@/lib/editor/transcript";
 
 export type EditorProjectRow = {
   clip_id: string;
@@ -91,6 +91,9 @@ export async function serverMedia(
     if (typeof duration === "number" && duration > 0) durations.set(record.path, duration);
   }
   const transcripts = new Map<string, RenderTranscript>();
+  // Chỉ transcript server ĐỌC ĐƯỢC loại đó (gốc, bản đã sửa) mới tính là hỏng; file
+  // .srt/.vtt của thư viện chỉ nằm trên trình duyệt, null ở đây là "không biết".
+  const failed = new Set<string>();
   await Promise.all(
     mediaSources(document)
       .filter((item) => item.kind === "transcript" && typeof item.src === "string")
@@ -98,13 +101,15 @@ export async function serverMedia(
         try {
           transcripts.set(src as string, (await readProjectTranscript(supabase, context, clipId, src as string)) as never);
         } catch {
-          // Transcript thiếu: phụ đề coi như rỗng, như renderer.
+          // Transcript thiếu: phụ đề coi như rỗng, như renderer — và `check` báo ra.
+          if (src === MASTER_TRANSCRIPT || EDITED_TRANSCRIPT.test(src as string)) failed.add(src as string);
         }
       }),
   );
   return {
     duration: (src: AssetInput) => (typeof src === "string" ? (durations.get(src) ?? null) : null),
     transcript: (src: string) => transcripts.get(src) ?? null,
+    transcriptFailed: (src: string) => failed.has(src),
   };
 }
 
