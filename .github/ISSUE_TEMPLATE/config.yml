@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Report a security vulnerability
-    url: https://github.com/OpenCMO-AI/opencmo/security/advisories/new
+    url: https://github.com/marcus-opencmo/opencmo/security/advisories/new
     about: Please report security issues privately.
   - name: Questions about the hosted service (opencmo.io)
     url: https://opencmo.io

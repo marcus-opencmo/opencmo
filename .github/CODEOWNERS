@@ -1,6 +1,6 @@
 # Maintainers review every change. Security-sensitive paths are listed explicitly.
-*                                @OpenCMO-AI
-/supabase/                       @OpenCMO-AI
-/apps/web/lib/supabase/          @OpenCMO-AI
-/apps/web/app/api/               @OpenCMO-AI
-/packages/engine/opencmo/media/  @OpenCMO-AI
+*                                @marcus-opencmo
+/supabase/                       @marcus-opencmo
+/apps/web/lib/supabase/          @marcus-opencmo
+/apps/web/app/api/               @marcus-opencmo
+/packages/engine/opencmo/media/  @marcus-opencmo
