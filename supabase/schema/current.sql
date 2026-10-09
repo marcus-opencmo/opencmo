@@ -1898,6 +1898,64 @@ $$;
 
 
 --
+-- Name: cmo_video_briefs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_video_briefs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    job_id uuid NOT NULL,
+    hook text NOT NULL,
+    broll text DEFAULT ''::text NOT NULL,
+    visuals text DEFAULT ''::text NOT NULL,
+    pacing text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'in_review'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT cmo_video_briefs_broll_check CHECK ((char_length(broll) <= 600)),
+    CONSTRAINT cmo_video_briefs_hook_check CHECK (((char_length(hook) >= 1) AND (char_length(hook) <= 200))),
+    CONSTRAINT cmo_video_briefs_pacing_check CHECK ((char_length(pacing) <= 300)),
+    CONSTRAINT cmo_video_briefs_status_check CHECK ((status = ANY (ARRAY['in_review'::text, 'approved'::text, 'skipped'::text]))),
+    CONSTRAINT cmo_video_briefs_visuals_check CHECK ((char_length(visuals) <= 600))
+);
+
+
+--
+-- Name: cmo_create_video_brief(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_create_video_brief(p_job uuid, p_hook text, p_broll text, p_visuals text, p_pacing text) RETURNS public.cmo_video_briefs
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_video_briefs;
+begin
+  if not exists (select 1 from public.jobs where id = p_job and user_id = v_user) then
+    raise exception 'Project not found.' using errcode = 'P0002';
+  end if;
+  if not exists (select 1 from public.clips where job_id = p_job and kind = 'moment') then
+    raise exception 'This project has no clips yet. Make clips first.' using errcode = 'P0001';
+  end if;
+  if p_hook is null or char_length(trim(p_hook)) = 0 or char_length(p_hook) > 200 then
+    raise exception 'The hook must be 1 to 200 characters.' using errcode = '22023';
+  end if;
+  if char_length(coalesce(p_broll, '')) > 600 or char_length(coalesce(p_visuals, '')) > 600 or char_length(coalesce(p_pacing, '')) > 300 then
+    raise exception 'This brief is too long.' using errcode = '22023';
+  end if;
+  if (select count(*) from public.cmo_video_briefs where user_id = v_user and status = 'in_review') >= 10 then
+    raise exception 'You have 10 video briefs waiting. Approve or skip some first.' using errcode = 'P0001';
+  end if;
+  insert into public.cmo_video_briefs (user_id, job_id, hook, broll, visuals, pacing)
+  values (v_user, p_job, trim(p_hook), trim(coalesce(p_broll, '')), trim(coalesce(p_visuals, '')), trim(coalesce(p_pacing, '')))
+  returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
 -- Name: cmo_goals; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2080,6 +2138,40 @@ begin
   insert into public.operation_log (user_id, platform, action, target) values (v_user, 'x', 'approve', p_id::text);
   update public.content_items set status = 'approved', final_text = v_text, decided_at = now(), updated_at = now()
   where id = p_id returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_decide_video_brief(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_decide_video_brief(p_id uuid, p_action text, p_reason text DEFAULT NULL::text) RETURNS public.cmo_video_briefs
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_video_briefs;
+begin
+  if p_action is null or p_action not in ('approve', 'skip') then
+    raise exception 'Choose approve or skip.' using errcode = '22023';
+  end if;
+  update public.cmo_video_briefs
+  set status = case p_action when 'approve' then 'approved' else 'skipped' end, decided_at = now()
+  where id = p_id and user_id = v_user and status = 'in_review'
+  returning * into v_row;
+  if not found then
+    if exists (select 1 from public.cmo_video_briefs where id = p_id and user_id = v_user) then
+      raise exception 'This brief was already decided.' using errcode = 'P0001';
+    end if;
+    raise exception 'Brief not found.' using errcode = 'P0002';
+  end if;
+  if p_action = 'skip' and p_reason is not null and char_length(trim(p_reason)) > 0 then
+    insert into public.cmo_memories (user_id, type, kind, topic, body)
+    values (v_user, 'feedback', 'feedback', 'video', left('Skipped a video brief "' || left(v_row.hook, 120) || '": ' || trim(p_reason), 600));
+  end if;
   return v_row;
 end;
 $$;
@@ -7728,6 +7820,14 @@ ALTER TABLE ONLY public.cmo_runs
 
 
 --
+-- Name: cmo_video_briefs cmo_video_briefs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: content_items content_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8180,6 +8280,13 @@ CREATE INDEX cmo_runs_queue_idx ON public.cmo_runs USING btree (created_at) WHER
 --
 
 CREATE INDEX cmo_runs_user_created_idx ON public.cmo_runs USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: cmo_video_briefs_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_video_briefs_user_idx ON public.cmo_video_briefs USING btree (user_id, status, created_at DESC);
 
 
 --
@@ -8697,6 +8804,22 @@ ALTER TABLE ONLY public.cmo_runs
 
 
 --
+-- Name: cmo_video_briefs cmo_video_briefs_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_video_briefs cmo_video_briefs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: content_items content_items_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -9159,6 +9282,12 @@ ALTER TABLE public.cmo_memories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.cmo_runs ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cmo_video_briefs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_video_briefs ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: content_items; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9302,6 +9431,13 @@ CREATE POLICY "read own CMO goals" ON public.cmo_goals FOR SELECT TO authenticat
 --
 
 CREATE POLICY "read own CMO lessons" ON public.cmo_lessons FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: cmo_video_briefs read own video briefs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own video briefs" ON public.cmo_video_briefs FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --

@@ -3,7 +3,7 @@
  * chỉ đổi trong trình duyệt; thẻ thật gọi API (mọi luật nằm trong RPC).
  */
 
-import type { GoalView, InboxCard } from "@/lib/cmo/workspace";
+import type { BriefView, GoalView, InboxCard } from "@/lib/cmo/workspace";
 
 import type { DocView } from "./DocumentSheet";
 
@@ -18,12 +18,16 @@ export type RunKind = "plan_week" | "post_draft" | "sales_scan";
 
 export type GoalAct = { action: "approve"; target?: number } | { action: "reject" };
 
+export type BriefAct = { action: "approve" } | { action: "skip"; reason?: string };
+
 export type CalendarAct = { action: "edit"; idea: string; day: string } | { action: "remove" };
 
 export type Actions = {
   card(card: InboxCard, act: CardAct): Promise<boolean>;
   /** Approve (optionally with a new target) or reject a weekly goal the CMO proposed. */
   goal(goal: GoalView, act: GoalAct): Promise<boolean>;
+  /** Approve a video brief (opens the project with it in the assistant) or skip it. */
+  brief(brief: BriefView, act: BriefAct): Promise<boolean>;
   run(kind: RunKind): Promise<void>;
   calendar(id: string, act: CalendarAct): Promise<boolean>;
   toast(message: string): void;

@@ -10,7 +10,7 @@ import { isoDay, type CmoJobKind, type CompetitorInsight, type ItemRow, type Sco
 import { socialReaderReady } from "./social/reddit";
 import { loadCmoState } from "./state";
 import { suggestFixes } from "./suggest";
-import { AGENTS, type CalendarItem, type ClipPreview, type GoalView, type InboxCard, type InsightView, type Metrics, type JobId, type LogEntry, type PostCard, type SalesCard, type VideoCard, type Workspace } from "./workspace";
+import { AGENTS, type BriefView, type CalendarItem, type ClipPreview, type GoalView, type InboxCard, type InsightView, type Metrics, type JobId, type LogEntry, type PostCard, type SalesCard, type VideoCard, type Workspace } from "./workspace";
 
 type CmoRunRow = {
   id: string;
@@ -195,7 +195,7 @@ export async function loadWorkspace(supabase: SupabaseClient): Promise<Workspace
       .order("created_at", { ascending: false })
       .limit(10),
   ]);
-  const [realMetrics, insight, goals] = await Promise.all([loadMetrics(supabase), loadInsight(supabase), loadGoals(supabase)]);
+  const [realMetrics, insight, goals, briefs] = await Promise.all([loadMetrics(supabase), loadInsight(supabase), loadGoals(supabase), loadBriefs(supabase)]);
   const packs = (packRows ?? []) as unknown as VideoPackRow[];
   const taskIds = packs.flatMap((pack) => pack.exports.map((item) => item.task_id));
   const { data: taskRows } = taskIds.length ? await supabase.from("tasks").select("id, status").in("id", taskIds) : { data: [] };
@@ -246,6 +246,7 @@ export async function loadWorkspace(supabase: SupabaseClient): Promise<Workspace
     })),
     inbox,
     goals,
+    briefs,
     calendar,
     metrics: realMetrics ?? (demo ? demoMetrics() : null),
     insight,
@@ -272,6 +273,21 @@ async function progressOf(supabase: SupabaseClient, metric: GoalView["metric"], 
   if (metric === "posts") query = query.eq("department", "post");
   const { count } = await query;
   return count ?? 0;
+}
+
+/** Video briefs waiting for a decision (P3), with the project's title for the card. */
+async function loadBriefs(supabase: SupabaseClient): Promise<BriefView[]> {
+  const { data } = await supabase
+    .from("cmo_video_briefs")
+    .select("id, job_id, hook, broll, visuals, pacing, created_at, jobs(title)")
+    .eq("status", "in_review")
+    .order("created_at", { ascending: false })
+    .limit(10);
+  type Row = { id: string; job_id: string; hook: string; broll: string; visuals: string; pacing: string; created_at: string; jobs: { title: string | null } | { title: string | null }[] | null };
+  return ((data ?? []) as unknown as Row[]).map((row) => {
+    const job = Array.isArray(row.jobs) ? row.jobs[0] : row.jobs;
+    return { id: row.id, projectId: row.job_id, projectTitle: job?.title || "Your video", hook: row.hook, broll: row.broll, visuals: row.visuals, pacing: row.pacing, createdAt: row.created_at };
+  });
 }
 
 /** This week's and next week's goals (P2). Progress is live for this week's approved goal. */

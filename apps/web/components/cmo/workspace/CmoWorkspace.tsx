@@ -238,6 +238,21 @@ export function CmoWorkspace({ initial }: { initial: Workspace }) {
         return false;
       }
     },
+    async brief(brief, act) {
+      try {
+        const result = await api<{ href: string | null }>(`/cmo/video-briefs/${brief.id}`, jsonBody(act));
+        if (act.action === "approve" && result.href) {
+          window.location.assign(result.href);
+          return true;
+        }
+        setToast("Skipped. Your CMO will try a different angle.");
+        void refresh();
+        return true;
+      } catch (error) {
+        fail(error);
+        return false;
+      }
+    },
     async run(kind) {
       if (ws.demo && !ws.live.inbox) {
         setToast("Demo data: nothing was started.");

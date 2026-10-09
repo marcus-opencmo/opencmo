@@ -93,6 +93,9 @@ export type VideoCard = {
 
 export type InboxCard = PostCard | SalesCard | VideoCard;
 
+/** A video brief from the CMO (P3): approving it opens the project with the brief in the assistant. */
+export type BriefView = { id: string; projectId: string; projectTitle: string; hook: string; broll: string; visuals: string; pacing: string; createdAt: string };
+
 /** A weekly goal (P2): proposed ones wait for the founder; the approved one shows progress. */
 export type GoalView = {
   id: string;
@@ -175,6 +178,8 @@ export type Workspace = {
   inbox: InboxCard[];
   /** This week's and next week's goals, proposed or approved. */
   goals: GoalView[];
+  /** Video briefs waiting for the founder (P3). */
+  briefs: BriefView[];
   calendar: CalendarItem[];
   insight: InsightView | null;
   /** Tab Social: số liệu bài đăng (W6). */

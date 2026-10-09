@@ -37,7 +37,7 @@ type Live = { prompt: string; reply: string; actions: Action[] };
 
 const EXAMPLES = ["Which clip has the strongest hook?", "Use the same caption style on every clip"];
 
-export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChanged: () => void }) {
+export function ProjectAssistant({ jobId, brief = null, onChanged }: { jobId: string; brief?: string | null; onChanged: () => void }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -57,6 +57,14 @@ export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChange
   useEffect(() => {
     void load().catch(() => setLoaded({ available: false, session: null }));
   }, [load]);
+
+  // A brief from the CMO: open the panel with it ready to send. The founder sends it, and the
+  // assistant still asks before changing any clip.
+  useEffect(() => {
+    if (!brief) return;
+    setOpen(true);
+    setPrompt(brief);
+  }, [brief]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });

@@ -151,9 +151,31 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     },
     strict: true,
   },
+  // CMO → editor assistant bridge (architecture P3).
+  {
+    name: "create_video_brief",
+    description: [
+      "Write an editing brief for clips the founder already cut from their OWN video: the hook, b-roll, visuals and pacing.",
+      "It becomes a card in Approvals. If the founder approves it, the project opens with the brief filled into the editor assistant; they send it, and every edit still needs their approval there.",
+      "project_id is a video pack's job_id from list_approvals; omit it to use their latest project with clips. You cannot cut new clips or upload video.",
+    ].join(" "),
+    schema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string" },
+        hook: { type: "string", description: "The opening line or on-screen hook, up to 200 characters." },
+        broll: { type: "string", description: "B-roll or cutaway ideas, up to 600 characters." },
+        visuals: { type: "string", description: "Captions, colors, layout, up to 600 characters." },
+        pacing: { type: "string", description: "Cut rhythm and length, up to 300 characters." },
+      },
+      required: ["hook"],
+      additionalProperties: false,
+    },
+    strict: false,
+  },
 ];
 
-const WRITES = new Set(["create_task", "remember", "set_week_goal"]);
+const WRITES = new Set(["create_task", "remember", "set_week_goal", "create_video_brief"]);
 export const isCmoWrite = (name: string) => WRITES.has(name);
 
 const readInput = z.object({ kind: z.enum(DOCUMENT_KINDS) });
@@ -171,6 +193,13 @@ const DEPARTMENT_OF = { x_writer: "post", sales: "sales", video: "video" } as co
 const rememberInput = z.object({ note: z.string().trim().min(1).max(600), topic: z.enum(["general", "post", "sales", "video", "research"]).default("general") });
 const siteInput = z.object({ url: z.string().trim().min(3).max(300) });
 const runInput = z.object({ run_id: z.string().uuid().optional() });
+const briefInput = z.object({
+  project_id: z.string().uuid().optional(),
+  hook: z.string().trim().min(1).max(200),
+  broll: z.string().trim().max(600).default(""),
+  visuals: z.string().trim().max(600).default(""),
+  pacing: z.string().trim().max(300).default(""),
+});
 const goalInput = z.object({
   week: z.enum(["this", "next"]),
   goal: z.string().trim().min(3).max(300),
@@ -229,7 +258,7 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         .limit(10);
       const { data: packs } = await supabase
         .from("video_packs")
-        .select("id, status, clips, created_at, decided_at")
+        .select("id, job_id, status, clips, created_at, decided_at")
         .in("status", ["in_review", "approved"])
         .gte("created_at", since)
         .order("created_at", { ascending: false })
@@ -326,6 +355,24 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         ok: true,
         content: JSON.stringify({ proposed: true, week, note: "The founder approves or edits it on the goal card in Approvals." }),
         summary: "Proposed a weekly goal",
+      };
+    }
+    case "create_video_brief": {
+      const parsed = briefInput.safeParse(input);
+      if (!parsed.success) return invalid("hook is required (up to 200 characters); broll and visuals up to 600; pacing up to 300; project_id must be a project id.");
+      let project = parsed.data.project_id ?? null;
+      if (!project) {
+        // Latest finished clipping project: under RLS, so only the founder's own videos.
+        const { data: latest } = await supabase.from("jobs").select("id").eq("status", "done").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        project = (latest as { id: string } | null)?.id ?? null;
+      }
+      if (!project) return { ok: false, content: JSON.stringify({ error: "The founder has no clips yet. Suggest they make clips from one of their own videos first." }), summary: "No project with clips" };
+      const { hook, broll, visuals, pacing } = parsed.data;
+      await rpcOrThrow(supabase, "cmo_create_video_brief", { p_job: project, p_hook: hook, p_broll: broll, p_visuals: visuals, p_pacing: pacing });
+      return {
+        ok: true,
+        content: JSON.stringify({ created: true, project_id: project, note: "The brief is a card in Approvals. Nothing is edited until the founder approves it and then approves the assistant's changes." }),
+        summary: "Wrote a video brief",
       };
     }
     default:

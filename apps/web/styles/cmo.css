@@ -788,3 +788,9 @@ html[data-theme] .cmo-view h1 { font: 400 clamp(36px, 4vw, 52px) / 1 var(--ds-fo
 .cmo-goal-target { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ds-text-12); color: var(--ds-fg-4); }
 .cmo-goal-target input { width: 5.5em; min-height: 32px; padding: 0 8px; border: 1px solid var(--ds-line); border-radius: 8px; background: var(--ds-panel); color: var(--ds-fg-1); font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .cmo-goal-bar span { transition: none; } }
+
+/* Video brief cards (P3): the CMO's editing brief, opened in the project assistant */
+.cmo-briefs { padding-bottom: 0; }
+.cmo-brief-parts { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: var(--ds-text-12); }
+.cmo-brief-parts dt { font-weight: 600; color: var(--ds-fg-4); }
+.cmo-brief-parts dd { margin: 0; min-width: 0; color: var(--ds-fg-1); overflow-wrap: anywhere; }

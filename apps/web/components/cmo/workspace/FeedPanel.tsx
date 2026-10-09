@@ -15,6 +15,7 @@ import type { AgentSummary, InboxCard, Workspace } from "@/lib/cmo/workspace";
 
 import { xIntent, type Actions } from "./actions";
 import { AgentMark } from "./AgentMark";
+import { BriefCards } from "./BriefCards";
 import { CardDrawer } from "./CardDrawer";
 import { GoalCards } from "./GoalCards";
 import { NewVideoPack } from "./NewVideoPack";
@@ -49,10 +50,11 @@ export function FeedPanel({ ws, actions }: Props) {
       <div className="cmo-section">
         <button type="button" className="cmo-section-head" aria-expanded={inboxOpen} onClick={() => setInboxOpen(!inboxOpen)}>
           <span>Awaiting your approval</span>
-          <small>{cards.filter((c) => !waiting(c)).length + ws.goals.filter((g) => g.status === "proposed").length}</small>
+          <small>{cards.filter((c) => !waiting(c)).length + ws.goals.filter((g) => g.status === "proposed").length + ws.briefs.length}</small>
           <Icon name={inboxOpen ? "chevron-up" : "chevron-down"} size={16} />
         </button>
         {inboxOpen ? <GoalCards goals={ws.goals} actions={actions} /> : null}
+        {inboxOpen ? <BriefCards briefs={ws.briefs} actions={actions} /> : null}
         {inboxOpen ? (
           cards.length === 0 ? (
             <div className="cmo-empty-card">
