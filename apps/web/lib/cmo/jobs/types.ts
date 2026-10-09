@@ -5,8 +5,15 @@
 
 import type { DocumentKind } from "../documents";
 
-export type CmoJobKind = "plan_week" | "post_draft" | "sales_scan" | "video_pack" | "competitor_research" | "pull_metrics" | "summarize_memory";
-export const CMO_JOB_KINDS: CmoJobKind[] = ["plan_week", "post_draft", "sales_scan", "video_pack", "competitor_research", "pull_metrics", "summarize_memory"];
+export type CmoJobKind = "plan_week" | "post_draft" | "sales_scan" | "video_pack" | "competitor_research" | "pull_metrics" | "summarize_memory" | "review_week";
+export const CMO_JOB_KINDS: CmoJobKind[] = ["plan_week", "post_draft", "sales_scan", "video_pack", "competitor_research", "pull_metrics", "summarize_memory", "review_week"];
+
+/** What a weekly goal counts. Only things the product can measure itself. */
+export type GoalMetric = "posts" | "replies" | "clips" | "views";
+export const GOAL_METRICS: GoalMetric[] = ["posts", "replies", "clips", "views"];
+export type Goal = { id: string; week: string; goal: string; metric: GoalMetric; target: number; status: "proposed" | "approved" | "rejected"; result: number | null };
+/** What a week reached: posts approved, Reddit replies the founder marked, clip packs approved, views on posts. */
+export type WeekResults = Record<GoalMetric, number>;
 
 /** What a memory or a lesson is about; a job reads its own topic plus `general`. */
 export type MemoryTopic = "general" | "post" | "sales" | "video" | "research";
@@ -104,6 +111,13 @@ export interface CmoStore {
   /** The latest lesson for each topic. */
   lessons(userId: string): Promise<Lesson[]>;
   saveLessons(userId: string, runId: string, week: string, lessons: { topic: MemoryTopic; body: string }[]): Promise<number>;
+  /** The goal for the week starting `week` (Monday), whatever its status. */
+  goal(userId: string, week: string): Promise<Goal | null>;
+  /** What happened since `since` (ISO), counted per goal metric. */
+  weekResults(userId: string, since: string): Promise<WeekResults>;
+  /** Proposes a goal for the founder to approve; null when that week's goal is already approved. */
+  proposeGoal(userId: string, runId: string, week: string, goal: { goal: string; metric: GoalMetric; target: number }): Promise<Goal | null>;
+  recordGoalResult(userId: string, week: string, result: number): Promise<boolean>;
   items(userId: string, filter: { statuses?: ItemStatus[]; since?: string; department?: ItemRow["department"]; limit?: number }): Promise<ItemRow[]>;
   planWeek(userId: string, runId: string, items: PlanItem[]): Promise<number>;
   saveDraft(userId: string, runId: string, itemId: string | null, idea: string, body: Record<string, unknown>, priority: ItemRow["priority"]): Promise<ItemRow>;

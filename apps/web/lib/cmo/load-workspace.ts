@@ -5,11 +5,12 @@ import { agentChatProvider } from "@/lib/agent/model";
 
 import { DEMO_CHAT_TITLE, demoAllowed, demoCalendar, demoChat, demoInbox, demoLinks, demoLog, demoMetrics, demoSeo } from "./demo";
 import { llmReady } from "./jobs/llm";
+import { mondayOf } from "./jobs/summarize-memory";
 import { isoDay, type CmoJobKind, type CompetitorInsight, type ItemRow, type ScorePart, type Step } from "./jobs/types";
 import { socialReaderReady } from "./social/reddit";
 import { loadCmoState } from "./state";
 import { suggestFixes } from "./suggest";
-import { AGENTS, type CalendarItem, type ClipPreview, type InboxCard, type InsightView, type Metrics, type JobId, type LogEntry, type PostCard, type SalesCard, type VideoCard, type Workspace } from "./workspace";
+import { AGENTS, type CalendarItem, type ClipPreview, type GoalView, type InboxCard, type InsightView, type Metrics, type JobId, type LogEntry, type PostCard, type SalesCard, type VideoCard, type Workspace } from "./workspace";
 
 type CmoRunRow = {
   id: string;
@@ -22,7 +23,7 @@ type CmoRunRow = {
   created_at: string;
 };
 
-const JOB_OF: Record<CmoRunRow["kind"], JobId> = { onboard: "W0", plan_week: "W1", post_draft: "W2", sales_scan: "W4", video_pack: "W5", pull_metrics: "W6", competitor_research: "W7", summarize_memory: "W8" };
+const JOB_OF: Record<CmoRunRow["kind"], JobId> = { onboard: "W0", plan_week: "W1", post_draft: "W2", sales_scan: "W4", video_pack: "W5", pull_metrics: "W6", competitor_research: "W7", summarize_memory: "W8", review_week: "W9" };
 
 type VideoPackRow = {
   id: string;
@@ -155,7 +156,7 @@ function clipsHref(body: Record<string, unknown>): string {
 function statusLine(runs: CmoRunRow[], awaiting: number): Workspace["status"] {
   const active = runs.find((r) => r.status === "running" || r.status === "queued");
   if (active) {
-    const what = { plan_week: "planning your week", post_draft: "drafting a post for X", sales_scan: "scanning Reddit for conversations", video_pack: "making your video pack", onboard: "building your plan", competitor_research: "studying your competitors on X", pull_metrics: "reading the numbers on your posts", summarize_memory: "writing this week's lessons" }[active.kind];
+    const what = { plan_week: "planning your week", post_draft: "drafting a post for X", sales_scan: "scanning Reddit for conversations", video_pack: "making your video pack", onboard: "building your plan", competitor_research: "studying your competitors on X", pull_metrics: "reading the numbers on your posts", summarize_memory: "writing this week's lessons", review_week: "reviewing your week" }[active.kind];
     return { text: `Your CMO is ${what}. Follow along in Activity.`, tone: "running" };
   }
   const latest = runs[0];
@@ -194,7 +195,7 @@ export async function loadWorkspace(supabase: SupabaseClient): Promise<Workspace
       .order("created_at", { ascending: false })
       .limit(10),
   ]);
-  const [realMetrics, insight] = await Promise.all([loadMetrics(supabase), loadInsight(supabase)]);
+  const [realMetrics, insight, goals] = await Promise.all([loadMetrics(supabase), loadInsight(supabase), loadGoals(supabase)]);
   const packs = (packRows ?? []) as unknown as VideoPackRow[];
   const taskIds = packs.flatMap((pack) => pack.exports.map((item) => item.task_id));
   const { data: taskRows } = taskIds.length ? await supabase.from("tasks").select("id, status").in("id", taskIds) : { data: [] };
@@ -244,6 +245,7 @@ export async function loadWorkspace(supabase: SupabaseClient): Promise<Workspace
       runnable: (agent.department === "post" && llmReady("x_writer")) || (agent.department === "sales" && llmReady("sales") && socialReaderReady()) || agent.department === "video",
     })),
     inbox,
+    goals,
     calendar,
     metrics: realMetrics ?? (demo ? demoMetrics() : null),
     insight,
@@ -254,6 +256,41 @@ export async function loadWorkspace(supabase: SupabaseClient): Promise<Workspace
     chatTitle: chatLive ? null : demo ? DEMO_CHAT_TITLE : null,
     live: { inbox: true, calendar: true, chat: chatLive, metrics: realMetrics !== null, seo: false, links: false },
   };
+}
+
+/** Reached so far since `since` for one goal metric, read under RLS (the founder's own rows). */
+async function progressOf(supabase: SupabaseClient, metric: GoalView["metric"], since: string): Promise<number> {
+  if (metric === "views") {
+    const { data } = await supabase.from("post_metrics").select("item_id, views").gte("measured_at", since).limit(1000);
+    const best = new Map<string, number>();
+    for (const row of (data ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+    return [...best.values()].reduce((a, b) => a + b, 0);
+  }
+  const table = { posts: "content_items", replies: "opportunities", clips: "video_packs" }[metric];
+  const statuses = { posts: ["approved", "published"], replies: ["replied"], clips: ["approved"] }[metric];
+  let query = supabase.from(table).select("id", { count: "exact", head: true }).in("status", statuses).gte("decided_at", since);
+  if (metric === "posts") query = query.eq("department", "post");
+  const { count } = await query;
+  return count ?? 0;
+}
+
+/** This week's and next week's goals (P2). Progress is live for this week's approved goal. */
+async function loadGoals(supabase: SupabaseClient): Promise<GoalView[]> {
+  const week = mondayOf();
+  const next = isoDay(7, new Date(`${week}T00:00:00Z`));
+  const { data } = await supabase
+    .from("cmo_goals")
+    .select("id, week, goal, metric, target, status")
+    .in("week", [week, next])
+    .in("status", ["proposed", "approved"])
+    .order("week");
+  const rows = (data ?? []) as Omit<GoalView, "progress">[];
+  return Promise.all(
+    rows.map(async (row) => ({
+      ...row,
+      progress: row.status === "approved" && row.week === week ? await progressOf(supabase, row.metric, `${week}T00:00:00.000Z`) : null,
+    })),
+  );
 }
 
 /**

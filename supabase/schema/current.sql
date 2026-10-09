@@ -1647,7 +1647,7 @@ CREATE TABLE public.cmo_runs (
     CONSTRAINT cmo_runs_credits_check CHECK ((credits >= 0)),
     CONSTRAINT cmo_runs_error_check CHECK ((char_length(error) <= 500)),
     CONSTRAINT cmo_runs_input_check CHECK (((jsonb_typeof(input) = 'object'::text) AND (octet_length((input)::text) <= 4096))),
-    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text, 'summarize_memory'::text]))),
+    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text, 'summarize_memory'::text, 'review_week'::text]))),
     CONSTRAINT cmo_runs_output_check CHECK (((output IS NULL) OR ((jsonb_typeof(output) = 'object'::text) AND (octet_length((output)::text) <= 16384)))),
     CONSTRAINT cmo_runs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
     CONSTRAINT cmo_runs_steps_check CHECK (((jsonb_typeof(steps) = 'array'::text) AND (octet_length((steps)::text) <= 16384)))
@@ -1892,6 +1892,67 @@ begin
   insert into public.content_items (user_id, department, platform, day, idea, reason, body)
   values (v_user, p_department, v_platform, p_day, trim(p_idea), coalesce(trim(p_reason), ''), p_body || jsonb_build_object('source', 'cmo_chat'))
   returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_goals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    run_id uuid,
+    week date NOT NULL,
+    goal text NOT NULL,
+    metric text NOT NULL,
+    target integer NOT NULL,
+    status text DEFAULT 'proposed'::text NOT NULL,
+    result integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT cmo_goals_goal_check CHECK (((char_length(goal) >= 3) AND (char_length(goal) <= 300))),
+    CONSTRAINT cmo_goals_metric_check CHECK ((metric = ANY (ARRAY['posts'::text, 'replies'::text, 'clips'::text, 'views'::text]))),
+    CONSTRAINT cmo_goals_result_check CHECK ((result >= 0)),
+    CONSTRAINT cmo_goals_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'approved'::text, 'rejected'::text]))),
+    CONSTRAINT cmo_goals_target_check CHECK (((target >= 1) AND (target <= 1000000))),
+    CONSTRAINT cmo_goals_week_check CHECK ((EXTRACT(isodow FROM week) = (1)::numeric))
+);
+
+
+--
+-- Name: cmo_decide_goal(uuid, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_decide_goal(p_id uuid, p_action text, p_goal text DEFAULT NULL::text, p_target integer DEFAULT NULL::integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_goals;
+begin
+  if p_action is null or p_action not in ('approve', 'reject') then
+    raise exception 'Choose approve or reject.' using errcode = '22023';
+  end if;
+  if p_goal is not null and (char_length(trim(p_goal)) < 3 or char_length(p_goal) > 300) then
+    raise exception 'Describe the goal in 3 to 300 characters.' using errcode = '22023';
+  end if;
+  if p_target is not null and (p_target < 1 or p_target > 1000000) then
+    raise exception 'The target must be between 1 and 1,000,000.' using errcode = '22023';
+  end if;
+  update public.cmo_goals
+  set status = case p_action when 'approve' then 'approved' else 'rejected' end,
+      goal = coalesce(nullif(trim(p_goal), ''), goal),
+      target = coalesce(p_target, target),
+      decided_at = now()
+  where id = p_id and user_id = v_user
+  returning * into v_row;
+  if not found then
+    raise exception 'Goal not found.' using errcode = 'P0002';
+  end if;
   return v_row;
 end;
 $$;
@@ -2158,7 +2219,8 @@ CREATE FUNCTION public.cmo_job_daily_limit(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 5 when 'post_draft' then 10 when 'sales_scan' then 3 when 'video_pack' then 3
-    when 'competitor_research' then 2 when 'pull_metrics' then 2 when 'summarize_memory' then 1 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 2 when 'summarize_memory' then 1 when 'review_week' then 1
+    else 0 end
 $$;
 
 
@@ -2170,7 +2232,8 @@ CREATE FUNCTION public.cmo_job_price(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 1 when 'post_draft' then 1 when 'sales_scan' then 5 when 'video_pack' then 1
-    when 'competitor_research' then 2 when 'pull_metrics' then 0 when 'summarize_memory' then 0 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 0 when 'summarize_memory' then 0 when 'review_week' then 0
+    else 0 end
 $$;
 
 
@@ -2258,6 +2321,77 @@ begin
     v_count := v_count + 1;
   end loop;
   return v_count;
+end;
+$$;
+
+
+--
+-- Name: cmo_propose_goal(uuid, uuid, date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_propose_goal(p_user uuid, p_run uuid, p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  return public.cmo_put_goal(p_user, p_run, p_week, p_goal, p_metric, p_target);
+end;
+$$;
+
+
+--
+-- Name: cmo_put_goal(uuid, uuid, date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_put_goal(p_user uuid, p_run uuid, p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_row public.cmo_goals;
+begin
+  if p_week is null or extract(isodow from p_week) <> 1 then
+    raise exception 'The week must start on a Monday.' using errcode = '22023';
+  end if;
+  if p_week < date_trunc('week', current_date)::date or p_week > date_trunc('week', current_date)::date + 7 then
+    raise exception 'Goals are for this week or next week.' using errcode = '22023';
+  end if;
+  if p_goal is null or char_length(trim(p_goal)) < 3 or char_length(p_goal) > 300 then
+    raise exception 'Describe the goal in 3 to 300 characters.' using errcode = '22023';
+  end if;
+  if p_metric is null or p_metric not in ('posts', 'replies', 'clips', 'views') then
+    raise exception 'The goal must count posts, replies, clips or views.' using errcode = '22023';
+  end if;
+  if p_target is null or p_target < 1 or p_target > 1000000 then
+    raise exception 'The target must be between 1 and 1,000,000.' using errcode = '22023';
+  end if;
+  select * into v_row from public.cmo_goals where user_id = p_user and week = p_week for update;
+  if found and v_row.status = 'approved' then
+    raise exception 'This week''s goal is already approved. Edit it on the goal card.' using errcode = 'P0001';
+  end if;
+  insert into public.cmo_goals (user_id, run_id, week, goal, metric, target)
+  values (p_user, p_run, p_week, trim(p_goal), p_metric, p_target)
+  on conflict (user_id, week) do update
+    set goal = excluded.goal, metric = excluded.metric, target = excluded.target, run_id = excluded.run_id,
+        status = 'proposed', decided_at = null, created_at = now()
+  returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_record_goal_result(uuid, date, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_record_goal_result(p_user uuid, p_week date, p_result integer) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  update public.cmo_goals set result = greatest(0, p_result)
+  where user_id = p_user and week = p_week and status = 'approved';
+  return found;
 end;
 $$;
 
@@ -2561,6 +2695,20 @@ begin
   on conflict (run_id) do update set clips = excluded.clips, captions = excluded.captions
   returning * into v_row;
   return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_set_week_goal(date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_set_week_goal(p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  return public.cmo_put_goal(public.require_user(), null, p_week, p_goal, p_metric, p_target);
 end;
 $$;
 
@@ -7524,6 +7672,22 @@ ALTER TABLE ONLY public.clips
 
 
 --
+-- Name: cmo_goals cmo_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_goals cmo_goals_user_id_week_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_user_id_week_key UNIQUE (user_id, week);
+
+
+--
 -- Name: cmo_insights cmo_insights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7960,6 +8124,13 @@ CREATE INDEX caption_translations_user_idx ON public.caption_translations USING 
 --
 
 CREATE UNIQUE INDEX clips_one_full_idx ON public.clips USING btree (job_id) WHERE (kind = 'full'::text);
+
+
+--
+-- Name: cmo_goals_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_goals_user_idx ON public.cmo_goals USING btree (user_id, week DESC);
 
 
 --
@@ -8454,6 +8625,22 @@ ALTER TABLE ONLY public.clips
 
 
 --
+-- Name: cmo_goals cmo_goals_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: cmo_goals cmo_goals_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: cmo_insights cmo_insights_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8942,6 +9129,12 @@ ALTER TABLE public.caption_translations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clips ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cmo_goals; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_goals ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: cmo_insights; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -9096,6 +9289,13 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cmo_goals read own CMO goals; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own CMO goals" ON public.cmo_goals FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
 
 --
 -- Name: cmo_lessons read own CMO lessons; Type: POLICY; Schema: public; Owner: -

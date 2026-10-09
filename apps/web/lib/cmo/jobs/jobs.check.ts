@@ -9,7 +9,8 @@ process.env.OPENCMO_AGENT_FAKE = "1";
 
 import { checkPost } from "./check-post";
 import { mondayOf } from "./summarize-memory";
-import { knownNumbers, recall } from "./context";
+import { goalBlock, knownNumbers, recall } from "./context";
+import { goalLine, nextGoalFallback } from "./review-week";
 import { pickDueItem } from "./draft-post";
 import { toPlanItems } from "./plan-week";
 import { drainCmoQueue } from "./runner";
@@ -255,7 +256,7 @@ async function main() {
   assert.deepEqual(dueLoops({ ...base, weekday: 1 }).map((r) => r.kind), ["plan_week", "post_draft"]);
   assert.deepEqual(
     dueLoops({ ...base, weekday: 0, competitorHandles: 2, publishedRecently: 3 }).map((r) => r.kind),
-    ["competitor_research", "summarize_memory", "pull_metrics"],
+    ["competitor_research", "summarize_memory", "review_week", "pull_metrics"],
   );
   const sales = dueLoops({ ...base, dueSales: { idea: "People chasing late invoices" } });
   assert.deepEqual([sales[0]!.kind, sales[0]!.input.brief], ["sales_scan", "People chasing late invoices"]);
@@ -282,7 +283,32 @@ async function main() {
   await drainCmoQueue(quiet.store);
   assert.deepEqual([w8q.status, quiet.lessons.length], ["done", 0], "a quiet week writes nothing");
 
-  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, W8 memory, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
+  // Weekly review: measures the approved goal, writes the general lesson, proposes next week's goal.
+  const week = mondayOf();
+  const nextWeek = isoDay(7, new Date(`${week}T00:00:00Z`));
+  const mem9 = memoryStore(docs, []);
+  mem9.goals.push({ id: "g1", week, goal: "Approve 3 posts on X", metric: "posts", target: 3, status: "approved", result: null });
+  Object.assign(mem9.results, { posts: 4, replies: 1, clips: 0, views: 120 });
+  const w9 = mem9.enqueue("review_week");
+  await drainCmoQueue(mem9.store);
+  assert.equal(w9.status, "done", `weekly review done (${w9.error})`);
+  assert.equal(mem9.goals[0]!.result, 4, "the week's result is recorded on the approved goal");
+  assert.ok(mem9.lessons.some((l) => l.topic === "general" && l.body.includes("met")), "general lesson written");
+  const proposal = mem9.goals.find((g) => g.week === nextWeek);
+  assert.deepEqual([proposal?.status, proposal?.metric, proposal?.target], ["proposed", "posts", 4], "met → next target a little higher, still only proposed");
+  assert.equal(nextGoalFallback(null, mem9.results).metric, "posts", "no goal yet → start with posts");
+  assert.ok(goalLine({ ...mem9.goals[0]!, target: 10 }, mem9.results).includes("not met"));
+  // An approved next-week goal is never replaced by a proposal.
+  const mem9b = memoryStore(docs, []);
+  mem9b.goals.push({ id: "g2", week: nextWeek, goal: "Join 2 Reddit threads", metric: "replies", target: 2, status: "approved", result: null });
+  mem9b.enqueue("review_week");
+  await drainCmoQueue(mem9b.store);
+  assert.deepEqual(mem9b.goals.map((g) => [g.status, g.goal]), [["approved", "Join 2 Reddit threads"]]);
+  // The weekly plan reads the approved goal.
+  assert.ok(goalBlock(mem9.goals[0]!).includes("Approve 3 posts on X"));
+  assert.equal(goalBlock(proposal ?? null), "", "a goal still proposed does not steer the plan");
+
+  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, W8 memory, W9 review, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
 }
 
 main().catch((error) => {

@@ -6,7 +6,8 @@
 
 import { z } from "zod";
 
-import { documentsBlock, insightBlock, recall } from "./context";
+import { documentsBlock, goalBlock, insightBlock, recall } from "./context";
+import { mondayOf } from "./summarize-memory";
 import { skillText } from "../skills";
 import { fakeAllowed, structured } from "./llm";
 import type { JobContext, JobOutput } from "./runner";
@@ -77,12 +78,13 @@ export async function planWeek(ctx: JobContext): Promise<JobOutput> {
     d.strategy ? "Read your strategy and content plan" : "No strategy yet: planned from your product",
   );
   const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
-  const { recent, memories, insight } = await ctx.step(
+  const { recent, memories, insight, goal } = await ctx.step(
     "get_results",
     "Looked at last week",
     async () => ({
       recent: await store.items(run.user_id, { statuses: ["approved", "published", "skipped"], since, limit: 50 }),
       memories: await recall(store, run.user_id, 20),
+      goal: await store.goal(run.user_id, mondayOf()),
       insight: await store.latestInsight(run.user_id),
     }),
     ({ recent: r }) => {
@@ -99,7 +101,7 @@ export async function planWeek(ctx: JobContext): Promise<JobOutput> {
     return structured({
       agent: "planner",
       system: SYSTEM,
-      prompt: `${documentsBlock(docs)}\n\n${memories}\n\n${insightBlock(insight)}\n\n<last_week>\n${lastWeek}\n</last_week>\n\n${typeof run.input.brief === "string" && run.input.brief ? `Your CMO's brief for this week: "${run.input.brief.slice(0, 300)}"\n\n` : ""}Today is ${isoDay()}. Plan the next seven days.`,
+      prompt: `${documentsBlock(docs)}\n\n${memories}\n\n${goalBlock(goal)}${insightBlock(insight)}\n\n<last_week>\n${lastWeek}\n</last_week>\n\n${typeof run.input.brief === "string" && run.input.brief ? `Your CMO's brief for this week: "${run.input.brief.slice(0, 300)}"\n\n` : ""}Today is ${isoDay()}. Plan the next seven days.`,
       schema: PlanSchema,
       label: "plan_week",
       failure: "We could not plan your week. Try again in a minute.",

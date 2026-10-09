@@ -11,6 +11,7 @@ import { draftPost } from "./draft-post";
 import { LlmError } from "./llm-error";
 import { planWeek } from "./plan-week";
 import { pullMetrics } from "./pull-metrics";
+import { reviewWeek } from "./review-week";
 import { salesScan } from "./sales-scan";
 import { summarizeMemory } from "./summarize-memory";
 import { videoPack } from "./video-pack";
@@ -44,6 +45,7 @@ export const JOBS: Record<CmoJobKind, Job> = {
   competitor_research: competitorResearch,
   pull_metrics: pullMetrics,
   summarize_memory: summarizeMemory,
+  review_week: reviewWeek,
 };
 
 /** Lượt bị nhận lại bởi một worker khác (lease hết): dừng im lặng, không ghi gì nữa. */

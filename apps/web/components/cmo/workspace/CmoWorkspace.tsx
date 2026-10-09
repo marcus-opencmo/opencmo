@@ -227,6 +227,17 @@ export function CmoWorkspace({ initial }: { initial: Workspace }) {
         return false;
       }
     },
+    async goal(goal, act) {
+      try {
+        await api(`/cmo/goals/${goal.id}`, jsonBody(act));
+        setToast(act.action === "approve" ? "Goal approved. Your CMO plans the week around it." : "Goal dismissed. Ask your CMO for a different one.");
+        void refresh();
+        return true;
+      } catch (error) {
+        fail(error);
+        return false;
+      }
+    },
     async run(kind) {
       if (ws.demo && !ws.live.inbox) {
         setToast("Demo data: nothing was started.");

@@ -777,3 +777,14 @@ html[data-theme] .cmo-part-bar > span { background: var(--ds-cyp); }
 .ws[data-bleed] .cmo-view { padding: 40px clamp(20px, 3vw, 40px) 60px; max-width: 1040px; }
 html[data-theme] .cmo-view h1 { font: 400 clamp(36px, 4vw, 52px) / 1 var(--ds-font-display); letter-spacing: -.03em; }
 .cmo-theme { flex: none; }
+
+/* Weekly goal cards (P2): a goal the founder approves once, with live progress */
+.cmo-goals { padding-bottom: 0; }
+.cmo-goal-text { margin: 0; font: 500 17px / 1.3 var(--ds-font-display); color: var(--ds-fg-1); text-wrap: pretty; }
+.cmo-goal-progress { display: grid; gap: 6px; }
+.cmo-goal-progress small { font-size: var(--ds-text-12); color: var(--ds-fg-4); font-variant-numeric: tabular-nums; }
+.cmo-goal-bar { height: 8px; border-radius: 999px; background: var(--ds-raised); overflow: hidden; }
+.cmo-goal-bar span { display: block; height: 100%; border-radius: inherit; background: var(--ds-cyp, var(--ds-success)); transition: width .4s var(--ds-ease-out); }
+.cmo-goal-target { display: inline-flex; align-items: center; gap: 6px; font-size: var(--ds-text-12); color: var(--ds-fg-4); }
+.cmo-goal-target input { width: 5.5em; min-height: 32px; padding: 0 8px; border: 1px solid var(--ds-line); border-radius: 8px; background: var(--ds-panel); color: var(--ds-fg-1); font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: reduce) { .cmo-goal-bar span { transition: none; } }

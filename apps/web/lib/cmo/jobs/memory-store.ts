@@ -4,12 +4,14 @@
  */
 
 import { latestPerTopic } from "./context";
-import { isoDay, type ClipJob, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type ItemRow, type Lesson, type MemoryEvent, type Opportunity, type PlatformCaptions, type QueuedRun, type Step } from "./types";
+import { isoDay, type ClipJob, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type Goal, type ItemRow, type Lesson, type MemoryEvent, type Opportunity, type PlatformCaptions, type QueuedRun, type Step, type WeekResults } from "./types";
 
 export type RunState = QueuedRun & { status: string; steps: Step[]; error: string | null; output: unknown; notBefore?: number };
 
 export function memoryStore(docs: Documents, memories: string[] = ["Skipped the X post \"Pricing\": too salesy"], events: MemoryEvent[] = []) {
   const lessons: Lesson[] = [];
+  const goals: Goal[] = [];
+  const results: WeekResults = { posts: 0, replies: 0, clips: 0, views: 0 };
   const runs: RunState[] = [];
   const items: ItemRow[] = [];
   const opps: Opportunity[] = [];
@@ -44,6 +46,21 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
     memories: async () => memories,
     memoryEvents: async () => events,
     lessons: async () => latestPerTopic([...lessons].sort((a, b) => b.week.localeCompare(a.week))),
+    goal: async (_u, week) => goals.find((g) => g.week === week) ?? null,
+    weekResults: async () => ({ ...results }),
+    async proposeGoal(_u, _run, week, goal) {
+      const at = goals.findIndex((g) => g.week === week);
+      if (at >= 0 && goals[at]!.status === "approved") return null;
+      if (at >= 0) goals.splice(at, 1);
+      const row: Goal = { id: id(), week, ...goal, status: "proposed", result: null };
+      goals.push(row);
+      return row;
+    },
+    async recordGoalResult(_u, week, result) {
+      const goal = goals.find((g) => g.week === week && g.status === "approved");
+      if (goal) goal.result = result;
+      return Boolean(goal);
+    },
     async saveLessons(_u, _run, week, list) {
       for (const l of list) {
         const at = lessons.findIndex((x) => x.week === week && x.topic === l.topic);
@@ -104,5 +121,5 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
     runs.push(run);
     return run;
   };
-  return { store, runs, items, opps, jobs, packs, insights, metrics, lessons, enqueue };
+  return { store, runs, items, opps, jobs, packs, insights, metrics, lessons, goals, results, enqueue };
 }

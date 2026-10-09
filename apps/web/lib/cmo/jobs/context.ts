@@ -1,7 +1,7 @@
 /** Chữ đưa vào prompt: document, trí nhớ, bài gần đây. Gom một chỗ để W1/W2 (và chat) nói cùng một thứ. */
 
 import { DOCUMENTS } from "../documents";
-import type { CmoStore, CompetitorInsight, Documents, ItemRow, Lesson, MemoryTopic } from "./types";
+import type { CmoStore, CompetitorInsight, Documents, Goal, ItemRow, Lesson, MemoryTopic } from "./types";
 
 const DOC_ORDER = ["product", "strategy", "content_strategy", "competitors"] as const;
 
@@ -16,6 +16,12 @@ export function documentsBlock(docs: Documents): string {
 export function memoriesBlock(memories: string[]): string {
   if (!memories.length) return "<memories>(none)</memories>";
   return `<memories>\n${memories.map((m) => `- ${m}`).join("\n")}\n</memories>`;
+}
+
+/** The goal the founder approved for this week; the plan should serve it. Empty when there is none. */
+export function goalBlock(goal: Goal | null): string {
+  if (!goal || goal.status !== "approved") return "";
+  return `<week_goal approved_by="founder">${goal.goal} (target: ${goal.target} ${goal.metric}). Plan the week so this is reachable.</week_goal>\n\n`;
 }
 
 /** Keeps the newest lesson per topic (rows must come newest week first). */
