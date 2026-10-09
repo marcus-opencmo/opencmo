@@ -15,9 +15,9 @@
   },
   "devDependencies": {
     "@types/node": "^24.10.1",
-    "lucide-static": "1.48.0",
+    "lucide-static": "1.52.0",
     "typescript": "~5.9.3",
-    "vitest": "^5.0.1",
+    "vitest": "^5.0.3",
     "@opencmo/clip-doc": "*"
   }
 }
