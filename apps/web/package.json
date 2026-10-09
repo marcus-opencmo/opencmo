@@ -31,7 +31,7 @@
     "@opencmo/clip-render": "*",
     "@opencmo/clip-three": "*",
     "@opencmo/editor-core": "*",
-    "@sentry/nextjs": "^10.0.0",
+    "@sentry/nextjs": "^11.4.0",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.45.0",
     "canvaskit-wasm": "^0.42.0",
