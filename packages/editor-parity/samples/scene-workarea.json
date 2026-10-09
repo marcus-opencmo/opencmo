@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "workarea": [
+          2,
+          4
+        ],
+        "children": [
+          {
+            "kind": "rect",
+            "y": 430,
+            "width": 100,
+            "height": 100,
+            "fill": "#FACC15",
+            "tracks": [
+              {
+                "property": "x",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0
+                  },
+                  {
+                    "time": 4,
+                    "value": 440
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

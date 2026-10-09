@@ -1,0 +1,9 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "texts": [{ "text": "Thiếu style", "start": 0, "end": 2, "style": null }]
+  },
+  "error": "Text style needs font, size, color, bold and position."
+}

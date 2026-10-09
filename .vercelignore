@@ -1,0 +1,52 @@
+# Vercel chỉ build `apps/web` (Root Directory của project), nhưng CLI tải lên từ
+# gốc repo vì `apps/web/lib/settings-schema.ts` import ngược ra
+# `packages/contracts/`. Không có file này thì bản tải lên là 783MB và Vercel
+# từ chối ở trần 100MB mỗi file (.venv312, next-swc, cache webpack).
+#
+# Giữ lại: apps/web (trừ build artifact) và packages/contracts.
+
+node_modules
+**/node_modules
+
+# Build artifact — Vercel tự build lại. `.next-e2e` phải nằm đây: `next build`
+# type-check cả file validator sinh ra trong đó, và nó trỏ tới route của bản
+# build E2E cũ nên build production đổ ngay ở bước type-check.
+.next
+**/.next
+.next-e2e
+**/.next-e2e
+
+# Neo vào gốc repo: `**/out` cũng khớp một route tên `out` nếu sau này có —
+# xem ghi chú ở mục "clip đã render" bên dưới về đúng cái bẫy đó.
+/out
+
+# Engine Python: không tham gia build web. Worker chạy trên Modal.
+packages/engine
+# Exporter Node cũng chỉ chạy trên worker (task `render_document`).
+/packages/clip-export
+
+# Môi trường ảo và dữ liệu thử.
+.venv*
+**/.venv*
+.local-data
+
+# Clip đã render: CHỈ thư mục ở gốc repo, neo bằng dấu `/` ở đầu.
+#
+# 21/09: ở đây từng là hai dòng không neo, và chúng đã im lặng cắt SÁU thư mục
+# mã nguồn khỏi bản tải lên — `app/api/v1/clips/{file,draft,exports,preview,
+# source}` và `app/app/projects/[id]/clips/[clipId]/edit`. Trên production,
+# preview, tải clip, editor và export đều trả 404 kèm `x-matched-path: /404`,
+# trong khi build local vẫn xanh vì local không đọc file này.
+#
+# Thư mục render thật nằm ở `packages/engine/clips`, mà `packages/engine` đã bị
+# loại nguyên khối ở trên. Đừng bỏ dấu `/` ở đầu.
+/clips
+
+# Ảnh vàng của việc thay editor (12MB PNG): công cụ đo, build web không đọc.
+# Có neo: một thư mục route tên `editor-parity` không bao giờ bị cắt nhầm.
+/packages/editor-parity
+
+# E2E fixture: có file mp4 300MB dựng cho ca upload-resume.
+apps/web/e2e/fixtures
+
+.git

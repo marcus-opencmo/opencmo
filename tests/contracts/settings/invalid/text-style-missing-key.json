@@ -1,0 +1,12 @@
+{
+  "source_duration": 10,
+  "settings": {
+    "source_start": 0,
+    "source_end": 10,
+    "caption_style": {
+      "font": "DejaVu Sans",
+      "size": 64
+    }
+  },
+  "error": "Text style needs font, size, color, bold and position."
+}

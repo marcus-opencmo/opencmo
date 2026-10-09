@@ -1,0 +1,5 @@
+{
+  "source_duration": 600,
+  "settings": [],
+  "error": "Clip settings must be an object."
+}

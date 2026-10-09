@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 40,
+            "y": 400,
+            "text": "Color",
+            "color": "#F43F5E",
+            "fontSize": 120,
+            "fontWeight": 700,
+            "tracks": [
+              {
+                "property": "color",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": "#F43F5E",
+                    "easing": "easeInOut"
+                  },
+                  {
+                    "time": 2,
+                    "value": "#22D3EE"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,117 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 40,
+            "text": "Inter Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Inter",
+            "fontSize": 44,
+            "fontWeight": 400
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 128,
+            "text": "Montserrat Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Montserrat",
+            "fontSize": 44,
+            "fontWeight": 700
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 216,
+            "text": "Bangers Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Bangers",
+            "fontSize": 44,
+            "fontWeight": 400
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 304,
+            "text": "Chewy Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Chewy",
+            "fontSize": 44,
+            "fontWeight": 700
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 392,
+            "text": "Figtree Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Figtree",
+            "fontSize": 44,
+            "fontWeight": 400
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 480,
+            "text": "Geologica Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Geologica",
+            "fontSize": 44,
+            "fontWeight": 700
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 568,
+            "text": "Lora Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Lora",
+            "fontSize": 44,
+            "fontWeight": 400
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 656,
+            "text": "Nunito Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Nunito",
+            "fontSize": 44,
+            "fontWeight": 700
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 744,
+            "text": "Source Code Pro Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Source Code Pro",
+            "fontSize": 44,
+            "fontWeight": 400
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 832,
+            "text": "Urbanist Ag 123",
+            "color": "#FFFFFF",
+            "fontFamily": "Urbanist",
+            "fontSize": 44,
+            "fontWeight": 700
+          }
+        ]
+      }
+    ]
+  }
+}

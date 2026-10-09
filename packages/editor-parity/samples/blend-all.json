@@ -1,0 +1,497 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#64748B",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 25,
+            "y": 30,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 55,
+            "y": 60,
+            "width": 90,
+            "height": 90,
+            "blendMode": "multiply",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 195,
+            "y": 30,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 225,
+            "y": 60,
+            "width": 90,
+            "height": 90,
+            "blendMode": "screen",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 30,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 395,
+            "y": 60,
+            "width": 90,
+            "height": 90,
+            "blendMode": "overlay",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 25,
+            "y": 200,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 55,
+            "y": 230,
+            "width": 90,
+            "height": 90,
+            "blendMode": "darken",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 195,
+            "y": 200,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 225,
+            "y": 230,
+            "width": 90,
+            "height": 90,
+            "blendMode": "lighten",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 200,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 395,
+            "y": 230,
+            "width": 90,
+            "height": 90,
+            "blendMode": "colorDodge",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 25,
+            "y": 370,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 55,
+            "y": 400,
+            "width": 90,
+            "height": 90,
+            "blendMode": "colorBurn",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 195,
+            "y": 370,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 225,
+            "y": 400,
+            "width": 90,
+            "height": 90,
+            "blendMode": "hardLight",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 370,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 395,
+            "y": 400,
+            "width": 90,
+            "height": 90,
+            "blendMode": "softLight",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 25,
+            "y": 540,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 55,
+            "y": 570,
+            "width": 90,
+            "height": 90,
+            "blendMode": "difference",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 195,
+            "y": 540,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 225,
+            "y": 570,
+            "width": 90,
+            "height": 90,
+            "blendMode": "exclusion",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 540,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 395,
+            "y": 570,
+            "width": 90,
+            "height": 90,
+            "blendMode": "hue",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 25,
+            "y": 710,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 55,
+            "y": 740,
+            "width": 90,
+            "height": 90,
+            "blendMode": "saturation",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 195,
+            "y": 710,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 225,
+            "y": 740,
+            "width": 90,
+            "height": 90,
+            "blendMode": "color",
+            "fill": "#E11D48"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 710,
+            "width": 150,
+            "height": 150,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#1D4ED8"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FACC15"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 395,
+            "y": 740,
+            "width": 90,
+            "height": 90,
+            "blendMode": "luminosity",
+            "fill": "#E11D48"
+          }
+        ]
+      }
+    ]
+  }
+}

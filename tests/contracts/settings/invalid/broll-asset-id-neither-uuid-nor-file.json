@@ -1,0 +1,16 @@
+{
+  "source_duration": 10,
+  "settings": {
+    "source_start": 0,
+    "source_end": 10,
+    "broll": [
+      {
+        "asset_id": "not a uuid",
+        "at": 0,
+        "start": 0,
+        "end": 1
+      }
+    ]
+  },
+  "error": "Invalid media ID."
+}

@@ -1,0 +1,17 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 60,
+    "cuts": [
+      {
+        "start": 0,
+        "end": 12.5
+      },
+      {
+        "start": 30,
+        "end": 44
+      }
+    ]
+  }
+}

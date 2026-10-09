@@ -1,0 +1,7 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0
+  },
+  "error": "Clip times must be finite numbers."
+}

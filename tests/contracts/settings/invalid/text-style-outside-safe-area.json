@@ -1,0 +1,16 @@
+{
+  "source_duration": 10,
+  "settings": {
+    "source_start": 0,
+    "source_end": 10,
+    "headline_style": {
+      "font": "DejaVu Sans",
+      "size": 64,
+      "color": "#ff2d55",
+      "bold": true,
+      "x": 0.5,
+      "y": 0.99
+    }
+  },
+  "error": "Keep text inside the canvas safe area."
+}

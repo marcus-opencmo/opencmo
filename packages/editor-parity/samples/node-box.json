@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 60,
+            "width": 460,
+            "height": 180,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 300,
+            "y": 400,
+            "width": 120,
+            "height": 420,
+            "fill": "#22C55E"
+          },
+          {
+            "kind": "rect",
+            "fill": "#FACC15"
+          }
+        ]
+      }
+    ]
+  }
+}

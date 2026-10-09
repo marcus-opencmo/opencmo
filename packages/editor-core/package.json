@@ -1,0 +1,29 @@
+{
+  "name": "@opencmo/editor-core",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "version": "0.0.0",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": "./src/index.ts",
+    "./transcript": "./src/transcript.ts",
+    "./generate": "./src/generate.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@opencmo/clip-doc": "*",
+    "@opencmo/clip-icons": "*",
+    "@opencmo/clip-render": "*",
+    "@opencmo/clip-three": "*",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.1"
+  }
+}

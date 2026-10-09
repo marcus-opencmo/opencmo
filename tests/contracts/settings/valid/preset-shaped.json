@@ -1,0 +1,20 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "aspect": "16:9",
+    "layout": "fill",
+    "captions": true,
+    "caption_preset": "minimal",
+    "headline": "Hook",
+    "caption_style": {
+      "font": "DejaVu Sans",
+      "size": 64,
+      "color": "#ff2d55",
+      "bold": true,
+      "x": 0.5,
+      "y": 0.78
+    }
+  }
+}

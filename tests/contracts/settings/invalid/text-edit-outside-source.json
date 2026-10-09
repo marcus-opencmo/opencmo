@@ -1,0 +1,15 @@
+{
+  "source_duration": 30,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "text_edits": [
+      {
+        "start": 1,
+        "end": 90,
+        "text": "late"
+      }
+    ]
+  },
+  "error": "Each caption edit must be inside the source video."
+}

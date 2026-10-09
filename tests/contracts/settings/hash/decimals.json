@@ -1,0 +1,16 @@
+{
+  "render_profile": 4,
+  "settings": {
+    "source_start": 12.5,
+    "source_end": 30.935,
+    "aspect": "9:16",
+    "layout": "fill",
+    "focus_x": null,
+    "captions": true,
+    "caption_preset": "bold",
+    "headline": "",
+    "text_edits": []
+  },
+  "canonical": "{\"render_profile\":4,\"settings\":{\"aspect\":\"9:16\",\"caption_preset\":\"bold\",\"captions\":true,\"focus_x\":null,\"headline\":\"\",\"layout\":\"fill\",\"source_end\":30.935,\"source_start\":12.5,\"text_edits\":[]}}",
+  "expected_hash": "b525518a05cbef0a282e5e565769dde0b2286ad5c999acd63afa57f5e02d51be"
+}

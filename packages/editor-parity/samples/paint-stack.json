@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 70,
+            "y": 300,
+            "width": 400,
+            "height": 300,
+            "fill": "#1D4ED8",
+            "paints": [
+              {
+                "type": "solid",
+                "color": "#F43F5E",
+                "opacity": 0.5
+              },
+              {
+                "type": "radialGradient",
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#FFFFFF"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#FFFFFF",
+                    "opacity": 0
+                  }
+                ],
+                "opacity": 0.8
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

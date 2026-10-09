@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "scene3d",
+            "x": 20,
+            "y": 40,
+            "width": 500,
+            "height": 420,
+            "camera": {
+              "phi": 62,
+              "theta": -40,
+              "distance": 13,
+              "orbit": 20
+            },
+            "objects": [
+              {
+                "type": "axes",
+                "length": 3.5
+              },
+              {
+                "type": "surface",
+                "color": "#236B8E",
+                "color2": "#FACC15",
+                "edges": "#0B1020",
+                "resolution": 20,
+                "expr": "sin(x) cos(y)",
+                "xRange": [
+                  -3,
+                  3
+                ],
+                "yRange": [
+                  -3,
+                  3
+                ],
+                "tracks": [
+                  {
+                    "property": "progress",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": 0
+                      },
+                      {
+                        "time": 1,
+                        "value": 1
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "scene3d",
+            "x": 20,
+            "y": 500,
+            "width": 500,
+            "height": 420,
+            "camera": {
+              "phi": 60,
+              "theta": -60,
+              "distance": 12
+            },
+            "objects": [
+              {
+                "type": "cube",
+                "position": [
+                  -1.8,
+                  0,
+                  0
+                ],
+                "color": "#58C4DD",
+                "size": 1.8,
+                "tracks": [
+                  {
+                    "property": "rotateZ",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": 0
+                      },
+                      {
+                        "time": 2,
+                        "value": 90
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "sphere",
+                "position": [
+                  0.8,
+                  -1.2,
+                  0
+                ],
+                "color": "#FC6255",
+                "radius": 1.1
+              },
+              {
+                "type": "torus",
+                "position": [
+                  1.4,
+                  1.8,
+                  0
+                ],
+                "rotation": [
+                  60,
+                  0,
+                  0
+                ],
+                "color": "#83C167",
+                "radius": 1,
+                "tube": 0.35
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

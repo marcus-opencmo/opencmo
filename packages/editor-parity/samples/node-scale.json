@@ -1,0 +1,54 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 60,
+            "y": 120,
+            "scale": 1.5,
+            "width": 150,
+            "height": 150,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 300,
+            "y": 120,
+            "scaleX": 0.5,
+            "width": 150,
+            "height": 150,
+            "fill": "#22C55E"
+          },
+          {
+            "kind": "rect",
+            "x": 60,
+            "y": 560,
+            "scaleY": 1.8,
+            "width": 150,
+            "height": 150,
+            "fill": "#3B82F6"
+          },
+          {
+            "kind": "rect",
+            "x": 300,
+            "y": 560,
+            "scale": 0.6,
+            "scaleX": 2,
+            "width": 150,
+            "height": 150,
+            "fill": "#FACC15"
+          }
+        ]
+      }
+    ]
+  }
+}

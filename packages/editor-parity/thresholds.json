@@ -1,0 +1,44 @@
+{
+  "default": {
+    "mean": 1,
+    "tile": 4
+  },
+  "samples": {
+    "paint-video": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "key-source-time": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "video-trim": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "video-rate": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "opencmo-reframe": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "effect-group": {
+      "mean": 1.2,
+      "tile": 6
+    },
+    "three-scene": {
+      "mean": 1,
+      "tile": 6
+    }
+  },
+  "targets": {
+    "node": {
+      "text": {
+        "mean": 1,
+        "tile": 14
+      }
+    }
+  }
+}

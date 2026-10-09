@@ -1,0 +1,17 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "headline": "Cũ",
+    "texts": [
+      {
+        "text": "Mới",
+        "start": 0,
+        "end": 2,
+        "style": { "font": "DejaVu Sans", "size": 90, "color": "#ffffff", "bold": true, "x": 0.5, "y": 0.12 }
+      }
+    ]
+  },
+  "error": "Use either a headline or text layers, not both."
+}

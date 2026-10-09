@@ -1,0 +1,8 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 0.5
+  },
+  "error": "Clips must be between 1 and 180 seconds long."
+}

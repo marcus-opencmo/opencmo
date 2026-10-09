@@ -1,0 +1,74 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 120,
+            "y": 120,
+            "width": 300,
+            "height": 180,
+            "cornerRadius": 20,
+            "fill": "#F8FAFC",
+            "shadows": [
+              {
+                "color": "#000000",
+                "blur": 24,
+                "offsetY": 16,
+                "opacity": 0.6
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 120,
+            "y": 420,
+            "width": 300,
+            "height": 180,
+            "fill": "#F43F5E",
+            "shadows": [
+              {
+                "color": "#22D3EE",
+                "blur": 0,
+                "offsetX": 20,
+                "offsetY": 20
+              },
+              {
+                "color": "#FACC15",
+                "blur": 40,
+                "offsetX": -20,
+                "offsetY": -10,
+                "opacity": 0.8
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "x": 60,
+            "y": 700,
+            "text": "Shadow",
+            "color": "#FFFFFF",
+            "fontSize": 100,
+            "fontWeight": 700,
+            "shadows": [
+              {
+                "color": "#F43F5E",
+                "blur": 12,
+                "offsetX": 6,
+                "offsetY": 6
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

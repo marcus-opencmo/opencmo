@@ -1,0 +1,9 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 10,
+    "source_end": 30,
+    "headline": "Bản cũ vẫn phải đọc được",
+    "headline_style": { "font": "DejaVu Sans", "size": 95, "color": "#ffffff", "bold": true, "x": 0.5, "y": 0.12 }
+  }
+}

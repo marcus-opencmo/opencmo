@@ -1,0 +1,21 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 10,
+    "source_end": 30,
+    "texts": [
+      {
+        "text": "Doanh thu gấp ba",
+        "start": 0,
+        "end": 3.5,
+        "style": { "font": "DejaVu Sans", "size": 90, "color": "#ffcc00", "bold": true, "x": 0.5, "y": 0.12 }
+      },
+      {
+        "text": "trong sáu tháng",
+        "start": 3.5,
+        "end": 8,
+        "style": { "font": "DejaVu Serif", "size": 70, "color": "#ffffff", "bold": false, "x": 0.5, "y": 0.8 }
+      }
+    ]
+  }
+}

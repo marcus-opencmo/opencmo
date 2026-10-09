@@ -1,0 +1,17 @@
+{
+  "render_profile": 4,
+  "settings": {
+    "zero": 0,
+    "negative_zero": -0.0,
+    "integral_float": 2.0,
+    "tiny": 1e-07,
+    "small": 1e-06,
+    "big": 1e+21,
+    "just_under_big": 1e+20,
+    "sixteen": 1e+16,
+    "negative": -12.5,
+    "many_digits": 1234567890.123456
+  },
+  "canonical": "{\"render_profile\":4,\"settings\":{\"big\":1e+21,\"integral_float\":2,\"just_under_big\":100000000000000000000,\"many_digits\":1234567890.123456,\"negative\":-12.5,\"negative_zero\":0,\"sixteen\":10000000000000000,\"small\":0.000001,\"tiny\":1e-7,\"zero\":0}}",
+  "expected_hash": "d3dcca31b0349dc36055b5effd1c292715eca9edafb4e535f0c599c48ac99d99"
+}

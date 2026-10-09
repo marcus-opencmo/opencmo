@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "erasableSyntaxOnly": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
+    "resolveJsonModule": true
+  },
+  "include": ["src", "scripts"],
+  // stress.mts dựng document bằng editor-core (có cú pháp không "erasable") — chạy bằng tsx, không vào tsc của gói.
+  "exclude": ["scripts/stress.mts"]
+}

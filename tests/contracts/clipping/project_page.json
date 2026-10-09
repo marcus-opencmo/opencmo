@@ -1,0 +1,48 @@
+{
+  "items": [
+    {
+      "id": "5da1af8e-b287-4f05-b6ff-1646b316abc0",
+      "clips_requested": 1,
+      "favorite": false,
+      "status": "done",
+      "stage": "done",
+      "title": "Founder interview",
+      "duration": 44.419,
+      "error": null,
+      "created_at": "2026-09-12T14:02:11.120Z",
+      "finished_at": "2026-09-12T14:02:27.030Z",
+      "settings": {
+        "clip_length": "auto",
+        "min_seconds": 10.0,
+        "max_seconds": 60.0,
+        "mode": "clip",
+        "aspect": "9:16",
+        "layout": "auto",
+        "captions": true
+      },
+      "source_name": "founder-interview.mp4",
+      "attempt_started_at": "2026-09-12T14:02:11.410Z",
+      "segments": null,
+      "clips": [
+        {
+          "id": "8b0f6a52-3c1d-4e7a-9f5b-2d6c8e1a4b70",
+          "revision": 1,
+          "index": 0,
+          "moment": {
+            "start": 12.5,
+            "end": 30.935,
+            "hook": "We built it in a weekend",
+            "score": 8.5,
+            "reason": "Clear founder story with a concrete result."
+          },
+          "available": true,
+          "preview_url": "https://storage.example/preview",
+          "download_url": "https://storage.example/download",
+          "export_url": "/api/v1/exports/e41b7c09/file?kind=mp4",
+          "export_revision": 3
+        }
+      ]
+    }
+  ],
+  "next_cursor": null
+}

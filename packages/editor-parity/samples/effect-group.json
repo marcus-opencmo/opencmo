@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "group",
+            "x": 40,
+            "y": 200,
+            "rotation": -6,
+            "opacity": 0.9,
+            "effects": [
+              {
+                "type": "blur",
+                "value": 3
+              },
+              {
+                "type": "hueRotate",
+                "value": 60
+              }
+            ],
+            "children": [
+              {
+                "kind": "rect",
+                "width": 220,
+                "height": 220,
+                "fill": "#F43F5E"
+              },
+              {
+                "kind": "rect",
+                "x": 240,
+                "width": 220,
+                "height": 220,
+                "fill": "#22C55E"
+              },
+              {
+                "kind": "text",
+                "y": 260,
+                "text": "Grouped",
+                "color": "#FFFFFF",
+                "fontSize": 80,
+                "fontWeight": 700
+              }
+            ]
+          },
+          {
+            "kind": "video",
+            "x": 30,
+            "y": 620,
+            "width": 480,
+            "height": 270,
+            "src": "fixtures/bars.webm",
+            "effects": [
+              {
+                "type": "grayscale",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

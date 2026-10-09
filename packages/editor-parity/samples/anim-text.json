@@ -1,0 +1,55 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 120,
+            "width": 480,
+            "height": 200,
+            "start": 0,
+            "end": 4,
+            "text": "Words appear one by one",
+            "color": "#FFFFFF",
+            "fontSize": 52,
+            "fontWeight": 700,
+            "animations": [
+              {
+                "type": "appearWord",
+                "duration": 2
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 380,
+            "width": 480,
+            "height": 200,
+            "start": 0,
+            "end": 4,
+            "text": "Words appear one by one",
+            "color": "#FFFFFF",
+            "fontSize": 52,
+            "fontWeight": 700,
+            "animations": [
+              {
+                "type": "appearChar",
+                "duration": 2
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

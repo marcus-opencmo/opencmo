@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 60,
+            "text": "Spaced out",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "letterSpacing": 12
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 160,
+            "text": "Tight letters",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "letterSpacing": -3
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 260,
+            "width": 480,
+            "height": 220,
+            "text": "Tall leading makes these lines far apart",
+            "color": "#22C55E",
+            "fontSize": 36,
+            "leading": 1.8
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 520,
+            "text": "upper case",
+            "color": "#FACC15",
+            "fontSize": 40,
+            "textCase": "upper"
+          },
+          {
+            "kind": "text",
+            "x": 30,
+            "y": 620,
+            "text": "LOWER CASE",
+            "color": "#F43F5E",
+            "fontSize": 40,
+            "textCase": "lower"
+          }
+        ]
+      }
+    ]
+  }
+}

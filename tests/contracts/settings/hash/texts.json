@@ -1,0 +1,44 @@
+{
+  "render_profile": 4,
+  "settings": {
+    "source_start": 10.0,
+    "source_end": 30.0,
+    "aspect": "9:16",
+    "layout": "fill",
+    "focus_x": null,
+    "captions": true,
+    "caption_preset": "bold",
+    "headline": "",
+    "texts": [
+      {
+        "text": "Doanh thu gấp ba",
+        "start": 0.0,
+        "end": 3.5,
+        "style": {
+          "font": "DejaVu Sans",
+          "size": 90,
+          "color": "#ffcc00",
+          "bold": true,
+          "x": 0.5,
+          "y": 0.12
+        }
+      },
+      {
+        "text": "trong sáu tháng",
+        "start": 3.5,
+        "end": 8.0,
+        "style": {
+          "font": "DejaVu Serif",
+          "size": 70,
+          "color": "#ffffff",
+          "bold": false,
+          "x": 0.5,
+          "y": 0.8
+        }
+      }
+    ],
+    "text_edits": []
+  },
+  "canonical": "{\"render_profile\":4,\"settings\":{\"aspect\":\"9:16\",\"caption_preset\":\"bold\",\"captions\":true,\"focus_x\":null,\"headline\":\"\",\"layout\":\"fill\",\"source_end\":30,\"source_start\":10,\"text_edits\":[],\"texts\":[{\"end\":3.5,\"start\":0,\"style\":{\"bold\":true,\"color\":\"#ffcc00\",\"font\":\"DejaVu Sans\",\"size\":90,\"x\":0.5,\"y\":0.12},\"text\":\"Doanh thu gấp ba\"},{\"end\":8,\"start\":3.5,\"style\":{\"bold\":false,\"color\":\"#ffffff\",\"font\":\"DejaVu Serif\",\"size\":70,\"x\":0.5,\"y\":0.8},\"text\":\"trong sáu tháng\"}]}}",
+  "expected_hash": "23e539cf193492ab8565cc550c3b8368976e9f88e2839763612601b6fe571e6f"
+}

@@ -1,0 +1,1524 @@
+/*
+ * Lớp giao diện Lapis & Marble cho phần đăng nhập (/app, /login).
+ *
+ * Nạp SAU globals.css: cùng selector, file này thắng theo thứ tự. Gom ở một
+ * chỗ để đọc được cả đợt đổi giao diện 30/09 mà không phải lần theo 4.5k dòng
+ * bố cục. Chỉ dùng token của design-system.css — không hex mới.
+ *
+ * Nguyên tắc: nền đá sáng, thẻ trắng viền mảnh, một hành động lapis mỗi khu,
+ * vàng chỉ để kẻ và gắn nhãn. Chữ serif cho tiêu đề, không cho giao diện.
+ */
+
+/* ─────────────────────────────  vỏ: top bar  ─────────────────────────────── */
+
+.topbar {
+  min-height: 64px;
+  padding: 12px 32px;
+  background: rgb(251 248 242 / .9);
+  backdrop-filter: blur(10px);
+}
+.plan-banner {
+  padding: 5px 5px 5px 16px;
+  border-color: var(--ds-gold-line);
+  background: var(--ds-gold-100);
+  color: var(--ds-gold-text);
+  font-size: var(--ds-text-13);
+}
+.plan-banner b {
+  font-weight: 500;
+}
+.plan-banner .secondary-button {
+  min-height: 30px;
+  padding: 5px 14px;
+  border-color: transparent;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-lapis-700);
+  color: var(--ds-accent-ink);
+  font-weight: 600;
+}
+.plan-banner .secondary-button:hover:not(:disabled) {
+  background: var(--ds-lapis-500);
+  border-color: transparent;
+  color: var(--ds-accent-ink);
+}
+.credit-chip {
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: var(--ds-radius-pill);
+  font-size: var(--ds-text-14);
+}
+.credit-chip b {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-18);
+  font-weight: 500;
+}
+.credit-chip:hover {
+  background: var(--ds-lapis-100);
+  color: var(--ds-lapis-700);
+}
+.active-job {
+  background: var(--ds-panel);
+  border-color: var(--ds-line-3);
+}
+
+/* rail */
+.rail {
+  padding: 16px 14px 18px;
+}
+.rail-account {
+  border-color: var(--ds-line-2);
+  box-shadow: var(--ds-shadow-card);
+}
+.rail-avatar {
+  background: var(--ds-lapis-700);
+  font-family: var(--ds-font-display);
+  font-weight: 500;
+}
+.rail-toggle {
+  border-color: var(--ds-line-3);
+  background: var(--ds-panel);
+}
+.rail-item.is-soon {
+  color: var(--ds-fg-6);
+}
+
+/* ─────────────────────────────  khối dùng chung  ─────────────────────────── */
+
+.page {
+  padding: 40px 40px 72px;
+}
+.page-sub {
+  font-size: var(--ds-text-14);
+}
+.primary-button {
+  min-height: 44px;
+  border-radius: var(--ds-radius-control);
+  box-shadow: 0 1px 0 rgb(255 255 255 / .12) inset, 0 6px 16px -8px rgb(15 26 92 / .5);
+}
+.primary-button:disabled {
+  opacity: 1;
+  background: var(--ds-line-3);
+  color: var(--ds-fg-5);
+  box-shadow: none;
+}
+.secondary-button {
+  border-color: var(--ds-line-4);
+}
+.secondary-button:hover:not(:disabled) {
+  border-color: var(--ds-lapis-700);
+  color: var(--ds-lapis-700);
+  background: var(--ds-panel);
+}
+.text-button {
+  color: var(--ds-fg-4);
+  text-underline-offset: 3px;
+}
+.text-button:hover {
+  color: var(--ds-lapis-700);
+}
+.ws select,
+.ws input[type="text"],
+.ws input[type="url"],
+.ws input[type="search"],
+.ws input[type="email"],
+.ws input:not([type]) {
+  border-color: var(--ds-line-4);
+  background: var(--ds-panel);
+  color: var(--ds-text);
+}
+.ws select:focus,
+.ws input:focus {
+  outline: none;
+  border-color: var(--ds-lapis-500);
+  box-shadow: 0 0 0 3px var(--ds-lapis-100);
+}
+.settings-card {
+  border-color: var(--ds-line-2);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.settings-card h2 {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-20);
+  font-weight: 500;
+}
+.workspace-notice.info {
+  border-color: var(--ds-lapis-100);
+  background: var(--ds-lapis-100);
+  color: var(--ds-lapis-900);
+}
+.crumbs a:hover {
+  color: var(--ds-lapis-700);
+}
+
+/* ───────────────────────────  New clips (/app)  ──────────────────────────── */
+
+.home {
+  padding-top: 8px;
+}
+.home-title {
+  max-width: 640px;
+  margin: 0 auto 28px;
+  text-align: center;
+  font-family: var(--ds-font-display);
+  font-size: clamp(30px, 3.4vw, 44px);
+  font-weight: 420;
+  line-height: 1.08;
+  letter-spacing: var(--ds-tracking-title);
+  color: var(--ds-ink-900);
+}
+.home-title span {
+  color: var(--ds-lapis-700);
+}
+.create-panel {
+  border-color: var(--ds-line-2);
+  border-radius: var(--ds-radius-frame);
+  box-shadow: var(--ds-shadow-media);
+}
+.create-panel-heading {
+  padding: 18px 24px;
+  border-bottom-color: var(--ds-line-2);
+}
+.create-panel-heading h2 {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-18);
+  font-weight: 500;
+}
+.link-entry {
+  padding: 24px 24px 12px;
+}
+.link-entry label {
+  font-size: var(--ds-text-13);
+  font-weight: 550;
+  color: var(--ds-fg-2);
+}
+.link-entry input {
+  padding: 16px;
+  border-color: var(--ds-line-4);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-panel);
+  font-size: var(--ds-text-15);
+}
+.link-entry p {
+  font-size: var(--ds-text-12);
+}
+.video-drop {
+  border-color: var(--ds-line-5);
+  background: var(--ds-ink-2);
+}
+.video-drop:hover {
+  border-color: var(--ds-lapis-500);
+  background: var(--ds-lapis-100);
+}
+.source-switch {
+  padding: 0 24px 20px;
+}
+.source-switch button {
+  color: var(--ds-lapis-700);
+}
+.create-footer {
+  padding: 20px 24px 24px;
+  border-top-color: var(--ds-line-2);
+  background: var(--ds-ink-2);
+}
+.output-group legend,
+.project-settings label {
+  font-size: var(--ds-text-12);
+  font-weight: 550;
+  color: var(--ds-fg-3);
+}
+.project-settings select {
+  min-height: 40px;
+  border-radius: var(--ds-radius-control);
+  font-size: var(--ds-text-13);
+}
+/* Mẫu phụ đề đứng trên nền lapis đậm như khung video: chữ trắng của preset
+   bold/clean phải có nền tối mới đọc được — trên nền đá nó biến mất. */
+.caption-preset {
+  border-color: var(--ds-line-4);
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-panel);
+}
+.caption-preset:hover {
+  border-color: var(--ds-line-5);
+}
+.caption-preset:has(input:checked) {
+  border-color: var(--ds-lapis-700);
+  box-shadow: 0 0 0 1px var(--ds-lapis-700);
+}
+.caption-sample {
+  background: var(--ds-lapis-900);
+}
+.caption-preset.is-none .caption-sample {
+  background: var(--ds-ink-3);
+}
+.caption-preset.is-minimal .caption-sample {
+  background: var(--ds-lapis-900);
+}
+.caption-preset.is-minimal .caption-sample > span {
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: var(--ds-marble-50);
+  color: var(--ds-ink-900);
+}
+.caption-preset.is-minimal .caption-sample {
+  color: var(--ds-marble-50);
+}
+.capabilities {
+  margin-top: 40px;
+}
+.capability {
+  color: var(--ds-fg-4);
+}
+.capability span {
+  border-color: var(--ds-line-2);
+  background: var(--ds-panel);
+  color: var(--ds-lapis-700);
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* ─────────────────────────  My projects (/app/projects)  ─────────────────── */
+
+.projects-heading .page-title {
+  font-size: 34px;
+}
+.projects-heading input {
+  padding: 11px 14px;
+}
+.project-list {
+  gap: 22px;
+}
+.card-new {
+  min-height: 100%;
+  border-color: var(--ds-line-5);
+  background: transparent;
+  color: var(--ds-fg-4);
+  font-weight: 500;
+}
+.card-new:hover {
+  border-color: var(--ds-lapis-500);
+  background: var(--ds-lapis-100);
+  color: var(--ds-lapis-700);
+}
+.project-item {
+  position: relative;
+  border-color: var(--ds-line-2);
+  box-shadow: var(--ds-shadow-card);
+  transition: box-shadow var(--ds-dur-base) var(--ds-ease-out), border-color var(--ds-dur-base) var(--ds-ease-out);
+}
+.project-item:hover {
+  border-color: var(--ds-line-4);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-media);
+}
+.project-thumbnail {
+  aspect-ratio: 16 / 11;
+  background: var(--ds-lapis-900);
+  border-bottom: 0;
+}
+.project-thumbnail video {
+  background: var(--ds-lapis-900);
+}
+.project-thumbnail-placeholder {
+  color: rgb(251 248 242 / .7);
+}
+.project-thumbnail-placeholder > span {
+  border-color: rgb(198 161 91 / .5);
+  background: transparent;
+  color: var(--ds-gold-500);
+}
+.project-thumbnail-placeholder small {
+  color: rgb(251 248 242 / .6);
+}
+.project-status-badge {
+  top: 10px;
+  bottom: auto;
+  padding: 4px 9px;
+  background: rgb(251 248 242 / .92);
+  color: var(--ds-ink-900);
+  font-weight: 550;
+}
+/* Tiêu đề chiếm cả dòng; ngày + "Open project" ở dòng dưới. Sao và Xoá nổi
+   trên góc ảnh — trước đây bốn thứ chen một hàng và tiêu đề còn "How I b…". */
+.project-card-footer {
+  padding: 14px 16px 16px;
+}
+.project-card-footer .project-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "title title" "open time";
+  gap: 8px 12px;
+  padding: 0;
+}
+.project-row .project-row-text {
+  display: contents;
+}
+.project-card-footer .project-row strong {
+  grid-area: title;
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-17);
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.project-card-footer .project-row small {
+  grid-area: open;
+  margin-top: 0;
+  font-size: var(--ds-text-12);
+  font-weight: 550;
+  color: var(--ds-lapis-700);
+}
+.project-card-footer .project-row time {
+  grid-area: time;
+  font-size: var(--ds-text-12);
+}
+.project-card-footer .favorite-button,
+.project-card-footer .delete-project-button {
+  position: absolute;
+  top: 8px;
+  z-index: 2;
+  min-height: 30px;
+  height: 30px;
+  border-radius: var(--ds-radius-pill);
+  background: rgb(251 248 242 / .92);
+  box-shadow: var(--ds-shadow-card);
+}
+.project-card-footer .favorite-button {
+  right: 8px;
+  width: 30px;
+  font-size: 15px;
+  color: var(--ds-fg-4);
+}
+.project-card-footer .delete-project-button {
+  right: 44px;
+  padding: 0 11px;
+  font-size: var(--ds-text-12);
+  font-weight: 550;
+  opacity: 0;
+  transition: opacity var(--ds-dur-base) var(--ds-ease-out);
+}
+.project-item:hover .delete-project-button,
+.project-item:focus-within .delete-project-button {
+  opacity: 1;
+}
+@media (hover: none) {
+  .project-card-footer .delete-project-button {
+    opacity: 1;
+  }
+}
+.project-card-footer .favorite-button:hover,
+.project-card-footer .delete-project-button:hover:not(:disabled) {
+  background: var(--ds-panel);
+}
+.library-empty-state {
+  border-color: var(--ds-line-2);
+  box-shadow: var(--ds-shadow-card);
+}
+
+/* ───────────────────────  project + kết quả clip  ────────────────────────── */
+
+.job-detail h1 {
+  font-family: var(--ds-font-display);
+  font-weight: 450;
+  letter-spacing: var(--ds-tracking-title);
+}
+.source-detail {
+  color: var(--ds-fg-5);
+}
+.processing-panel {
+  border-color: var(--ds-line-2);
+  border-radius: var(--ds-radius-frame);
+  box-shadow: var(--ds-shadow-card);
+}
+.processing-panel h2 {
+  font-family: var(--ds-font-display);
+  font-weight: 500;
+}
+.processing-thumb {
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-lapis-900);
+}
+.processing-thumb.is-empty span {
+  color: rgb(251 248 242 / .75);
+}
+.clip-tile {
+  background: var(--ds-ink-3);
+  border-radius: var(--ds-radius-control);
+}
+.clip-tile.is-ready {
+  border-color: var(--ds-gold-line);
+}
+
+/* Các bước của pipeline, sáng dần theo stage thật. */
+.stage-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 0;
+  list-style: none;
+  counter-reset: stage;
+}
+.stage-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 7px 8px;
+  border: 1px solid var(--ds-line-2);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-ink-2);
+  color: var(--ds-fg-5);
+  font-size: var(--ds-text-13);
+  font-weight: 500;
+}
+.stage-step-mark {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1.5px solid var(--ds-line-5);
+  border-radius: 50%;
+}
+.stage-steps li.is-done {
+  color: var(--ds-fg-3);
+  background: var(--ds-panel);
+}
+.stage-steps li.is-done .stage-step-mark {
+  border-color: var(--ds-lapis-700);
+  background: var(--ds-lapis-700);
+}
+.stage-steps li.is-done .stage-step-mark::after {
+  content: "";
+  width: 6px;
+  height: 3px;
+  margin-top: -2px;
+  border: solid var(--ds-marble-50);
+  border-width: 0 0 1.5px 1.5px;
+  transform: rotate(-45deg);
+}
+.stage-steps li.is-current {
+  border-color: var(--ds-lapis-700);
+  background: var(--ds-lapis-100);
+  color: var(--ds-lapis-700);
+}
+.stage-steps li.is-current .stage-step-mark {
+  border-color: var(--ds-lapis-100);
+  border-top-color: var(--ds-lapis-700);
+  animation: active-job-spin 0.9s linear infinite;
+}
+
+.results-heading h2 {
+  font-family: var(--ds-font-display);
+  font-weight: 500;
+}
+.results-toolbar {
+  border-color: var(--ds-line-2);
+  background: var(--ds-panel);
+}
+.local-clip {
+  border-color: var(--ds-line-2);
+  border-radius: var(--ds-radius-frame);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.local-clip.is-focused {
+  border-color: var(--ds-lapis-500);
+}
+.clip-frame {
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-lapis-900);
+}
+.clip-copy h3 {
+  font-family: var(--ds-font-display);
+  font-weight: 500;
+}
+.clip-time {
+  color: var(--ds-fg-5);
+}
+.clip-transcript h4 {
+  color: var(--ds-gold-text);
+  letter-spacing: var(--ds-tracking-eyebrow);
+}
+
+/* ─────────────────────────  billing + settings  ─────────────────────────── */
+
+.settings-card .acct-figure {
+  font-family: var(--ds-font-display);
+  font-size: 48px;
+  font-weight: 450;
+  line-height: 1;
+  color: var(--ds-lapis-700);
+}
+.billing-view .plan-price strong {
+  font-family: var(--ds-font-display);
+  font-size: 40px;
+  font-weight: 450;
+  color: var(--ds-ink-900);
+}
+.billing-view .plan-price del {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-17);
+  color: var(--ds-fg-6);
+}
+.billing-view .plan-billed {
+  margin-top: -4px;
+  font-size: var(--ds-text-13);
+  color: var(--ds-fg-5);
+}
+.plan-grid .settings-card h2 {
+  font-family: var(--ds-font-sans);
+  font-size: var(--ds-text-12);
+  font-weight: 700;
+  letter-spacing: var(--ds-tracking-eyebrow);
+  text-transform: uppercase;
+  color: var(--ds-gold-text);
+}
+.settings-card.is-featured {
+  border-color: var(--ds-gold-line);
+  box-shadow: var(--ds-shadow-media);
+}
+.billing-view .plan-cta.is-current,
+.billing-view .plan-cta.is-soon {
+  border-color: var(--ds-line-3);
+  color: var(--ds-fg-5);
+}
+.history {
+  border-color: var(--ds-line-2);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.history time {
+  background: var(--ds-ink-2);
+}
+
+/* ────────────────────────────  Brand kit  ────────────────────────────────── */
+
+
+/* ──────────────────────────────  Đăng nhập  ──────────────────────────────── */
+
+.auth-visual {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  margin-bottom: 36px;
+  border-radius: var(--ds-radius-frame);
+  background: radial-gradient(90% 70% at 50% 35%, var(--ds-lapis-700), var(--ds-lapis-900));
+  overflow: hidden;
+  box-shadow: var(--ds-shadow-media);
+}
+.auth-visual .arabesque {
+  opacity: .16;
+}
+.auth-visual::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border: 1px solid var(--ds-gold-line);
+  border-radius: 6px;
+  opacity: .55;
+  pointer-events: none;
+}
+.auth-visual img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 34%;
+  aspect-ratio: 9 / 16;
+  object-fit: cover;
+  margin: 0;
+  transform: translate(-50%, -50%);
+  border: 1px solid var(--ds-gold-line);
+  border-radius: var(--ds-radius-panel);
+  box-shadow: 0 24px 60px -20px rgb(0 0 0 / .6);
+}
+.auth-art {
+  border-right-color: var(--ds-line-3);
+}
+
+/* ─────────────────────────────  điện thoại  ──────────────────────────────── */
+
+@media (max-width: 760px) {
+  .topbar {
+    padding: 10px 16px;
+    flex-wrap: wrap;
+  }
+  .topbar-credits {
+    width: auto;
+    margin-left: auto;
+    gap: 8px;
+  }
+  .topbar-credits .secondary-button {
+    min-height: 36px;
+    padding: 7px 12px;
+  }
+  .plan-banner {
+    order: 3;
+    width: 100%;
+    padding: 4px 4px 4px 12px;
+    font-size: var(--ds-text-12);
+  }
+  .rail,
+  .rail.is-open {
+    padding: 6px 12px calc(6px + env(safe-area-inset-bottom));
+    background: rgb(255 255 255 / .96);
+    backdrop-filter: blur(10px);
+    border-top-color: var(--ds-line-2);
+    box-shadow: 0 -8px 24px -16px rgb(60 44 20 / .25);
+  }
+  /* Mục "Soon" không bấm được: trên thanh dưới chúng chỉ chiếm chỗ của mục thật. */
+  .rail-item.is-soon {
+    display: none;
+  }
+  .rail-nav {
+    justify-content: space-around;
+  }
+  .rail-item[aria-current="page"] {
+    box-shadow: none;
+    background: var(--ds-lapis-100);
+  }
+  .rail-item[aria-current="page"]::before {
+    display: none;
+  }
+  .page {
+    padding: 28px 16px 104px;
+  }
+  .home-title {
+    margin-bottom: 20px;
+  }
+  .project-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .local-clip {
+    border-radius: var(--ds-radius-panel);
+  }
+}
+
+/* Tinh chỉnh sau lượt chụp màn 30/09. */
+.projects-heading h1 {
+  font-family: var(--ds-font-display);
+  font-size: 34px;
+  font-weight: 450;
+  letter-spacing: var(--ds-tracking-title);
+}
+.card-new {
+  align-content: center;
+}
+.processing-status > :not(h2) {
+  margin-top: 6px;
+  font-size: var(--ds-text-13);
+  color: var(--ds-fg-5);
+}
+.primary-button:disabled {
+  color: var(--ds-fg-4);
+}
+.auth-art h2 {
+  font-size: 38px;
+  text-wrap: balance;
+}
+
+/* ───────────────────  New clips: đợt UX 01/10 (tự hiểu ý)  ─────────────────── */
+
+/* Thả file ở bất kỳ đâu: cả trang thành một vùng nhận. */
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgb(15 26 92 / .55);
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+}
+.drop-overlay span {
+  padding: 22px 34px;
+  border: 1.5px dashed var(--ds-gold-500);
+  border-radius: var(--ds-radius-frame);
+  background: var(--ds-lapis-900);
+  color: var(--ds-marble-50);
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-20);
+}
+.link-preview {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0 24px 16px;
+  padding: 10px;
+  border: 1px solid var(--ds-line-2);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-ink-2);
+}
+.link-preview img {
+  flex: none;
+  width: 120px;
+  aspect-ratio: 16 / 9;
+  height: auto;
+  border-radius: var(--ds-radius-control);
+  object-fit: cover;
+  background: var(--ds-lapis-900);
+}
+.link-preview.is-compact {
+  padding: 10px 14px;
+}
+.link-preview-text {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+  flex: 1;
+}
+.link-preview-text strong {
+  font-family: var(--ds-font-display);
+  font-size: var(--ds-text-15);
+  font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.link-preview-text small {
+  font-size: var(--ds-text-12);
+  color: var(--ds-fg-5);
+}
+.link-preview-line {
+  display: block;
+  height: 12px;
+  border-radius: 4px;
+}
+.link-preview-line.is-short {
+  width: 45%;
+}
+.suggest-chip {
+  justify-self: start;
+  align-self: flex-start;
+  padding: 6px 12px;
+  border: 1px solid var(--ds-gold-line);
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-gold-100);
+  color: var(--ds-gold-text);
+  font-size: var(--ds-text-12);
+  font-weight: 550;
+}
+.suggest-chip::before {
+  content: "✦ ";
+}
+.suggest-chip:hover:not(:disabled) {
+  border-color: var(--ds-gold-text);
+}
+.create-estimate {
+  margin-top: -6px;
+  text-align: center;
+  font-size: var(--ds-text-12);
+  color: var(--ds-fg-5);
+  font-variant-numeric: tabular-nums;
+}
+.create-estimate.is-short {
+  color: var(--ds-danger-fg);
+}
+.create-estimate a {
+  color: var(--ds-lapis-700);
+  font-weight: 600;
+  text-decoration: underline;
+}
+/* Aspect và Framing đứng cạnh nhau: hai câu hỏi ngắn, một hàng. */
+.output-options {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 20px;
+}
+.output-options > .output-group:first-child {
+  grid-column: 1 / -1;
+}
+.option-hint {
+  margin-top: 8px;
+  font-size: var(--ds-text-12);
+  color: var(--ds-fg-5);
+}
+@media (max-width: 560px) {
+  .output-options {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .link-preview {
+    margin: 0 16px 14px;
+  }
+  .link-preview img {
+    width: 96px;
+  }
+}
+
+/* ─────────────────────  Kết quả + toast: đợt UX 01/10  ───────────────────── */
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid var(--ds-line-3);
+  background: var(--ds-panel);
+  color: var(--ds-text);
+  box-shadow: var(--ds-shadow-toast);
+}
+.toast.is-warning {
+  border-color: var(--ds-danger-line);
+}
+.toast.is-warning span::before {
+  content: "";
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--ds-danger);
+  vertical-align: middle;
+}
+.toast-action {
+  flex: none;
+  padding: 6px 12px;
+  border-radius: var(--ds-radius-control);
+  background: var(--ds-lapis-700);
+  color: var(--ds-accent-ink);
+  font-size: var(--ds-text-12);
+  font-weight: 600;
+}
+.toast-action:hover {
+  background: var(--ds-lapis-500);
+}
+.transcript-skeleton {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.transcript-skeleton .skeleton {
+  display: block;
+  height: 11px;
+  border-radius: 4px;
+}
+.transcript-skeleton .skeleton.is-short {
+  width: 60%;
+}
+/* Một nút chính cả hàng, hai nút phụ chia đôi hàng dưới, bản gốc là link chữ. */
+.clip-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  align-content: start;
+}
+.clip-actions > .primary-button,
+.clip-actions > .download-original {
+  grid-column: 1 / -1;
+}
+.clip-actions > .secondary-button {
+  margin-top: 0;
+  padding-inline: 10px;
+}
+.download-original {
+  justify-self: center;
+  font-size: var(--ds-text-12);
+}
+.processing-panel .primary-button {
+  margin-top: 18px;
+}
+/* Vùng toast không bắt chuột (để khỏi che trang), nhưng chính toast thì phải
+   bấm được nút Open. */
+.toast {
+  pointer-events: auto;
+}
+@media (max-width: 760px) {
+  .toast-region {
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ───────────────────────  Thư viện: đợt UX 01/10  ──────────────────────────── */
+
+/* Cả thẻ là link: lớp phủ của link tiêu đề trùm lên ảnh; sao, xoá và Retry nằm
+   trên lớp đó (z-index 2) nên vẫn bấm riêng được. */
+.project-card-footer .project-row::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+.project-card-footer .project-row:focus-visible {
+  outline: none;
+}
+.project-item:has(.project-row:focus-visible) {
+  outline: 2px solid var(--ds-lapis-500);
+  outline-offset: 3px;
+}
+.project-item {
+  cursor: pointer;
+}
+.project-thumbnail video {
+  object-fit: cover;
+}
+.card-retry {
+  position: absolute;
+  top: 8px;
+  right: 44px;
+  z-index: 2;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: var(--ds-radius-pill);
+  background: var(--ds-lapis-700);
+  color: var(--ds-accent-ink);
+  font-size: var(--ds-text-12);
+  font-weight: 600;
+  box-shadow: var(--ds-shadow-card);
+}
+.card-retry:hover:not(:disabled) {
+  background: var(--ds-lapis-500);
+}
+/* Thẻ lỗi có Retry chiếm chỗ của Xoá: dời Xoá sang trái thêm một nấc. */
+.project-item.is-failed .delete-project-button {
+  right: 118px;
+}
+.load-more {
+  display: block;
+  margin: 28px auto 0;
+}
+
+/* ─────────────────────  Khung app: đợt UX 01/10  ─────────────────────────── */
+
+.rail-account-menu {
+  position: relative;
+  flex: none;
+}
+.rail-account-menu > summary {
+  list-style: none;
+  cursor: pointer;
+}
+.rail-account-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.rail-account-menu > summary:hover {
+  border-color: var(--ds-line-4);
+}
+.account-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 200px;
+  display: grid;
+  padding: 6px;
+  border: 1px solid var(--ds-line-3);
+  border-radius: var(--ds-radius-panel);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-toast);
+}
+.account-menu a,
+.account-menu button {
+  display: block;
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: var(--ds-radius-control);
+  color: var(--ds-fg-2);
+  font-size: var(--ds-text-14);
+  text-align: left;
+  text-decoration: none;
+}
+.account-menu a:hover,
+.account-menu button:hover {
+  background: var(--ds-ink-2);
+  color: var(--ds-lapis-700);
+}
+.account-menu form {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--ds-line-2);
+}
+.plan-banner-close {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: var(--ds-gold-text);
+  font-size: 16px;
+  line-height: 1;
+}
+.plan-banner-close:hover {
+  background: rgb(198 161 91 / .2);
+}
+
+/* ────────────────────  Billing + Settings: đợt UX 01/10  ─────────────────── */
+
+.acct-hint {
+  margin-top: 8px;
+  font-size: var(--ds-text-13);
+  color: var(--ds-fg-5);
+}
+.acct-hint.is-low {
+  color: var(--ds-danger-fg);
+  font-weight: 550;
+}
+.plan-tag {
+  margin-left: 10px;
+  padding: 3px 8px;
+  border: 1px solid var(--ds-gold-line);
+  border-radius: var(--ds-radius-xs);
+  background: var(--ds-gold-100);
+  font-size: 10px;
+  letter-spacing: .1em;
+  vertical-align: middle;
+}
+.is-capitalized {
+  text-transform: capitalize;
+}
+.acct-list a {
+  color: var(--ds-lapis-700);
+  font-weight: 550;
+}
+.settings-card > .secondary-button {
+  margin-top: 16px;
+}
+.settings-signout {
+  margin-top: 4px;
+}
+.brand-loading {
+  display: grid;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+/* ─────────────  My projects — design 06/10/2026 (OpenCMO Projects.dc.html)  ───────────── */
+
+.projects-view {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.projects-heading {
+  align-items: flex-end;
+}
+.projects-heading h1 {
+  margin: 0;
+  font: 400 clamp(36px, 4vw, 52px) / 1 var(--ds-font-display);
+  letter-spacing: -0.03em;
+  color: var(--ds-fg-1);
+}
+.projects-search > span {
+  font-size: 16px;
+}
+.projects-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(360px, 100%);
+  height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--ds-line-4);
+  border-radius: 12px;
+  background: var(--ds-panel);
+  color: var(--ds-fg-4);
+}
+.ws .projects-search input[type="search"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  box-shadow: none;
+  color: var(--ds-fg-1);
+}
+.projects-search kbd {
+  padding: 1px 7px;
+  border: 1px solid var(--ds-line-4);
+  border-radius: 5px;
+  font: 500 11px var(--ds-font-mono);
+}
+.project-list {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.card-new {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: flex-start;
+  gap: 6px;
+  min-height: 260px;
+  padding: 20px;
+  border: 1px dashed var(--ds-line-4);
+  border-radius: 18px;
+  text-align: left;
+  color: var(--ds-fg-1);
+}
+.card-new:hover {
+  border-style: solid;
+  border-color: var(--ds-line-4);
+  background: var(--ds-panel);
+  color: var(--ds-fg-1);
+}
+.card-new-plus {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: auto;
+  border-radius: 50%;
+  background: var(--ds-peach);
+  color: var(--ds-accent-ink);
+}
+.card-new b {
+  font: 500 22px var(--ds-font-display);
+}
+.card-new small {
+  font-size: var(--ds-text-13);
+  color: var(--ds-fg-4);
+}
+.project-item {
+  border: 1px solid var(--ds-line);
+  border-radius: 18px;
+  background: var(--ds-panel);
+  overflow: hidden;
+}
+.project-item:hover {
+  border-color: var(--ds-line-4);
+}
+.project-thumbnail {
+  aspect-ratio: 16 / 10;
+  background: var(--ds-raised);
+}
+.project-thumbnail video {
+  object-fit: cover;
+  transition: transform 1.2s var(--ds-ease-out);
+}
+.project-item:hover .project-thumbnail video {
+  transform: scale(1.06);
+}
+.project-thumbnail-placeholder,
+.project-thumbnail-placeholder small {
+  color: var(--ds-fg-4);
+}
+.project-thumbnail-placeholder > span {
+  border-color: var(--ds-line-4);
+  color: var(--ds-fg-4);
+}
+/* Chip trên ảnh luôn là kính tối: ảnh là footage, không theo theme. */
+.project-status-badge {
+  top: auto;
+  bottom: 10px;
+  left: 10px;
+  padding: 5px 10px;
+  border-radius: var(--ds-radius-pill);
+  background: rgb(10 10 14 / .68);
+  backdrop-filter: blur(6px);
+  color: #f6efda;
+  font-weight: 500;
+}
+.project-duration {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgb(10 10 14 / .6);
+  color: #f6efda;
+  font: 500 11px var(--ds-font-mono);
+}
+.project-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 10px 12px 14px;
+}
+.project-card-footer .project-row {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+.project-row .project-row-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.project-card-footer .project-row strong,
+.project-card-footer .project-row small {
+  grid-area: auto;
+}
+.project-card-footer .project-row strong {
+  font: 600 14px var(--ds-font-sans);
+  color: var(--ds-fg-1);
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.project-card-footer .project-row small {
+  font-size: var(--ds-text-12);
+  font-weight: 400;
+  color: var(--ds-fg-4);
+}
+.project-card-footer .favorite-button,
+.project-card-footer .delete-project-button,
+.project-card-footer .card-retry {
+  /* nổi trên link phủ cả thẻ (.project-row::after) */
+  position: relative;
+  z-index: 2;
+  top: auto;
+  right: auto;
+  height: 32px;
+  min-height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  box-shadow: none;
+  opacity: 1;
+}
+.project-card-footer .favorite-button {
+  width: 32px;
+  font-size: 16px;
+  color: var(--ds-fg-4);
+}
+.project-card-footer .favorite-button[aria-pressed="true"] {
+  color: var(--ds-terra, var(--ds-star));
+}
+.project-card-footer .delete-project-button {
+  padding: 0 8px;
+  color: var(--ds-fg-4);
+  font-size: var(--ds-text-12);
+  font-weight: 500;
+}
+.project-card-footer .favorite-button:hover {
+  background: var(--ds-raised);
+}
+.project-card-footer .delete-project-button:hover:not(:disabled),
+.project-card-footer .delete-project-button[data-confirming] {
+  color: var(--ds-danger);
+  background: var(--ds-danger-bg);
+}
+
+/* ─────────────  Chi tiết dự án — design 06/10/2026  ───────────── */
+
+.job-detail {
+  max-width: 1180px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.project-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: end;
+}
+.project-head-text {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.project-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.project-title-row h1 {
+  margin: 0;
+  font: 400 clamp(32px, 3.6vw, 48px) / 1.05 var(--ds-font-display);
+  letter-spacing: -0.03em;
+  color: var(--ds-fg-1);
+  text-wrap: balance;
+}
+.project-title-row .text-button {
+  margin-left: 0;
+  font-size: var(--ds-text-13);
+  font-weight: 600;
+}
+.project-head .source-detail {
+  margin: 0;
+  color: var(--ds-fg-4);
+  font-size: var(--ds-text-14);
+}
+.project-head .project-actions {
+  margin: 0;
+}
+.project-head .project-actions button,
+.project-head .project-actions a {
+  border-radius: var(--ds-radius-pill);
+}
+.processing-panel {
+  padding: 22px;
+  border: 1px solid var(--ds-line);
+  border-radius: var(--ds-radius-frame);
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.processing-panel h2 {
+  font: 500 24px var(--ds-font-display);
+  color: var(--ds-fg-1);
+}
+.processing-panel.failed-panel {
+  border-color: var(--ds-danger);
+  background: var(--ds-danger-bg);
+}
+/* Bước pipeline thành thanh: xong = cypress, đang chạy = terra (nửa thanh). */
+.stage-steps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0;
+  list-style: none;
+}
+.stage-steps li {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ds-fg-4);
+}
+.stage-steps .stage-step-mark {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 5px;
+  border: 0;
+  border-radius: 3px;
+  background: var(--ds-raised);
+  overflow: hidden;
+}
+.stage-steps .stage-step-mark::after {
+  content: "";
+  position: absolute;
+  inset: 0 100% 0 0;
+  background: var(--ds-terra, var(--ds-peach));
+  transition: right 0.6s var(--ds-ease-out);
+}
+.stage-steps li.is-done,
+.stage-steps li.is-current {
+  color: var(--ds-fg-1);
+}
+.stage-steps li.is-done .stage-step-mark::after {
+  right: 0;
+  background: var(--ds-cyp, var(--ds-success));
+}
+.stage-steps li.is-current .stage-step-mark::after {
+  right: 45%;
+}
+.clip-tile {
+  border-radius: 7px;
+}
+.clip-tile.is-waiting {
+  border: 1px dashed var(--ds-line-4);
+  background: var(--ds-raised);
+}
+.processing-panel > .secondary-button,
+.processing-panel .panel-actions button {
+  border-radius: var(--ds-radius-pill);
+}
+.results-heading {
+  font: 500 22px var(--ds-font-display);
+}
+.results-toolbar {
+  padding: 12px 0;
+  border-top: 1px solid var(--ds-line);
+  border-bottom: 1px solid var(--ds-line);
+}
+.results-toolbar .secondary-button,
+.results-toolbar .primary-button {
+  border-radius: var(--ds-radius-pill);
+}
+.local-clips {
+  gap: 14px;
+}
+.local-clip {
+  padding: 16px;
+  border: 1px solid var(--ds-line);
+  border-radius: 20px;
+  background: var(--ds-panel);
+  box-shadow: var(--ds-shadow-card);
+}
+.local-clip.is-focused {
+  border-color: var(--ds-fg-3);
+}
+.local-clip h3 {
+  font: 500 22px / 1.2 var(--ds-font-display);
+  text-wrap: pretty;
+}
+.local-clip h3 a {
+  color: var(--ds-fg-1);
+}
+.clip-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.clip-time {
+  font: 500 12px var(--ds-font-mono);
+  color: var(--ds-fg-4);
+}
+.clip-score {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--ds-text-12);
+  font-weight: 500;
+  color: var(--ds-fg-4);
+}
+.clip-score b {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--ds-cyp, var(--ds-success));
+  border-radius: 50%;
+  font: 500 14px var(--ds-font-display);
+  color: var(--ds-fg-1);
+}
+.clip-why {
+  margin: 0;
+  color: var(--ds-fg-3);
+  font-size: var(--ds-text-14);
+  line-height: 1.6;
+}
+.clip-transcript-toggle {
+  align-self: flex-start;
+  justify-self: start;
+  margin: 0;
+  padding: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.clip-transcript {
+  padding: 12px 14px;
+  border-left: 2px solid var(--ds-terra, var(--ds-peach));
+  border-radius: 0 10px 10px 0;
+  background: var(--ds-ink-2);
+}
+/* Cột hành động xếp dọc: tải trước, rồi bản gốc (link chữ), rồi đổi khung, sửa. */
+.clip-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.clip-actions .primary-button,
+.clip-actions .secondary-button {
+  justify-content: flex-start;
+  border-radius: 12px;
+  text-align: left;
+}
+.clip-actions .download-original {
+  align-self: flex-start;
+  padding: 4px 2px;
+}
+.project-assistant {
+  border: 1px solid var(--ds-line);
+  border-radius: 20px;
+  background: var(--ds-ink-2);
+}
+@media (max-width: 760px) {
+  .project-head {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .stage-steps {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

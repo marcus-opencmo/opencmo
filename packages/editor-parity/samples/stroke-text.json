@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 20,
+            "y": 100,
+            "text": "Miter",
+            "color": "#FFFFFF",
+            "fontSize": 110,
+            "fontWeight": 700,
+            "strokes": [
+              {
+                "color": "#F43F5E",
+                "width": 8
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "x": 20,
+            "y": 330,
+            "text": "Round",
+            "color": "#FFFFFF",
+            "fontSize": 110,
+            "fontWeight": 700,
+            "strokes": [
+              {
+                "color": "#22C55E",
+                "width": 10,
+                "join": "round",
+                "cap": "round"
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "x": 20,
+            "y": 560,
+            "text": "Only",
+            "fontSize": 110,
+            "fontWeight": 700,
+            "strokes": [
+              {
+                "color": "#FACC15",
+                "width": 4,
+                "join": "bevel"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 240,
+            "width": 140,
+            "height": 140,
+            "opacity": 0,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 200,
+            "y": 240,
+            "width": 140,
+            "height": 140,
+            "opacity": 0.25,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 360,
+            "y": 240,
+            "width": 140,
+            "height": 140,
+            "opacity": 0.5,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 400,
+            "width": 140,
+            "height": 140,
+            "opacity": 0.75,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 200,
+            "y": 400,
+            "width": 140,
+            "height": 140,
+            "opacity": 1,
+            "fill": "#F43F5E"
+          },
+          {
+            "kind": "rect",
+            "x": 360,
+            "y": 400,
+            "width": 140,
+            "height": 140,
+            "opacity": 1.5,
+            "fill": "#F43F5E"
+          }
+        ]
+      }
+    ]
+  }
+}

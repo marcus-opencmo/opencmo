@@ -1,0 +1,257 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 15,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 15,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "text": "left top",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "left",
+            "textBaseline": "top"
+          },
+          {
+            "kind": "rect",
+            "x": 190,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 190,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "text": "center top",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "center",
+            "textBaseline": "top"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 365,
+            "y": 30,
+            "width": 160,
+            "height": 200,
+            "text": "right top",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "right",
+            "textBaseline": "top"
+          },
+          {
+            "kind": "rect",
+            "x": 15,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 15,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "text": "left middle",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "left",
+            "textBaseline": "middle"
+          },
+          {
+            "kind": "rect",
+            "x": 190,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 190,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "text": "center middle",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "center",
+            "textBaseline": "middle"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 365,
+            "y": 260,
+            "width": 160,
+            "height": 200,
+            "text": "right middle",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "right",
+            "textBaseline": "middle"
+          },
+          {
+            "kind": "rect",
+            "x": 15,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 15,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "text": "left bottom",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "left",
+            "textBaseline": "bottom"
+          },
+          {
+            "kind": "rect",
+            "x": 190,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 190,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "text": "center bottom",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "center",
+            "textBaseline": "bottom"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 365,
+            "y": 490,
+            "width": 160,
+            "height": 200,
+            "text": "right bottom",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "right",
+            "textBaseline": "bottom"
+          },
+          {
+            "kind": "rect",
+            "x": 15,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 15,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "text": "left alphabetic",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "left",
+            "textBaseline": "alphabetic"
+          },
+          {
+            "kind": "rect",
+            "x": 190,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 190,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "text": "center alphabetic",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "center",
+            "textBaseline": "alphabetic"
+          },
+          {
+            "kind": "rect",
+            "x": 365,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "fill": "#1E293B"
+          },
+          {
+            "kind": "text",
+            "x": 365,
+            "y": 720,
+            "width": 160,
+            "height": 200,
+            "text": "right alphabetic",
+            "color": "#FFFFFF",
+            "fontSize": 26,
+            "textAlign": "right",
+            "textBaseline": "alphabetic"
+          }
+        ]
+      }
+    ]
+  }
+}

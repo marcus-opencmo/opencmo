@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 0,
+            "y": 0,
+            "width": 540,
+            "height": 2,
+            "fill": "#64748B"
+          },
+          {
+            "kind": "text",
+            "y": 40,
+            "width": 540,
+            "text": "A width only",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "textAlign": "center"
+          },
+          {
+            "kind": "text",
+            "y": 160,
+            "width": 540,
+            "height": 80,
+            "text": "B width+height",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "textAlign": "center"
+          },
+          {
+            "kind": "text",
+            "y": 280,
+            "width": 540,
+            "height": 80,
+            "text": "C +middle",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "textAlign": "center",
+            "textBaseline": "middle"
+          },
+          {
+            "kind": "text",
+            "y": 400,
+            "width": 540,
+            "height": 80,
+            "text": "D right",
+            "color": "#FFFFFF",
+            "fontSize": 40,
+            "textAlign": "right"
+          },
+          {
+            "kind": "text",
+            "y": 520,
+            "text": "E auto",
+            "color": "#FFFFFF",
+            "fontSize": 40
+          },
+          {
+            "kind": "text",
+            "y": 640,
+            "width": 300,
+            "text": "F wraps into a narrow box of 300",
+            "color": "#FFFFFF",
+            "fontSize": 40
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "name": "opencmo",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "workspaces": [
+    "apps/*",
+    "packages/editor-core",
+    "packages/clip-doc",
+    "packages/clip-assets",
+    "packages/clip-icons",
+    "packages/clip-render",
+    "packages/clip-export",
+    "packages/clip-three"
+  ],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build --workspace @opencmo/web",
+    "typecheck": "npm run typecheck --workspace @opencmo/web",
+    "db:reset": "supabase db reset",
+    "db:test": "supabase test db",
+    "db:lint": "supabase db lint --local --level warning",
+    "db:push:dry": "supabase db push --dry-run",
+    "db:push": "supabase db push",
+    "dev:web": "npm run dev --workspace @opencmo/web",
+    "check:polar": "npm run check:polar --workspace @opencmo/web",
+    "check:pricing": "npm run check:pricing --workspace @opencmo/web",
+    "test:editor-core": "npm run test --workspace @opencmo/editor-core",
+    "check:editor-core": "npm run check --workspace @opencmo/editor-core",
+    "check:clip-doc": "npm run check --workspace @opencmo/clip-doc && node packages/clip-doc/scripts/json-schema.ts --check",
+    "test:clip-doc": "npm run test --workspace @opencmo/clip-doc",
+    "check:clip-assets": "npm run check --workspace @opencmo/clip-assets",
+    "test:clip-assets": "npm run test --workspace @opencmo/clip-assets",
+    "check:clip-render": "npm run check --workspace @opencmo/clip-render",
+    "test:clip-render": "npm run test --workspace @opencmo/clip-render",
+    "check:clip-export": "npm run check --workspace @opencmo/clip-export",
+    "test:clip-export": "npm run test --workspace @opencmo/clip-export",
+    "parity:candidate": "node packages/editor-parity/scripts/candidate.mjs",
+    "parity:compare": "node packages/editor-parity/scripts/compare.mjs",
+    "documents:check": "node scripts/check-documents.mts",
+    "check:clip-icons": "npm run check --workspace @opencmo/clip-icons",
+    "test:clip-icons": "npm run test --workspace @opencmo/clip-icons",
+    "check:clip-three": "npm run check --workspace @opencmo/clip-three",
+    "test:clip-three": "npm run test --workspace @opencmo/clip-three"
+  },
+  "overrides": {
+    "postcss": "8.5.28"
+  }
+}

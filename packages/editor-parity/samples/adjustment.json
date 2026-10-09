@@ -1,0 +1,46 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "image",
+            "width": 540,
+            "height": 960,
+            "src": "fixtures/poster.png"
+          },
+          {
+            "kind": "adjustmentLayer",
+            "width": 540,
+            "height": 960,
+            "start": 1,
+            "end": 3,
+            "tracks": [
+              {
+                "property": "scale",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 1,
+                    "easing": "easeInOut"
+                  },
+                  {
+                    "time": 2,
+                    "value": 1.6
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

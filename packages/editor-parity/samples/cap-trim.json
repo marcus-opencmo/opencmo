@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 1080,
+        "height": 1920,
+        "fill": "#1E293B",
+        "active": true,
+        "children": [
+          {
+            "kind": "captions",
+            "src": "fixtures/transcript.json",
+            "preset": "classic",
+            "start": 0,
+            "end": 2,
+            "sourceIn": 0,
+            "sourceOut": 2
+          },
+          {
+            "kind": "captions",
+            "src": "fixtures/transcript.json",
+            "preset": "classic",
+            "start": 3,
+            "sourceIn": 3
+          }
+        ]
+      }
+    ]
+  }
+}

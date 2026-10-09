@@ -1,0 +1,125 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 30,
+            "y": 150,
+            "width": 230,
+            "height": 230,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 0,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#F43F5E"
+                  },
+                  {
+                    "offset": 0.5,
+                    "color": "#FACC15"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#22C55E"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 280,
+            "y": 150,
+            "width": 230,
+            "height": 230,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 45,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#F43F5E"
+                  },
+                  {
+                    "offset": 0.5,
+                    "color": "#FACC15"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#22C55E"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 30,
+            "y": 400,
+            "width": 230,
+            "height": 230,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 90,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#F43F5E"
+                  },
+                  {
+                    "offset": 0.5,
+                    "color": "#FACC15"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#22C55E"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 280,
+            "y": 400,
+            "width": 230,
+            "height": 230,
+            "paints": [
+              {
+                "type": "linearGradient",
+                "rotation": 180,
+                "stops": [
+                  {
+                    "offset": 0,
+                    "color": "#F43F5E"
+                  },
+                  {
+                    "offset": 0.5,
+                    "color": "#FACC15"
+                  },
+                  {
+                    "offset": 1,
+                    "color": "#22C55E"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

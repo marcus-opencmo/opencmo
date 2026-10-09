@@ -1,0 +1,134 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "path",
+            "x": 40,
+            "y": 120,
+            "width": 460,
+            "height": 200,
+            "d": "M10 170 C 150 20 300 20 430 120 M 392 88 L 432 122 L 380 142",
+            "viewBox": [
+              0,
+              0,
+              460,
+              200
+            ],
+            "strokes": [
+              {
+                "color": "#FACC15",
+                "width": 12,
+                "join": "round",
+                "cap": "round"
+              }
+            ],
+            "tracks": [
+              {
+                "property": "trimEnd",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0,
+                    "easing": "easeInOut"
+                  },
+                  {
+                    "time": 1,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "x": 40,
+            "y": 480,
+            "width": 460,
+            "height": 40,
+            "d": "M0 20 Q 230 40 460 15",
+            "strokes": [
+              {
+                "color": "#4ADE80",
+                "width": 10,
+                "cap": "round"
+              }
+            ],
+            "tracks": [
+              {
+                "property": "trimStart",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0.5
+                  },
+                  {
+                    "time": 1,
+                    "value": 0
+                  }
+                ]
+              },
+              {
+                "property": "trimEnd",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0.5
+                  },
+                  {
+                    "time": 1,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "path",
+            "x": 170,
+            "y": 620,
+            "width": 200,
+            "height": 200,
+            "d": "M50 5 A45 45 0 1 1 49.99 5 Z",
+            "viewBox": [
+              0,
+              0,
+              100,
+              100
+            ],
+            "fill": "#6366F1",
+            "strokes": [
+              {
+                "color": "#E0E7FF",
+                "width": 6
+              }
+            ],
+            "tracks": [
+              {
+                "property": "trimEnd",
+                "keyframes": [
+                  {
+                    "time": 0.5,
+                    "value": 0
+                  },
+                  {
+                    "time": 1.5,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

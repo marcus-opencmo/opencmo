@@ -1,0 +1,8 @@
+{
+  "source_duration": 30,
+  "settings": {
+    "source_start": 0,
+    "source_end": 90
+  },
+  "error": "Clip start and end must be inside the source video."
+}

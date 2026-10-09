@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "types": ["node"],
+    "resolveJsonModule": true
+  },
+  "include": ["src", "../contracts/ai-models.json"]
+}

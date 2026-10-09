@@ -1,0 +1,129 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "image",
+            "x": 20,
+            "y": 20,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "blur",
+                "value": 8
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 280,
+            "y": 20,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "hueRotate",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 20,
+            "y": 280,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "brightness",
+                "value": 0.5
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 280,
+            "y": 280,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "contrast",
+                "value": 0.4
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 20,
+            "y": 540,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "grayscale",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 280,
+            "y": 540,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "invert",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 20,
+            "y": 800,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "saturate",
+                "value": 0.2
+              }
+            ]
+          },
+          {
+            "kind": "image",
+            "x": 280,
+            "y": 800,
+            "width": 240,
+            "height": 200,
+            "src": "fixtures/photo.png",
+            "effects": [
+              {
+                "type": "sepia",
+                "value": 1
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

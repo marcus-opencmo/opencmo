@@ -1,0 +1,169 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Read-only token: workflows from forks must not be able to write to the repo.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  engine:
+    name: engine (python)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/engine
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        # Canvas render tests build fake videos with ffmpeg (tests/test_canvas_render.py).
+        # `ubuntu-latest` 24.04 no longer ships ffmpeg the way 22.04 did.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev]'
+
+      - name: Lint
+        run: ruff check opencmo tests modal_app.py
+
+      - name: Test
+        run: pytest -q
+
+  web:
+    name: web (Next.js)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run check:contracts --workspace @opencmo/web
+      - run: npm run check:blog --workspace @opencmo/web
+      # Clip document: schema, sample documents, JSON Schema for Python.
+      - run: npm run check:clip-doc
+      - run: npm run test:clip-doc
+      - run: npm run check:clip-assets
+      - run: npm run test:clip-assets
+      - run: npm run check:clip-icons
+      - run: npm run test:clip-icons
+      - run: npm run check:clip-render
+      - run: npm run test:clip-render
+      # Operation registry shared by the editor and `/api/v1/editor/ops`.
+      - run: npm run check:editor-core
+      - run: npm run test:editor-core
+      - run: npm run typecheck
+      - run: npm run build
+
+  browsers:
+    # The editor outside Chromium (Safari/Firefox): feature detection + library bytes
+    # (OPFS, or IndexedDB when createWritable is missing as in Safari 17) on real engines.
+    # Needs no Supabase/worker — see apps/web/e2e-compat/compat.spec.ts.
+    name: browsers (editor compat)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright Chromium, Firefox and WebKit
+        working-directory: apps/web
+        run: npx playwright install --with-deps chromium firefox webkit
+      - name: Run compat tests on three engines
+        working-directory: apps/web
+        run: npx playwright test -c playwright.compat.config.ts
+
+  parity:
+    # The renderer must match the golden reference images (packages/editor-parity).
+    # `--phase A3`: every sample, including text and the 7 caption presets. Reference
+    # images are in the repo; samples whose reference is known-broken (`oracleBroken`) are skipped.
+    name: parity (clip-render vs DS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install ffmpeg
+        # Sample video frames are extracted with ffmpeg, as in the server export.
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: npm ci
+      - name: Chromium 141 — the version that drew the reference images
+        # Text rasterization changes between Chromium versions (141 → 153 moved text tiles
+        # by up to 55). References were drawn with 141.0.7390.37, which Playwright 1.56.1
+        # ships; the repo's Playwright drives it through `CHROMIUM`.
+        run: |
+          npx -y playwright@1.56.1 install --with-deps chromium
+          echo "CHROMIUM=$(ls -d ~/.cache/ms-playwright/chromium-1194/*/chrome | head -1)" >> "$GITHUB_ENV"
+      - name: Exporter (clip-export, real ffmpeg)
+        run: |
+          npm run check:clip-export
+          npm run test:clip-export
+      - name: Export path (Node, @napi-rs/canvas)
+        run: |
+          npm run parity:candidate -- --target node
+          npm run parity:compare -- --candidate .candidate-node --phase A3 --target node --diff .diff-node
+      - name: Preview path (Chromium)
+        run: |
+          npm run parity:candidate -- --target browser
+          npm run parity:compare -- --candidate .candidate-browser --phase A3 --diff .diff-browser
+      - name: Upload diff images on mismatch
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: parity-diff
+          path: packages/editor-parity/.diff-*
+          include-hidden-files: true
+
+  database:
+    name: database (Supabase)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          # Pinned: 2.90.0 pulls an older Postgres image that segfaults in pgTAP when a
+          # permission-denied error is raised; 2.117.0 (Postgres 17.6.1.167) passes.
+          version: 2.117.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install pytest
+      - name: Start a database-only Supabase stack
+        run: supabase start -x gotrue,realtime,storage-api,imgproxy,kong,mailpit,postgrest,postgres-meta,studio,edge-runtime,logflare,vector,supavisor
+      # A fresh runner has no volume: `supabase start` above already created an empty
+      # database and applied every migration, so no second reset is needed.
+      - name: List migrations
+        run: supabase migration list --local
+      - name: Run pgTAP
+        run: supabase test db
+      - name: Database diagnostics on pgTAP failure
+        if: failure()
+        run: |
+          docker inspect supabase_db_opencmo --format '{{json .State}}'
+          docker logs supabase_db_opencmo --tail 300
+      - name: Lint the database
+        run: supabase db lint --local --level warning
+      - name: Real multi-connection contention
+        run: python -m pytest -q packages/engine/tests/test_web_sql_concurrency.py packages/engine/tests/test_worker_sql.py
+      - name: Stop the test stack
+        if: always()
+        run: supabase stop --no-backup

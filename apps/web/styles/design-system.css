@@ -1,0 +1,504 @@
+/*
+ * Token của OpenCMO. Nguồn: docs/OpenCMO Design System/tokens/.
+ *
+ * Đây là NƠI DUY NHẤT khai báo màu, thang chữ, khoảng cách và bo góc. Mọi file
+ * CSS khác phải dùng var(--ds-*); không viết hex trực tiếp. Lý do: đợt 18/09 có
+ * ba lớp CSS chồng nhau, mỗi lớp lặp lại cùng một hex — sửa một màu phải sửa ba
+ * chỗ và luôn sót một chỗ.
+ *
+ * Tên --ds-bg / --ds-app / --ds-panel... giữ nguyên từ đợt trước vì nhiều file
+ * đang dùng; thang ink/line/fg đầy đủ thêm vào bên dưới.
+ */
+:root {
+  /*
+   * Lapis & Marble (30/09/2026). Bảng màu lấy từ ảnh tham chiếu của founder:
+   * khảm lapis, hoa văn vàng, đá cẩm thạch, travertine, một điểm hổ phách.
+   * Tên token giữ nguyên để ~4.5k dòng globals.css đi theo mà không phải sửa;
+   * "ink" giờ là NỀN (sáng ở app, tối trong editor), không còn nghĩa "màu tối".
+   * Nguồn và quy tắc dùng: artifact Design System "OpenCMO — Lapis & Marble".
+   */
+
+  /* bảng gốc — chỉ khai báo ở đây, mọi chỗ khác dùng alias bên dưới */
+  --ds-lapis-900: #0f1a5c;
+  --ds-lapis-700: #1b2a8c;
+  --ds-lapis-500: #2f45c4;
+  --ds-lapis-100: #e6e9f7;
+  --ds-gold-700: #8a6a2c;   /* vàng làm CHỮ — 4.7:1 trên marble */
+  --ds-gold-500: #c6a15b;   /* vàng làm hoa văn/viền, không làm chữ nhỏ */
+  --ds-gold-100: #f4ead3;
+  --ds-marble-50: #fbf8f2;
+  --ds-marble-100: #f4eee3;
+  --ds-travertine: #dccbae;
+  --ds-stone-600: #6b6358;
+  --ds-amber: #c8782a;      /* mắt sư tử — tối đa một chỗ mỗi màn */
+  --ds-ink-900: #111116;
+
+  /* ink — nền trang */
+  --ds-ink-0: #fbf8f2;   /* nền public */
+  --ds-ink-1: #fbf8f2;   /* nền app */
+  --ds-ink-2: #f7f2e9;
+  --ds-ink-3: #f4eee3;
+  --ds-ink-4: #ffffff;   /* panel */
+  --ds-ink-5: #faf6ee;
+  --ds-ink-6: #f4eee3;
+  --ds-ink-7: #efe7d8;   /* hover */
+  --ds-ink-8: #e7dfd0;
+
+  /* line */
+  --ds-line-1: #efe8db;
+  --ds-line-2: #e7dfd0;
+  --ds-line-3: #ddd3c1;
+  --ds-line-4: #d3c7b1;
+  --ds-line-5: #b9ab93;
+
+  /* text */
+  --ds-fg-1: #111116;
+  --ds-fg-2: #16161c;
+  --ds-fg-3: #3a3630;
+  --ds-fg-4: #6b6358;
+  --ds-fg-5: #736b5f;
+  --ds-fg-6: #8a8175;
+
+  /* accent — lapis cho hành động, vàng cho trang trí.
+     Tên orange/peach giữ lại vì nhiều selector đang dùng; giá trị là lapis. */
+  --ds-orange: var(--ds-lapis-700);
+  --ds-peach: var(--ds-lapis-700);
+  --ds-focus: var(--ds-lapis-500);
+  --ds-accent-ink: #fbf8f2;  /* chữ trên nền lapis */
+  --ds-accent-wash: var(--ds-lapis-100);
+  --ds-gold-line: var(--ds-gold-500);
+  --ds-gold-text: var(--ds-gold-700);
+
+  /* semantic */
+  --ds-success: #2f7d57;
+  --ds-danger: #b23a2e;
+  --ds-danger-fg: #9c2f24;
+  --ds-danger-bg: #fbeeea;
+  --ds-danger-line: #e2b3a9;
+  --ds-star: #c8782a;
+  --ds-queued: #8a8175;
+  --ds-cancelled: #a39a8c;
+
+  /* "bạn đang sửa cái này" */
+  --ds-selected: var(--ds-lapis-500);
+  --ds-selected-bright: #4a5fd6;
+  --ds-selected-dim: #6a7bd8;
+
+  /* làn timeline của editor — mỗi loại một màu cố định */
+  --ds-lane-caption: #a96128;
+  --ds-lane-caption-fg: #ffe6c5;
+  --ds-lane-headline: #c6a15b;
+  --ds-lane-broll: #2a3480;
+  --ds-lane-broll-line: #5d6bc4;
+  --ds-lane-video: #344e53;
+  --ds-lane-video-line: #597b86;
+
+  /* alias — dùng cái này trong code sản phẩm */
+  --ds-bg: var(--ds-ink-0);
+  --ds-app: var(--ds-ink-1);
+  --ds-panel: var(--ds-ink-4);
+  --ds-raised: var(--ds-ink-7);
+  --ds-line: var(--ds-line-2);
+  --ds-text: var(--ds-fg-2);
+  --ds-muted: var(--ds-fg-4);
+
+  /* chữ — Fraunces (tiêu đề) + Inter (giao diện), tự host vì CSP font-src 'self' */
+  --ds-font-display: Fraunces, Georgia, "Times New Roman", serif;
+  --ds-font-sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ds-font-mono: "DejaVu Sans Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ds-text-10: 10px;
+  --ds-text-11: 11px;
+  --ds-text-12: 12px;
+  --ds-text-13: 13px;
+  --ds-text-14: 14px;
+  --ds-text-15: 15px;
+  --ds-text-16: 16px;
+  --ds-text-17: 17px;
+  --ds-text-18: 18px;
+  --ds-text-20: 20px;
+  --ds-text-21: 21px;
+  --ds-text-30: 30px;
+  --ds-text-hero: clamp(32px, 3.5vw, 48px);
+  --ds-leading-tight: 1.08;
+  --ds-leading-body: 1.6;
+  --ds-leading-relaxed: 1.75;
+  --ds-leading-loose: 1.8;
+  --ds-tracking-hero: -0.02em;
+  --ds-tracking-title: -0.015em;
+  --ds-tracking-brand: -0.01em;
+  --ds-tracking-eyebrow: 0.18em;
+
+  /* bo góc — nhỏ như đá cắt: 4 / 6 / 10 */
+  --ds-radius-xs: 4px;
+  --ds-radius-sm: 4px;
+  --ds-radius-control: 6px;
+  --ds-radius-lg: 6px;
+  --ds-radius-panel: 10px;
+  --ds-radius-frame: 12px;
+  --ds-radius-pill: 999px;
+
+  /* khoảng cách — thang thật của sản phẩm, không phải lưới 4px */
+  --ds-content-max: 1240px;
+  --ds-marketing-max: 1024px;
+  --ds-rail-width: 68px;
+  --ds-rail-width-open: 232px;
+
+  /* bóng — ấm và thấp; chỉ thứ gì nổi lên mới có bóng, panel thì dùng viền */
+  --ds-shadow-card: 0 1px 2px rgb(60 44 20 / .06), 0 8px 24px -12px rgb(60 44 20 / .12);
+  --ds-shadow-toast: 0 18px 48px -18px rgb(15 26 92 / .35);
+  --ds-shadow-media: 0 18px 48px -18px rgb(15 26 92 / .35);
+  --ds-shadow-drawer: 4px 0 24px rgb(60 44 20 / .14);
+  --ds-scrim: rgb(17 17 22 / .45);
+  --ds-badge-scrim: rgb(0 0 0 / .7);
+
+  /*
+   * Chuyển động. Trần cũ (18/09) là "chỉ đổi trạng thái màu 160ms"; 21/09 nới
+   * có chủ ý cho ba thứ: khối giữ chỗ trong lúc chờ, ô clip vừa xong, và mascot
+   * trượt sang vạch stage mới. Đều là phản hồi cho một sự kiện có thật, không
+   * phải animation chào sân. Công tắc reduced-motion ở cuối file tắt tất.
+   */
+  --ds-ease-out: cubic-bezier(.2, .7, .3, 1);
+  --ds-dur-fast: 120ms;
+  --ds-dur-base: 160ms;
+  --ds-dur-slow: 420ms;
+  --ds-skeleton: #efe7d8;
+  --ds-skeleton-sheen: #f7f2e9;
+  --ds-transition-color: color var(--ds-dur-base) var(--ds-ease-out),
+    background-color var(--ds-dur-base) var(--ds-ease-out),
+    border-color var(--ds-dur-base) var(--ds-ease-out);
+
+  /* Marketing: nền đá + hoa văn. Không mang vào app. */
+  --ds-glass-fill: rgb(255 255 255 / .72);
+  --ds-glass-fill-strong: #ffffff;
+  --ds-glass-line: var(--ds-line-4);
+  --ds-glass-blur: blur(12px);
+  --ds-glass-glow: var(--ds-shadow-card);
+  --ds-halo-accent: radial-gradient(60% 60% at 50% 0%, rgb(198 161 91 / .16), transparent 70%);
+}
+
+/*
+ * Workspace "giấy & mực" (06/10/2026, docs/design/Design brainstorm session/).
+ *
+ * Chỉ áp trong phần đăng nhập: `html[data-theme]` do script khởi động của
+ * `app/app/layout.tsx` và `components/theme.tsx` đặt, nên landing/blog (dùng
+ * `:root` ở trên) không đổi theo. Editor đi chung theme với phần còn lại —
+ * trước đây `.ed2` ép tối, giờ sân khấu preview dùng `--ds-stage` trung tính.
+ *
+ * Alias (`--ds-bg`, `--ds-panel`…) phải khai lại trong từng khối: `var()` trong
+ * custom property được giải ngay tại chỗ khai, con chỉ kế thừa GIÁ TRỊ.
+ */
+html[data-theme] {
+  color-scheme: light;
+  --ds-ink-0: #ece6da;
+  --ds-ink-1: #ece6da;
+  --ds-ink-2: #f4efe5;
+  --ds-ink-3: #f7f3eb;
+  --ds-ink-4: #fbf9f4;
+  --ds-ink-5: #f7f3eb;
+  --ds-ink-6: #f1ebe0;
+  --ds-ink-7: #e8e1d3;
+  --ds-ink-8: #ddd5c4;
+  --ds-line-1: #e6dfd1;
+  --ds-line-2: #ddd5c4;
+  --ds-line-3: #d3cab7;
+  --ds-line-4: #c8bea9;
+  --ds-line-5: #aea38c;
+  --ds-fg-1: #1a1916;
+  --ds-fg-2: #1a1916;
+  --ds-fg-3: #3d3a33;
+  --ds-fg-4: #716b60;
+  --ds-fg-5: #716b60;
+  --ds-fg-6: #8a8378;
+
+  /* bảng gốc Lapis còn được app.css/cmo.css dùng thẳng. Ghép CẶP: lapis-900
+     làm nền thì marble-50 làm chữ trên nó, nên đổi cả hai theo màu chính /
+     chữ-trên-màu-chính là giữ được tương phản ở cả hai theme. */
+  --ds-lapis-900: #1a1916;
+  --ds-lapis-700: #1a1916;
+  --ds-lapis-500: #3d3a33;
+  --ds-lapis-100: #e8e1d3;
+  --ds-marble-50: #f6efda;
+  --ds-marble-100: #f4efe5;
+  --ds-ink-900: #1a1916;
+  --ds-gold-500: #c8bea9;
+  --ds-gold-700: #716b60;
+  --ds-gold-100: #fbe4d9;
+  --ds-travertine: #ddd5c4;
+  --ds-stone-600: #716b60;
+  --ds-amber: #e2704a;
+
+  /* nút chính là MỰC, không phải màu nhấn — đúng như mockup */
+  --ds-orange: #1a1916;
+  --ds-peach: #1a1916;
+  --ds-primary-hover: #3d3a33;
+  --ds-focus: #1a33b0;
+  --ds-accent-ink: #f6efda;
+  --ds-accent-wash: #e2e7fb;
+  --ds-gold-line: #c8bea9;
+  --ds-gold-text: #716b60;
+
+  /* ba màu department: Post = sky, Video = terra, Sales = cypress */
+  --ds-sky: #1a33b0;
+  --ds-sky-tint: #e2e7fb;
+  --ds-sky-ink: #13248a;
+  --ds-cyp: #24502f;
+  --ds-cyp-tint: #e0ecd8;
+  --ds-cyp-ink: #1d4426;
+  --ds-terra: #e2704a;
+  --ds-terra-tint: #fbe4d9;
+  --ds-terra-ink: #8f3416;
+  --ds-red: #d9281a;
+  --ds-red-tint: #fbdcd6;
+
+  --ds-success: #24502f;
+  --ds-danger: #d9281a;
+  --ds-danger-fg: #a81f13;
+  --ds-danger-bg: #fbdcd6;
+  --ds-danger-line: #eaa79d;
+  --ds-star: #e2704a;
+  --ds-queued: #716b60;
+  --ds-cancelled: #8a8378;
+  --ds-selected: #1a33b0;
+  --ds-selected-bright: #3a52d0;
+  --ds-selected-dim: #6a7bd8;
+
+  --ds-lane-caption: #e2e7fb;
+  --ds-lane-caption-fg: #13248a;
+  --ds-lane-headline: #e2704a;
+  --ds-lane-broll: #e0ecd8;
+  --ds-lane-broll-line: #24502f;
+  --ds-lane-video: #fbe4d9;
+  --ds-lane-video-line: #e2704a;
+  --ds-wave: rgb(226 112 74 / .85);
+
+  /* sân khấu preview: trung tính để không đánh lừa mắt khi xem màu footage */
+  --ds-stage: rgb(120 100 70 / .12);
+
+  /* bo tròn hơn bản Lapis: thẻ 16–22px, nút viên thuốc */
+  --ds-radius-xs: 6px;
+  --ds-radius-sm: 8px;
+  --ds-radius-control: 10px;
+  --ds-radius-lg: 14px;
+  --ds-radius-panel: 18px;
+  --ds-radius-frame: 22px;
+
+  --ds-shadow-card: 0 1px 2px rgb(40 32 16 / .06), 0 14px 30px -20px rgb(40 32 16 / .35);
+  --ds-shadow-toast: 0 18px 48px -18px rgb(26 25 22 / .45);
+  --ds-skeleton: #e8e1d3;
+  --ds-skeleton-sheen: #f4efe5;
+  --ds-scrim: rgb(26 25 22 / .45);
+
+  --ds-bg: var(--ds-ink-0);
+  --ds-app: var(--ds-ink-1);
+  --ds-panel: var(--ds-ink-4);
+  --ds-raised: var(--ds-ink-7);
+  --ds-line: var(--ds-line-2);
+  --ds-text: var(--ds-fg-2);
+  --ds-muted: var(--ds-fg-4);
+  --ds-glass-line: var(--ds-line-4);
+}
+
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --ds-ink-0: #08080b;
+  --ds-ink-1: #0a0a0e;
+  --ds-ink-2: #101015;
+  --ds-ink-3: #0e0e13;
+  --ds-ink-4: #14141a;
+  --ds-ink-5: #17171e;
+  --ds-ink-6: #1a1a21;
+  --ds-ink-7: #1c1c24;
+  --ds-ink-8: #25252f;
+  --ds-line-1: #1f1f28;
+  --ds-line-2: #25252f;
+  --ds-line-3: #2d2d38;
+  --ds-line-4: #34343f;
+  --ds-line-5: #4a4a57;
+  --ds-fg-1: #f1ebdc;
+  --ds-fg-2: #f1ebdc;
+  --ds-fg-3: #cbc5b6;
+  --ds-fg-4: #8e8a80;
+  --ds-fg-5: #8e8a80;
+  --ds-fg-6: #6f6b63;
+
+  --ds-lapis-900: #f1ebdc;
+  --ds-lapis-700: #f1ebdc;
+  --ds-lapis-500: #ffffff;
+  --ds-lapis-100: #1c1c24;
+  --ds-marble-50: #0b0b0e;
+  --ds-marble-100: #101015;
+  --ds-ink-900: #f1ebdc;
+  --ds-gold-500: #34343f;
+  --ds-gold-700: #8e8a80;
+  --ds-gold-100: #33201b;
+  --ds-travertine: #25252f;
+  --ds-stone-600: #8e8a80;
+  --ds-amber: #f2946f;
+
+  --ds-orange: #f1ebdc;
+  --ds-peach: #f1ebdc;
+  --ds-primary-hover: #ffffff;
+  --ds-focus: #7088ff;
+  --ds-accent-ink: #0b0b0e;
+  --ds-accent-wash: #161b3a;
+  --ds-gold-line: #34343f;
+  --ds-gold-text: #8e8a80;
+
+  --ds-sky: #7088ff;
+  --ds-sky-tint: #161b3a;
+  --ds-sky-ink: #b7c3ff;
+  --ds-cyp: #79c08a;
+  --ds-cyp-tint: #12261a;
+  --ds-cyp-ink: #a9dcb3;
+  --ds-terra: #f2946f;
+  --ds-terra-tint: #33201b;
+  --ds-terra-ink: #ffc2a8;
+  --ds-red: #ff5a3d;
+  --ds-red-tint: #3d1418;
+
+  --ds-success: #79c08a;
+  --ds-danger: #ff5a3d;
+  --ds-danger-fg: #ffb4a6;
+  --ds-danger-bg: #3d1418;
+  --ds-danger-line: #7a2c26;
+  --ds-star: #f2946f;
+  --ds-queued: #8e8a80;
+  --ds-cancelled: #6f6b63;
+  --ds-selected: #7088ff;
+  --ds-selected-bright: #95a6ff;
+  --ds-selected-dim: #5468c8;
+
+  --ds-lane-caption: #161b3a;
+  --ds-lane-caption-fg: #b7c3ff;
+  --ds-lane-headline: #f2946f;
+  --ds-lane-broll: #12261a;
+  --ds-lane-broll-line: #79c08a;
+  --ds-lane-video: #33201b;
+  --ds-lane-video-line: #f2946f;
+  --ds-wave: rgb(242 148 111 / .85);
+  --ds-stage: rgb(0 0 0 / .35);
+
+  --ds-shadow-card: 0 1px 0 rgb(255 255 255 / .03), 0 18px 40px -22px rgb(0 0 0 / .9);
+  --ds-shadow-toast: 0 8px 30px rgb(0 0 0 / .5);
+  --ds-shadow-media: 0 5px 35px rgb(0 0 0 / .33);
+  --ds-shadow-drawer: 4px 0 20px rgb(0 0 0 / .53);
+  --ds-scrim: rgb(0 0 0 / .6);
+  --ds-skeleton: #1c1c24;
+  --ds-skeleton-sheen: #25252f;
+
+  --ds-bg: var(--ds-ink-0);
+  --ds-app: var(--ds-ink-1);
+  --ds-panel: var(--ds-ink-4);
+  --ds-raised: var(--ds-ink-7);
+  --ds-line: var(--ds-line-2);
+  --ds-text: var(--ds-fg-2);
+  --ds-muted: var(--ds-fg-4);
+  --ds-glass-line: var(--ds-line-4);
+}
+
+/* Nền giấy (vân kẻ rất mờ) và nền đêm có sao — CSS thuần, không có ảnh. */
+html[data-theme] body {
+  background-color: #e4dccd;
+  background-image:
+    repeating-linear-gradient(0deg, rgb(80 64 40 / .04) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgb(80 64 40 / .035) 0 1px, transparent 1px 3px),
+    radial-gradient(120% 80% at 20% 0%, #f4efe5, #e2d9c8);
+  background-attachment: fixed;
+  color: var(--ds-text);
+}
+html[data-theme="dark"] body {
+  background-color: #060609;
+  background-image:
+    radial-gradient(1px 1px at 23px 41px, rgb(255 255 255 / .9), transparent 70%),
+    radial-gradient(1px 1px at 141px 97px, rgb(255 255 255 / .55), transparent 70%),
+    radial-gradient(1.5px 1.5px at 77px 160px, rgb(246 239 218 / .85), transparent 70%),
+    radial-gradient(1px 1px at 190px 20px, rgb(255 255 255 / .5), transparent 70%),
+    radial-gradient(1px 1px at 300px 210px, rgb(255 255 255 / .7), transparent 70%),
+    radial-gradient(1.6px 1.6px at 260px 120px, rgb(176 190 255 / .7), transparent 70%),
+    radial-gradient(1px 1px at 110px 240px, rgb(255 255 255 / .4), transparent 70%),
+    radial-gradient(120% 70% at 70% 0%, #14151f, #060609);
+  background-size: 320px 260px, 320px 260px, 320px 260px, 320px 260px, 320px 260px, 320px 260px, 320px 260px, 100% 100%;
+}
+
+/*
+ * `.theme-ink`: chỗ nào cần nền tối cố định (hiện chưa dùng). Editor KHÔNG còn
+ * ở đây — nó đi theo `html[data-theme]`.
+ */
+.theme-ink {
+  color-scheme: dark;
+  --ds-ink-0: #0c0d12;
+  --ds-ink-1: #0e0f14;
+  --ds-ink-2: #121319;
+  --ds-ink-3: #13141a;
+  --ds-ink-4: #16171e;
+  --ds-ink-5: #1a1b23;
+  --ds-ink-6: #1c1d25;
+  --ds-ink-7: #22232d;
+  --ds-ink-8: #2a2b37;
+  --ds-line-1: #22232d;
+  --ds-line-2: #2c2d38;
+  --ds-line-3: #353644;
+  --ds-line-4: #3c3d4a;
+  --ds-line-5: #50515f;
+  --ds-fg-1: #f4eee3;
+  --ds-fg-2: #f1ebe0;
+  --ds-fg-3: #d8d1c4;
+  --ds-fg-4: #a9a195;
+  --ds-fg-5: #8f877b;
+  --ds-fg-6: #776f64;
+  --ds-orange: #8b9bf5;
+  --ds-peach: #8b9bf5;
+  --ds-focus: #a5b2f8;
+  --ds-accent-ink: #0e0f14;
+  --ds-accent-wash: #1d2350;
+  --ds-gold-text: var(--ds-gold-500);
+  --ds-success: #7fcca3;
+  --ds-danger: #ef9b8c;
+  --ds-danger-fg: #ffbdad;
+  --ds-danger-bg: #2c201f;
+  --ds-danger-line: #844e45;
+  --ds-star: #e0a45a;
+  --ds-queued: #8a8c98;
+  --ds-cancelled: #6f7180;
+  --ds-selected: #d4b26c;
+  --ds-selected-bright: #e6c67f;
+  --ds-selected-dim: #c6a15b;
+  --ds-shadow-toast: 0 8px 30px rgb(0 0 0 / .4);
+  --ds-shadow-media: 0 5px 35px rgb(0 0 0 / .33);
+  --ds-shadow-drawer: 4px 0 20px rgb(0 0 0 / .53);
+  --ds-scrim: rgb(0 0 0 / .6);
+  --ds-skeleton: #1e2027;
+  --ds-skeleton-sheen: #262932;
+  /* Alias phải khai lại ở đây: `var()` trong custom property được giải ngay
+     tại :root, nên con kế thừa GIÁ TRỊ sáng chứ không trỏ về token tối ở trên. */
+  --ds-bg: var(--ds-ink-0);
+  --ds-app: var(--ds-ink-1);
+  --ds-panel: var(--ds-ink-4);
+  --ds-raised: var(--ds-ink-7);
+  --ds-line: var(--ds-line-2);
+  --ds-text: var(--ds-fg-2);
+  --ds-muted: var(--ds-fg-4);
+  --ds-glass-line: var(--ds-line-4);
+  color: var(--ds-text);
+  background-color: var(--ds-app);
+}
+
+@font-face { font-family: Fraunces; src: url("/fonts/fraunces.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+@font-face { font-family: Inter; src: url("/fonts/inter.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
+
+body { font-family: var(--ds-font-sans); font-feature-settings: "cv11", "ss01"; }
+h1, h2, h3 { font-family: var(--ds-font-display); font-weight: 450; }
+.ed2 h1, .ed2 h2, .ed2 h3 { font-family: var(--ds-font-sans); font-weight: 600; }
+html[data-theme] ::selection { background: var(--ds-terra-tint); }
+a, button, input, select { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 4px; }
+button, a, input, select { transition: var(--ds-transition-color); }
+button:not(:disabled) { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+.brand-lockup { display: inline-flex; align-items: center; gap: 10px; font-family: var(--ds-font-display); font-size: var(--ds-text-20); font-weight: 500; letter-spacing: var(--ds-tracking-brand); white-space: nowrap; }
+.brand-lockup img { flex: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

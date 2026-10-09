@@ -1,0 +1,27 @@
+{
+  "name": "@opencmo/clip-export",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "version": "0.0.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "bin": {
+    "clip-export": "./src/cli.ts"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
+    "@opencmo/clip-doc": "*",
+    "@opencmo/clip-render": "*",
+    "zod": "^4.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "vitest": "^5.0.1"
+  }
+}

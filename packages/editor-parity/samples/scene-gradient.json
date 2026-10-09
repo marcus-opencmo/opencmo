@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "active": true,
+        "paints": [
+          {
+            "type": "linearGradient",
+            "rotation": 90,
+            "stops": [
+              {
+                "offset": 0,
+                "color": "#1D4ED8"
+              },
+              {
+                "offset": 1,
+                "color": "#9333EA"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "texts": [
+      {
+        "text": "Quá cuối timeline",
+        "start": 18,
+        "end": 25,
+        "style": { "font": "DejaVu Sans", "size": 90, "color": "#ffffff", "bold": true, "x": 0.5, "y": 0.12 }
+      }
+    ]
+  },
+  "error": "Text must stay inside the timeline."
+}

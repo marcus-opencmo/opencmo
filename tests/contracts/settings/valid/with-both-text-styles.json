@@ -1,0 +1,23 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "caption_style": {
+      "font": "DejaVu Sans",
+      "size": 64,
+      "color": "#ff2d55",
+      "bold": true,
+      "x": 0.5,
+      "y": 0.78
+    },
+    "headline_style": {
+      "font": "DejaVu Serif",
+      "size": 24,
+      "color": "#000000",
+      "bold": false,
+      "x": 0.08,
+      "y": 0.92
+    }
+  }
+}

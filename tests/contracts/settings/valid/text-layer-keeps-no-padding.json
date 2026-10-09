@@ -1,0 +1,16 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 10,
+    "source_end": 30,
+    "texts": [
+      {
+        "text": "  Doanh thu gấp ba  ",
+        "start": 0,
+        "end": 3.5,
+        "style": { "font": "DejaVu Sans", "size": 90, "color": "#ffcc00", "bold": true, "x": 0.5, "y": 0.12 }
+      }
+    ]
+  },
+  "canonical": "{\"aspect\":\"9:16\",\"captions\":true,\"focus_x\":null,\"headline\":\"\",\"layout\":\"fill\",\"source_end\":30,\"source_start\":10,\"text_edits\":[],\"texts\":[{\"end\":3.5,\"start\":0,\"style\":{\"bold\":true,\"color\":\"#ffcc00\",\"font\":\"DejaVu Sans\",\"size\":90,\"x\":0.5,\"y\":0.12},\"text\":\"Doanh thu gấp ba\"}]}"
+}

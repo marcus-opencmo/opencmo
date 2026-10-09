@@ -1,0 +1,970 @@
+{
+  "$comment": "Mẫu đã chốt cùng ảnh vàng DS (references/); document JSON ở <id>.json. times = giây trên timeline scene (0 = đầu workarea).",
+  "samples": [
+    {
+      "id": "scene-fill",
+      "checklist": [
+        "SCN-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "scene-transparent",
+      "checklist": [
+        "SCN-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "scene-workarea",
+      "checklist": [
+        "SCN-02"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "scene-gradient",
+      "checklist": [
+        "SCN-03"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-box",
+      "checklist": [
+        "NOD-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-offset",
+      "checklist": [
+        "NOD-02"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-rotation",
+      "checklist": [
+        "NOD-03"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-scale",
+      "checklist": [
+        "NOD-04"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-opacity",
+      "checklist": [
+        "NOD-07"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-corners",
+      "checklist": [
+        "NOD-08"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "node-hidden",
+      "checklist": [
+        "NOD-10"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "blend-all",
+      "checklist": [
+        "NOD-09"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "rect-basic",
+      "checklist": [
+        "RCT-01",
+        "RCT-02"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "mask-basic",
+      "checklist": [
+        "RCT-03"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": [
+        "photo.png"
+      ]
+    },
+    {
+      "id": "mask-intersect",
+      "checklist": [
+        "RCT-04"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "mask-wipe",
+      "checklist": [
+        "RCT-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.25,
+        0.5,
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-basic",
+      "checklist": [
+        "TXT-01"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "fonts-all",
+      "checklist": [
+        "TXT-02"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-box",
+      "checklist": [
+        "TXT-03",
+        "TXT-04"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-align-grid",
+      "checklist": [
+        "TXT-04"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-spacing",
+      "checklist": [
+        "TXT-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-range",
+      "checklist": [
+        "TXT-06"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "text-paint",
+      "checklist": [
+        "TXT-07"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": [
+        "photo.png"
+      ]
+    },
+    {
+      "id": "paint-stack",
+      "checklist": [
+        "PNT-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "paint-linear",
+      "checklist": [
+        "PNT-02"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "paint-radial",
+      "checklist": [
+        "PNT-03"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "paint-image-fit",
+      "checklist": [
+        "PNT-04",
+        "MED-03"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": [
+        "photo.png"
+      ]
+    },
+    {
+      "id": "paint-video",
+      "checklist": [
+        "PNT-05"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        2
+      ],
+      "fixtures": [
+        "bars.webm"
+      ]
+    },
+    {
+      "id": "paint-anim",
+      "checklist": [
+        "PNT-06"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        1,
+        2
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "stroke-rect",
+      "checklist": [
+        "STY-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "stroke-text",
+      "checklist": [
+        "STY-02"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "shadow",
+      "checklist": [
+        "STY-03"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "effect-all",
+      "checklist": [
+        "STY-04"
+      ],
+      "phase": "A2",
+      "times": [
+        1
+      ],
+      "fixtures": [
+        "photo.png"
+      ]
+    },
+    {
+      "id": "effect-group",
+      "checklist": [
+        "STY-05",
+        "GRP-01"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5
+      ],
+      "fixtures": [
+        "bars.webm"
+      ]
+    },
+    {
+      "id": "style-anim",
+      "checklist": [
+        "STY-06"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        1,
+        2
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "key-props",
+      "checklist": [
+        "KEY-01"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        0.7,
+        2
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "ease-all",
+      "checklist": [
+        "KEY-02"
+      ],
+      "phase": "A2",
+      "times": [
+        0.2,
+        0.5,
+        0.8
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "key-source-time",
+      "checklist": [
+        "KEY-03"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        0.5,
+        1.5
+      ],
+      "fixtures": [
+        "bars.webm"
+      ]
+    },
+    {
+      "id": "key-color",
+      "checklist": [
+        "KEY-04"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0,
+        1,
+        2
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "anim-in",
+      "checklist": [
+        "ANI-01",
+        "ANI-02",
+        "ANI-03",
+        "ANI-04",
+        "ANI-07"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.1,
+        0.4,
+        0.8
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "anim-out",
+      "checklist": [
+        "ANI-01",
+        "ANI-02",
+        "ANI-03",
+        "ANI-04",
+        "ANI-07"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        2.2,
+        2.6,
+        2.9
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "anim-text",
+      "checklist": [
+        "ANI-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.2,
+        2.5
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "anim-scramble",
+      "checklist": [
+        "ANI-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        2.5
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "anim-phase",
+      "checklist": [
+        "ANI-07"
+      ],
+      "phase": "A2",
+      "times": [
+        0.25,
+        0.75,
+        3,
+        3.4
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "group",
+      "checklist": [
+        "GRP-01"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        1.5,
+        2.5
+      ],
+      "fixtures": []
+    },
+    {
+      "id": "transition-dissolve",
+      "checklist": [
+        "TRN-01",
+        "SEQ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1.4,
+        1.75,
+        2,
+        2.25,
+        2.6
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "transition-slideFromRight",
+      "checklist": [
+        "TRN-01",
+        "SEQ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1.4,
+        1.75,
+        2,
+        2.25,
+        2.6
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "transition-slideFromLeft",
+      "checklist": [
+        "TRN-01",
+        "SEQ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1.4,
+        1.75,
+        2,
+        2.25,
+        2.6
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "transition-fadeToBlack",
+      "checklist": [
+        "TRN-01",
+        "SEQ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1.4,
+        1.75,
+        2,
+        2.25,
+        2.6
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "transition-fadeToWhite",
+      "checklist": [
+        "TRN-01",
+        "SEQ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        1.4,
+        1.75,
+        2,
+        2.25,
+        2.6
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "adjustment",
+      "checklist": [
+        "ADJ-01"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        1.5,
+        2.5
+      ],
+      "fixtures": [
+        "poster.png"
+      ]
+    },
+    {
+      "id": "video-trim",
+      "checklist": [
+        "MED-01"
+      ],
+      "phase": "A2",
+      "times": [
+        0.2,
+        1.2,
+        2.5
+      ],
+      "fixtures": [
+        "clip.webm"
+      ]
+    },
+    {
+      "id": "video-rate",
+      "checklist": [
+        "MED-02"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        1.5
+      ],
+      "fixtures": [
+        "clip.webm"
+      ]
+    },
+    {
+      "id": "image-still",
+      "checklist": [
+        "MED-04"
+      ],
+      "phase": "A2",
+      "times": [
+        0,
+        15
+      ],
+      "fixtures": [
+        "photo.png"
+      ]
+    },
+    {
+      "id": "opencmo-reframe",
+      "checklist": [
+        "MED-07"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        1.5,
+        3
+      ],
+      "fixtures": [
+        "clip.webm"
+      ]
+    },
+    {
+      "id": "cap-classic",
+      "checklist": [
+        "CAP-01"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-whisper",
+      "checklist": [
+        "CAP-02"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-cascade",
+      "checklist": [
+        "CAP-03"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-spotlight",
+      "checklist": [
+        "CAP-04"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-paper",
+      "checklist": [
+        "CAP-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-guinea",
+      "checklist": [
+        "CAP-06"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ],
+      "linear": true
+    },
+    {
+      "id": "cap-stark",
+      "checklist": [
+        "CAP-07"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.5,
+        1.4,
+        2.5,
+        4.2
+      ],
+      "fixtures": [
+        "transcript.json"
+      ],
+      "oracleBroken": "Export của DS không vẽ chữ stark: paint blend-difference mà preset tạo ra bị mất khi chụp, phụ đề biến mất khỏi ảnh xuất (preview chưa kiểm)."
+    },
+    {
+      "id": "cap-colors-spotlight",
+      "checklist": [
+        "CAP-04"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1.4,
+        2.5
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-colors-guinea",
+      "checklist": [
+        "CAP-06"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1.4,
+        2.5
+      ],
+      "fixtures": [
+        "transcript.json"
+      ],
+      "linear": true
+    },
+    {
+      "id": "cap-align",
+      "checklist": [
+        "CAP-08"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1.4,
+        2.5
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-trim",
+      "checklist": [
+        "CAP-09"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        1,
+        2.5,
+        3.5
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "cap-animation",
+      "checklist": [
+        "ANI-05"
+      ],
+      "phase": "A3",
+      "text": true,
+      "times": [
+        0.3,
+        0.8
+      ],
+      "fixtures": [
+        "transcript.json"
+      ]
+    },
+    {
+      "id": "path-shapes",
+      "checklist": [
+        "VIS-01"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5
+      ],
+      "fixtures": [],
+      "oracle": "opencmo"
+    },
+    {
+      "id": "path-trim",
+      "checklist": [
+        "VIS-02"
+      ],
+      "phase": "A2",
+      "times": [
+        0.3,
+        0.8,
+        1.6
+      ],
+      "fixtures": [],
+      "oracle": "opencmo"
+    },
+    {
+      "id": "three-scene",
+      "checklist": [
+        "VIS-03"
+      ],
+      "phase": "A2",
+      "times": [
+        0.5,
+        1.5
+      ],
+      "fixtures": [],
+      "oracle": "opencmo"
+    }
+  ]
+}

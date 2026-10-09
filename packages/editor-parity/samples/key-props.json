@@ -1,0 +1,161 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 120,
+            "width": 120,
+            "height": 120,
+            "fill": "#F43F5E",
+            "tracks": [
+              {
+                "property": "x",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 40
+                  },
+                  {
+                    "time": 2,
+                    "value": 380
+                  }
+                ]
+              },
+              {
+                "property": "rotation",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0
+                  },
+                  {
+                    "time": 2,
+                    "value": 180
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 340,
+            "width": 120,
+            "height": 120,
+            "fill": "#22C55E",
+            "tracks": [
+              {
+                "property": "scale",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0.5
+                  },
+                  {
+                    "time": 2,
+                    "value": 1.5
+                  }
+                ]
+              },
+              {
+                "property": "opacity",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 1
+                  },
+                  {
+                    "time": 2,
+                    "value": 0.2
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 300,
+            "y": 340,
+            "width": 120,
+            "height": 120,
+            "fill": "#3B82F6",
+            "tracks": [
+              {
+                "property": "cornerRadius",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0
+                  },
+                  {
+                    "time": 2,
+                    "value": 60
+                  }
+                ]
+              },
+              {
+                "property": "height",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 120
+                  },
+                  {
+                    "time": 2,
+                    "value": 300
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 40,
+            "y": 700,
+            "width": 100,
+            "height": 100,
+            "fill": "#FACC15",
+            "tracks": [
+              {
+                "property": "offsetY",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 0
+                  },
+                  {
+                    "time": 2,
+                    "value": 120
+                  }
+                ]
+              },
+              {
+                "property": "scaleX",
+                "keyframes": [
+                  {
+                    "time": 0,
+                    "value": 1
+                  },
+                  {
+                    "time": 2,
+                    "value": 3
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

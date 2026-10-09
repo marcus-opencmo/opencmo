@@ -1,0 +1,9 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 20,
+    "headline": "a\u0007b"
+  },
+  "error": "Text cannot contain control characters."
+}

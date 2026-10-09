@@ -1,0 +1,5 @@
+{
+  "name": "opencmo-worker-node",
+  "private": true,
+  "workspaces": ["packages/clip-doc", "packages/clip-render", "packages/clip-export"]
+}

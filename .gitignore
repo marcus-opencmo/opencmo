@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.venv*/
+# Không có dấu / ở cuối: trong worktree phụ, .venv312 là symlink tới venv của
+# worktree chính, và mẫu chỉ-thư-mục không bắt được symlink.
+.venv*
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.ruff_cache/
+
+# Node
+node_modules/
+.next/
+.next-e2e/
+
+# Ảnh vàng: bản build trang ứng viên, ảnh ứng viên và ảnh diff đều sinh lại được.
+packages/editor-parity/.build/
+packages/editor-parity/.candidate-*/
+packages/editor-parity/.diff-*/
+packages/editor-parity/.frames/
+out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Môi trường
+# `.env*` chứ không liệt kê từng biến thể: `.env.production` từng lọt qua danh
+# sách cũ, và một file env bị commit là chuyện không rút lại được bằng git.
+.env*
+!.env.example
+
+# Đầu ra của engine. Neo đường dẫn: `clips/` trần khớp cả route
+# apps/web/app/api/clips/ — route không lên git, Vercel deploy ra nút Download 404.
+/packages/engine/clips/
+# Frame kiểm tra mà `modal run modal_app.py` ghi ra thư mục đang đứng.
+modal-kiem.png
+/work/
+
+# Hệ điều hành / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Workspace local, videos et logs privés.
+# `/.local-data/` giữ lại dù bản local FastAPI/SQLite đã gỡ ở D4: máy dev còn dữ
+# liệu cũ trong đó và nó KHÔNG tự xuất hiện trong Supabase.
+/.local-data/
+/artifacts/
+/.playwright-mcp/
+/supabase/.temp/
+
+# Playwright: video fixture do ffmpeg sinh ra lúc setup, và kết quả từng lần chạy.
+apps/web/e2e/fixtures/
+apps/web/test-results/
+apps/web/playwright-report/
+.vercel
+
+# Personal agent instructions (e.g. pointers to private docs); never committed.
+CLAUDE.local.md

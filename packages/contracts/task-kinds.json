@@ -1,0 +1,11 @@
+{
+  "$comment": "Nguồn duy nhất của task kind. Thứ tự = thứ tự ưu tiên claim của worker. Thêm kind: thêm một dòng ở đây, một migration đổi `tasks_kind_check`, và handler; `check:contracts` + `tests/test_task_kinds.py` báo nếu lệch.",
+  "kinds": [
+    { "kind": "probe_media", "handler": "opencmo.worker.probe_media:process" },
+    { "kind": "generate", "handler": "opencmo.worker.generate_task:process" },
+    { "kind": "prepare_full", "handler": "opencmo.worker.prepare_full_task:process" },
+    { "kind": "transcribe_media", "handler": "opencmo.worker.transcribe_media_task:process" },
+    { "kind": "render_document", "handler": "opencmo.worker.render_document_task:process" },
+    { "kind": "zip", "handler": "opencmo.worker.zip_task:process" }
+  ]
+}

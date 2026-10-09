@@ -1,0 +1,15 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 30,
+    "broll": [
+      {
+        "asset_id": "city-b-roll-9f2c1a4b7e60.mp4",
+        "at": 0,
+        "start": 1.5,
+        "end": 5
+      }
+    ]
+  }
+}

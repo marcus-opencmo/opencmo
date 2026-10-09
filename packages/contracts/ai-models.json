@@ -1,0 +1,567 @@
+{
+  "$comment": "Catalog model sinh media (spec AI Studio §7.2). MỘT nguồn cho route (zod), SQL (ai_models, seed trong migration — check:api so hai bên) và worker. `limits.maxReferences`: số ảnh tham chiếu model nhận (0 = không nhận; ô nhập không tự gắn ảnh đang chọn). `price.unit`: generation = một lần sinh; second = mỗi giây (làm tròn lên); kchars = mỗi 1000 ký tự prompt (làm tròn lên). Model `provider: fake` chỉ bật khi OPENCMO_AI_FAKE=1 và không phải production. `providerModel`: id model phía provider — worker đọc, env `OPENCMO_AI_MODEL_<ID>` (vd OPENCMO_AI_MODEL_GEMINI_VIDEO) ghi đè để chốt id thật bằng models.list mà không cần sửa catalog. Giá model Gemini là TẠM (COSTS.md §6c). `limits.scene`: model 3D Studio — spec có thêm `scene` (SceneContentSchema ở packages/clip-three/src/spec.ts); `prompt` chỉ là câu tóm tắt cho người đọc. `elevenlabs-voice`: giọng đọc có mốc từng chữ (phụ đề cho voiceover); tên giọng → voice_id ở adapter Python, giá TẠM (COSTS.md §6e).",
+  "version": 1,
+  "models": [
+    {
+      "id": "gemini-image",
+      "kind": "image",
+      "provider": "gemini",
+      "providerModel": "gemini-2.5-flash-image",
+      "name": "Nano Banana",
+      "description": "Google's fast image model. Good for thumbnails and B-roll stills.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "maxReferences": 0
+      }
+    },
+    {
+      "id": "gemini-video",
+      "kind": "video",
+      "provider": "gemini",
+      "providerModel": "veo-3.1-fast-generate-preview",
+      "name": "Veo 3.1 Fast",
+      "description": "Google's video model with sound. Short B-roll shots.",
+      "price": {
+        "unit": "second",
+        "credits": 3
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "9:16",
+          "16:9"
+        ],
+        "durations": [
+          4,
+          6,
+          8
+        ],
+        "firstFrame": true
+      }
+    },
+    {
+      "id": "gemini-voice",
+      "kind": "voice",
+      "provider": "gemini",
+      "providerModel": "gemini-2.5-flash-preview-tts",
+      "name": "Gemini voice",
+      "description": "Natural narration for intros and calls to action.",
+      "price": {
+        "unit": "kchars",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 5000,
+        "voices": [
+          "Kore",
+          "Puck",
+          "Charon",
+          "Aoede",
+          "Fenrir",
+          "Leda",
+          "Orus",
+          "Zephyr"
+        ]
+      }
+    },
+    {
+      "id": "elevenlabs-voice",
+      "kind": "voice",
+      "provider": "elevenlabs",
+      "providerModel": "eleven_multilingual_v2",
+      "name": "ElevenLabs voice",
+      "description": "Studio-quality narration in 29 languages, with word timing for captions.",
+      "price": {
+        "unit": "kchars",
+        "credits": 5
+      },
+      "limits": {
+        "maxPromptChars": 5000,
+        "voices": [
+          "Aria",
+          "Roger",
+          "Sarah",
+          "Laura",
+          "Charlie",
+          "George",
+          "Callum",
+          "Liam",
+          "Charlotte",
+          "Matilda",
+          "Brian",
+          "Jessica"
+        ]
+      }
+    },
+    {
+      "id": "elevenlabs-sfx",
+      "kind": "audio",
+      "provider": "elevenlabs",
+      "providerModel": "eleven_text_to_sound_v2",
+      "name": "Sound effects",
+      "description": "A short sound effect from a description: whooshes, impacts, clicks, room tone.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 450,
+        "minSeconds": 1,
+        "maxSeconds": 22
+      }
+    },
+    {
+      "id": "elevenlabs-music",
+      "kind": "audio",
+      "provider": "elevenlabs",
+      "providerModel": "music_v1",
+      "name": "Music",
+      "description": "Instrumental background music from a mood, genre and tempo. No vocals.",
+      "price": {
+        "unit": "generation",
+        "credits": 3
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "minSeconds": 10,
+        "maxSeconds": 60
+      }
+    },
+    {
+      "id": "studio-3d",
+      "kind": "video",
+      "provider": "opencmo-3d",
+      "name": "3D Studio",
+      "description": "Studio-lit 3D charts, numbers and objects rendered on a GPU. Exact data, your colors.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 200,
+        "aspectRatios": [
+          "9:16",
+          "1:1",
+          "4:5",
+          "16:9"
+        ],
+        "durations": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "scene": true
+      }
+    },
+    {
+      "id": "fake-image",
+      "kind": "image",
+      "provider": "fake",
+      "name": "Test image",
+      "description": "A solid color frame with your prompt on it. Development only.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "maxReferences": 2
+      }
+    },
+    {
+      "id": "fake-video",
+      "kind": "video",
+      "provider": "fake",
+      "name": "Test video",
+      "description": "A moving test pattern with your prompt on it. Development only.",
+      "price": {
+        "unit": "second",
+        "credits": 1,
+        "resolution": {
+          "480p": 1,
+          "720p": 2
+        }
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1",
+          "4:3",
+          "3:4"
+        ],
+        "durations": [
+          3,
+          5
+        ],
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "firstFrame": true,
+        "lastFrame": true
+      }
+    },
+    {
+      "id": "fake-edit",
+      "kind": "video",
+      "provider": "fake",
+      "name": "Test edit",
+      "description": "Tints the source video and writes your prompt on it. Development only.",
+      "price": {
+        "unit": "second",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 2500,
+        "aspectRatios": [
+          "9:16",
+          "16:9",
+          "1:1"
+        ],
+        "durations": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "maxReferences": 2,
+        "sourceVideo": true
+      }
+    },
+    {
+      "id": "fake-upscale",
+      "kind": "video",
+      "provider": "fake",
+      "name": "Test upscale",
+      "description": "Scales the source video up. Development only.",
+      "price": {
+        "unit": "second",
+        "credits": 1,
+        "resolution": {
+          "1080p": 1,
+          "2160p": 3
+        }
+      },
+      "limits": {
+        "maxPromptChars": 200,
+        "aspectRatios": [
+          "9:16",
+          "16:9",
+          "1:1"
+        ],
+        "durations": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "resolutions": [
+          "1080p",
+          "2160p"
+        ],
+        "sourceVideo": true,
+        "upscale": true
+      }
+    },
+    {
+      "id": "fake-voice",
+      "kind": "voice",
+      "provider": "fake",
+      "name": "Test voice",
+      "description": "A tone as long as the text would take to read. Development only.",
+      "price": {
+        "unit": "kchars",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 5000,
+        "voices": [
+          "Test A",
+          "Test B",
+          "Test C"
+        ]
+      }
+    },
+    {
+      "id": "fake-audio",
+      "kind": "audio",
+      "provider": "fake",
+      "name": "Test sound",
+      "description": "Filtered noise of the length you ask for. Development only.",
+      "price": {
+        "unit": "second",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 500,
+        "minSeconds": 1,
+        "maxSeconds": 22
+      }
+    },
+    {
+      "id": "fal-nano-banana",
+      "kind": "image",
+      "provider": "fal",
+      "providerModel": "fal-ai/nano-banana",
+      "providerModels": {
+        "edit": "fal-ai/nano-banana/edit"
+      },
+      "name": "Nano Banana",
+      "description": "Fast, faithful stills; follows reference images closely. Good for B-roll stills and first frames.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 3000,
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4"
+        ],
+        "maxReferences": 4
+      }
+    },
+    {
+      "id": "fal-seedream",
+      "kind": "image",
+      "provider": "fal",
+      "providerModel": "fal-ai/bytedance/seedream/v4/text-to-image",
+      "providerModels": {
+        "edit": "fal-ai/bytedance/seedream/v4/edit"
+      },
+      "name": "Seedream 4",
+      "description": "Detailed, high-resolution stills with strong composition.",
+      "price": {
+        "unit": "generation",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 3000,
+        "aspectRatios": [
+          "1:1",
+          "16:9",
+          "9:16",
+          "4:3",
+          "3:4"
+        ],
+        "maxReferences": 4,
+        "sizeParam": "image_size"
+      }
+    },
+    {
+      "id": "fal-seedance",
+      "kind": "video",
+      "provider": "fal",
+      "providerModel": "fal-ai/bytedance/seedance/v1/lite/text-to-video",
+      "providerModels": {
+        "image": "fal-ai/bytedance/seedance/v1/lite/image-to-video"
+      },
+      "name": "Seedance Lite",
+      "description": "Affordable short shots; can start and end on your own images.",
+      "price": {
+        "unit": "second",
+        "credits": 1,
+        "resolution": {
+          "480p": 1,
+          "720p": 2
+        }
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "durations": [
+          5,
+          10
+        ],
+        "resolutions": [
+          "480p",
+          "720p"
+        ],
+        "firstFrame": true,
+        "lastFrame": true
+      }
+    },
+    {
+      "id": "fal-kling",
+      "kind": "video",
+      "provider": "fal",
+      "providerModel": "fal-ai/kling-video/v2.1/master/text-to-video",
+      "providerModels": {
+        "image": "fal-ai/kling-video/v2.1/master/image-to-video"
+      },
+      "name": "Kling 2.1 Master",
+      "description": "Top-quality motion and camera moves. The most expensive option.",
+      "price": {
+        "unit": "second",
+        "credits": 6
+      },
+      "limits": {
+        "maxPromptChars": 2500,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "durations": [
+          5,
+          10
+        ],
+        "firstFrame": true
+      }
+    },
+    {
+      "id": "fal-hailuo",
+      "kind": "video",
+      "provider": "fal",
+      "providerModel": "fal-ai/minimax/hailuo-02/standard/text-to-video",
+      "providerModels": {
+        "image": "fal-ai/minimax/hailuo-02/standard/image-to-video"
+      },
+      "name": "Hailuo 02",
+      "description": "Cheap, realistic physics for everyday scenes.",
+      "price": {
+        "unit": "second",
+        "credits": 1
+      },
+      "limits": {
+        "maxPromptChars": 2000,
+        "aspectRatios": [
+          "16:9",
+          "9:16",
+          "1:1"
+        ],
+        "durations": [
+          6,
+          10
+        ],
+        "firstFrame": true
+      }
+    },
+    {
+      "id": "fal-kling-edit",
+      "kind": "video",
+      "provider": "fal",
+      "providerModel": "fal-ai/kling-video/o1/video-to-video/edit",
+      "name": "Kling O1 Edit",
+      "description": "Change a 3 to 10 second video with words: its subject, setting or style. Keeps the motion and camera.",
+      "price": {
+        "unit": "second",
+        "credits": 4
+      },
+      "limits": {
+        "maxPromptChars": 2500,
+        "aspectRatios": [
+          "9:16",
+          "16:9",
+          "1:1"
+        ],
+        "durations": [
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "maxReferences": 4,
+        "sourceVideo": true
+      }
+    },
+    {
+      "id": "fal-seedvr-upscale",
+      "kind": "video",
+      "provider": "fal",
+      "providerModel": "fal-ai/seedvr/upscale/video",
+      "name": "Upscale",
+      "description": "Sharper, higher-resolution copy of a 1 to 15 second video.",
+      "price": {
+        "unit": "second",
+        "credits": 2,
+        "resolution": {
+          "1080p": 1,
+          "2160p": 3
+        }
+      },
+      "limits": {
+        "maxPromptChars": 200,
+        "aspectRatios": [
+          "9:16",
+          "16:9",
+          "1:1"
+        ],
+        "durations": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9,
+          10,
+          11,
+          12,
+          13,
+          14,
+          15
+        ],
+        "resolutions": [
+          "1080p",
+          "2160p"
+        ],
+        "sourceVideo": true,
+        "upscale": true
+      }
+    }
+  ]
+}

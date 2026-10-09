@@ -1,0 +1,6 @@
+.agent-eval/
+# Sinh lúc build (packages/clip-three/scripts/build-sandbox.mts): runtime 3D ~1,4 MB.
+public/sandbox/
+# Chép từ packages/clip-media lúc dev/build (scripts/sync-media.mts) — nguồn ở đó.
+public/fonts/
+public/lottie/

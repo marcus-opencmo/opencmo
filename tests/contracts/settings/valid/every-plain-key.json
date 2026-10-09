@@ -1,0 +1,13 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 12.5,
+    "source_end": 42.0,
+    "aspect": "1:1",
+    "layout": "manual",
+    "focus_x": 0.37,
+    "captions": false,
+    "caption_preset": "clean",
+    "headline": "Ba câu hỏi tôi hỏi mọi founder 😀"
+  }
+}

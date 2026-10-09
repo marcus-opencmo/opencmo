@@ -1,0 +1,81 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "rect",
+            "x": 120,
+            "y": 100,
+            "rotation": 8,
+            "width": 300,
+            "height": 160,
+            "fill": "#1E293B",
+            "strokes": [
+              {
+                "color": "#F43F5E",
+                "width": 6,
+                "join": "miter"
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 120,
+            "y": 360,
+            "rotation": 8,
+            "width": 300,
+            "height": 160,
+            "fill": "#1E293B",
+            "strokes": [
+              {
+                "color": "#F43F5E",
+                "width": 14,
+                "join": "round"
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 120,
+            "y": 620,
+            "rotation": 8,
+            "width": 300,
+            "height": 160,
+            "fill": "#1E293B",
+            "strokes": [
+              {
+                "color": "#F43F5E",
+                "width": 22,
+                "join": "bevel"
+              }
+            ]
+          },
+          {
+            "kind": "rect",
+            "x": 420,
+            "y": 880,
+            "width": 80,
+            "height": 40,
+            "fill": "#22C55E",
+            "strokes": [
+              {
+                "color": "#FFFFFF",
+                "width": 10,
+                "opacity": 0.5,
+                "blendMode": "overlay"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

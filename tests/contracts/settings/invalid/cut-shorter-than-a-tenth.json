@@ -1,0 +1,14 @@
+{
+  "source_duration": 10,
+  "settings": {
+    "source_start": 0,
+    "source_end": 10,
+    "cuts": [
+      {
+        "start": 1,
+        "end": 1
+      }
+    ]
+  },
+  "error": "Sections must stay inside the clip source range."
+}

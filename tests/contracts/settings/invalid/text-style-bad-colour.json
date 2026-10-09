@@ -1,0 +1,16 @@
+{
+  "source_duration": 10,
+  "settings": {
+    "source_start": 0,
+    "source_end": 10,
+    "caption_style": {
+      "font": "DejaVu Sans",
+      "size": 64,
+      "color": "red",
+      "bold": true,
+      "x": 0.5,
+      "y": 0.78
+    }
+  },
+  "error": "Choose a valid text color and weight."
+}

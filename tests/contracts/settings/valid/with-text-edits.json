@@ -1,0 +1,19 @@
+{
+  "source_duration": 600,
+  "settings": {
+    "source_start": 0,
+    "source_end": 30,
+    "text_edits": [
+      {
+        "start": 13.1,
+        "end": 14.0,
+        "text": "OpenCMO"
+      },
+      {
+        "start": 2.0,
+        "end": 2.5,
+        "text": ""
+      }
+    ]
+  }
+}

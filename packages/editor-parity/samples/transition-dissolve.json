@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "sequence",
+            "children": [
+              {
+                "kind": "image",
+                "width": 540,
+                "height": 960,
+                "start": 0,
+                "end": 2,
+                "transition": {
+                  "type": "dissolve",
+                  "duration": 1
+                },
+                "src": "fixtures/poster.png"
+              },
+              {
+                "kind": "rect",
+                "width": 540,
+                "height": 960,
+                "start": 2,
+                "end": 4,
+                "fill": "#22C55E"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

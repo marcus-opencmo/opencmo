@@ -1,0 +1,162 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://opencmo.io/contracts/revision-settings.schema.json",
+  "title": "OpenCMO clip revision settings",
+  "description": "Shape of the `settings` object stored once per clip (`clips.settings`). This file is the single source of truth shared by the Python engine (`packages/engine/opencmo/editing/models.py`) and the web app (`apps/web/lib/settings-schema.ts`). Rules that depend on another value cannot be written in JSON Schema and are listed under `x-cross-field-rules`; both implementations check them in code and both are held to the same fixtures in `tests/contracts/settings/`.",
+  "x-render-profile": 4,
+  "x-legacy-keys": ["caption_preset"],
+  "x-cross-field-rules": [
+    "source_start < source_end, and both must fall inside the source video (a slack of 0.001s is allowed at the end for ffprobe rounding).",
+    "The clip length (source_end - source_start) must be between 1 and 180 seconds.",
+    "layout 'manual' requires focus_x.",
+    "Every cut must sit inside [source_start, source_end] and last at least 0.1 seconds.",
+    "The timeline length - the sum of the cuts, or the clip length when there are no cuts - must be between 1 and 180 seconds.",
+    "Every text edit must sit inside the source video.",
+    "Every B-roll layer must sit inside the timeline: 0 <= at and at + (end - start) <= timeline length.",
+    "Text edits are sorted by (start, end) when stored, so two revisions that differ only in edit order share one fingerprint.",
+    "Every text layer must sit inside the timeline: 0 <= start < end <= timeline length, and last at least 0.1 seconds.",
+    "A revision carries either `texts` or a non-empty `headline`, never both. `headline` is the pre-2026-09-21 shape and is still accepted because revisions are immutable and cannot be migrated.",
+    "Text layers are NOT sorted when stored: their order is their draw order, unlike text edits."
+  ],
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_start", "source_end"],
+  "properties": {
+    "source_start": {
+      "type": "number",
+      "minimum": 0,
+      "description": "Start of the clip, in seconds on the SOURCE video - never on the clip. Trimming later keeps every caption edit in place."
+    },
+    "source_end": {
+      "type": "number",
+      "exclusiveMinimum": 0,
+      "description": "End of the clip, in seconds on the source video."
+    },
+    "aspect": {
+      "enum": ["9:16", "1:1", "16:9"],
+      "default": "9:16"
+    },
+    "layout": {
+      "enum": ["fill", "fit", "manual"],
+      "default": "fill"
+    },
+    "focus_x": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "default": null,
+      "description": "Horizontal centre of the crop, 0 to 1. Required when layout is 'manual'."
+    },
+    "captions": {
+      "type": "boolean",
+      "default": true
+    },
+    "caption_preset": {
+      "deprecated": true,
+      "description": "Removed in R4: the clipping form only turns captions on or off, the pipeline burns one fixed style, and caption styles are chosen in the editor. Stored revisions and presets may still carry this key; both implementations accept it and drop it (see `x-legacy-keys`)."
+    },
+    "headline": {
+      "type": "string",
+      "maxLength": 120,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+      "default": "",
+      "deprecated": true,
+      "description": "One fixed title shown for the first 3 seconds. Superseded by `texts`; kept forever because clip_revisions rows are immutable, so a revision saved before `texts` existed must keep parsing."
+    },
+    "texts": {
+      "type": "array",
+      "maxItems": 10,
+      "items": { "$ref": "#/$defs/textLayer" },
+      "description": "Free text layers on the frame, in draw order. Omitted when there are none."
+    },
+    "text_edits": {
+      "type": "array",
+      "maxItems": 2000,
+      "default": [],
+      "items": { "$ref": "#/$defs/textEdit" }
+    },
+    "cuts": {
+      "type": "array",
+      "maxItems": 40,
+      "items": { "$ref": "#/$defs/cut" },
+      "description": "Sections of the source kept in the timeline, in play order. Omitted when the clip is one unbroken range."
+    },
+    "broll": {
+      "type": "array",
+      "maxItems": 20,
+      "items": { "$ref": "#/$defs/broll" },
+      "description": "Overlay videos laid on top of the timeline. Omitted when there are none."
+    },
+    "caption_style": { "$ref": "#/$defs/textStyle" },
+    "headline_style": { "$ref": "#/$defs/textStyle" }
+  },
+  "$defs": {
+    "textLayer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "start", "end", "style"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 120, "pattern": "^[^\\u0000-\\u001f\\u007f]*$" },
+        "start": { "type": "number", "minimum": 0, "description": "Seconds on the TIMELINE, not on the source video." },
+        "end": { "type": "number", "exclusiveMinimum": 0 },
+        "style": { "$ref": "#/$defs/textStyle" }
+      },
+      "description": "`style` is required, unlike `headline_style`. Without it a layer would fall back to the old top-anchored Headline style while the editor canvas anchors on the centre, so preview and file would disagree by half a line."
+    },
+    "textEdit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "text"],
+      "properties": {
+        "start": { "type": "number", "minimum": 0 },
+        "end": { "type": "number", "exclusiveMinimum": 0 },
+        "text": {
+          "type": "string",
+          "maxLength": 500,
+          "pattern": "^[^\\u0000-\\u001f\\u007f]*$",
+          "description": "Replacement words. An empty string deletes them."
+        }
+      }
+    },
+    "cut": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end"],
+      "properties": {
+        "start": { "type": "number", "minimum": 0 },
+        "end": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "broll": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "at", "start", "end"],
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|[a-zA-Z0-9_-]+\\.[a-zA-Z0-9]+)$",
+          "description": "A media_assets uuid on the web, or a file name inside the workspace media folder on the local build. Nothing else - a slash, a '..' or a URL here would be an arbitrary path chosen by the client."
+        },
+        "at": { "type": "number", "minimum": 0, "description": "Where the overlay starts on the timeline, in seconds." },
+        "start": { "type": "number", "minimum": 0, "description": "Trim start inside the overlay video." },
+        "end": { "type": "number", "exclusiveMinimum": 0, "description": "Trim end inside the overlay video. Must be at least 0.1s after start." }
+      }
+    },
+    "textStyle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["font", "size", "color", "bold", "x", "y"],
+      "properties": {
+        "font": {
+          "enum": ["DejaVu Sans", "DejaVu Serif", "DejaVu Sans Mono"],
+          "description": "Whitelist, not a free string: this value reaches a libass style line and an ffmpeg argument."
+        },
+        "size": { "type": "number", "minimum": 24, "maximum": 160 },
+        "color": { "type": "string", "pattern": "^#[0-9a-fA-F]{6}$" },
+        "bold": { "type": "boolean" },
+        "x": { "type": "number", "minimum": 0.08, "maximum": 0.92, "description": "Position inside the canvas safe area." },
+        "y": { "type": "number", "minimum": 0.08, "maximum": 0.92 }
+      }
+    }
+  }
+}

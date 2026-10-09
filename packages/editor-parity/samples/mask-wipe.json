@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "text",
+            "x": 20,
+            "y": 400,
+            "width": 500,
+            "height": 160,
+            "text": "WIPE",
+            "color": "#FACC15",
+            "fontSize": 120,
+            "fontWeight": 700,
+            "masks": [
+              {
+                "kind": "rect",
+                "height": 200,
+                "tracks": [
+                  {
+                    "property": "width",
+                    "keyframes": [
+                      {
+                        "time": 0,
+                        "value": 0
+                      },
+                      {
+                        "time": 1,
+                        "value": 500,
+                        "easing": "easeOut"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

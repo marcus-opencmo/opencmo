@@ -1,0 +1,53 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "image",
+            "x": 20,
+            "y": 200,
+            "width": 500,
+            "height": 281,
+            "src": "fixtures/photo.png",
+            "masks": [
+              {
+                "kind": "rect",
+                "x": 100,
+                "y": 40,
+                "width": 300,
+                "height": 200,
+                "cornerRadius": 100
+              }
+            ]
+          },
+          {
+            "kind": "text",
+            "x": 20,
+            "y": 600,
+            "text": "MASK",
+            "color": "#FFFFFF",
+            "fontSize": 120,
+            "fontWeight": 700,
+            "masks": [
+              {
+                "kind": "rect",
+                "x": 0,
+                "y": 30,
+                "width": 500,
+                "height": 60
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

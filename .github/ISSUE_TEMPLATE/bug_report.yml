@@ -1,0 +1,50 @@
+name: Bug report
+description: Something in OpenCMO doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. **Security issues: don't file them here** — see SECURITY.md.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Video clipping (engine/worker)
+        - Editor
+        - AI assistant / generation
+        - AI CMO (plans, posts, sales)
+        - Sign-in / billing / account
+        - Self-hosting / local setup
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: opencmo.io or self-hosted? Browser and OS?
+      placeholder: "self-hosted @ <commit>, Chrome 141, macOS 15"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots or exported frames
+      description: Remove keys, tokens and personal data before pasting.

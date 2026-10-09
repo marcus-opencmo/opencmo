@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "stage": {
+    "children": [
+      {
+        "kind": "scene",
+        "name": "Sample",
+        "width": 540,
+        "height": 960,
+        "fill": "#0F172A",
+        "active": true,
+        "children": [
+          {
+            "kind": "video",
+            "x": 30,
+            "y": 300,
+            "width": 480,
+            "height": 270,
+            "start": 0,
+            "sourceIn": 1,
+            "src": "fixtures/bars.webm",
+            "tracks": [
+              {
+                "property": "opacity",
+                "keyframes": [
+                  {
+                    "time": 1,
+                    "value": 0
+                  },
+                  {
+                    "time": 2,
+                    "value": 1
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
