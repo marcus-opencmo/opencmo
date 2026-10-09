@@ -20,7 +20,10 @@ import type { CmoJobKind } from "./types";
 
 export type StartedRun = { id: string; kind: CmoJobKind; status: "queued" | "running" | "done" | "failed"; created_at: string };
 
-/** Chạy lượt `runId` (hoặc vét hàng đợi) sau khi response đã gửi. Lỗi chỉ ghi log: lượt vẫn còn trong hàng đợi cho cron. */
+/**
+ * Runs `runId` (or drains the queue) after the response is sent. Errors are only logged: the run
+ * stays queued and Modal's `sweep()` dispatches it again within a minute.
+ */
 export function kickCmoQueue(runId?: string, budgetMs = 250_000): void {
   after(async () => {
     try {

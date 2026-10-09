@@ -142,7 +142,16 @@ const invalid = (message: string): ToolOutcome => ({ ok: false, content: JSON.st
 /** Dữ liệu người dùng/agent khác viết trả về trong `untrusted_data`, như tool project. */
 const data = (value: unknown) => JSON.stringify({ untrusted_data: value });
 
-export async function runCmoTool(supabase: SupabaseClient, name: string, input: unknown): Promise<ToolOutcome> {
+/**
+ * Each `read_site` fetches up to four pages from someone else's server; without a cap a model
+ * that loops on it keeps a turn busy and hammers that site.
+ */
+export const SITE_READS_PER_TURN = 3;
+
+/** Counters that live for one request (the scope is rebuilt every turn). */
+export type CmoTurn = { siteReads: number };
+
+export async function runCmoTool(supabase: SupabaseClient, name: string, input: unknown, turn: CmoTurn = { siteReads: 0 }): Promise<ToolOutcome> {
   switch (name) {
     case "read_doc": {
       const parsed = readInput.safeParse(input);
@@ -231,6 +240,14 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
     case "read_site": {
       const parsed = siteInput.safeParse(input);
       if (!parsed.success) return invalid("url must be a website address, like example.com.");
+      if (turn.siteReads >= SITE_READS_PER_TURN) {
+        return {
+          ok: false,
+          content: JSON.stringify({ error: `You can read ${SITE_READS_PER_TURN} websites per request. Work with what you have read.` }),
+          summary: "Website limit reached",
+        };
+      }
+      turn.siteReads += 1;
       try {
         // Cùng bộ đọc của Onboarding: đã chặn SSRF, trần thời gian và dung lượng mỗi trang.
         const snapshot = await readSite(parsed.data.url);
