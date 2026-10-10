@@ -343,7 +343,7 @@ button.cmo-chip { font: inherit; font-size: 12.5px; cursor: pointer; }
 .cmo-own small { display: block; color: var(--ds-fg-5); font-size: 12px; }
 
 /* Your CMO */
-.cmo-chat { flex: 1; min-height: 0; display: grid; grid-template-rows: auto minmax(0, 1fr) auto auto; }
+.cmo-chat { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; }
 .cmo-chat-head { display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 0 10px 0 18px; border-bottom: 1px solid var(--cmo-gold-soft); background: var(--ds-marble-50); }
 .cmo-chat-tab { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
 .cmo-chat-tab .ds-icon { color: var(--ds-gold-text); flex: none; }
@@ -448,6 +448,11 @@ button.cmo-chip { font: inherit; font-size: 12.5px; cursor: pointer; }
   .cmo-bar-mark { display: none; }
   .cmo-project-name { max-width: 120px; }
   .cmo-vitals, .cmo-rings-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+  /* Project chip + Activity + theme switch are wider than a phone; Activity keeps its name for screen readers. */
+  .cmo-bar-btn { padding: 0 8px; }
+  .cmo-bar-btn-label { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 }
 
 /* Sheet tài liệu: marketing plan mở ngay trong dashboard, trượt từ phải */
