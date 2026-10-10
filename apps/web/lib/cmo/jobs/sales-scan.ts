@@ -12,7 +12,7 @@
 import { z } from "zod";
 
 import { searchReddit, SocialReadError, type RedditThread } from "../social/reddit";
-import { avoidList, documentsBlock, memoriesBlock } from "./context";
+import { avoidList, documentsBlock, recall } from "./context";
 import { skillText } from "../skills";
 import { fakeAllowed, LlmError, structured } from "./llm";
 import type { JobContext, JobOutput } from "./runner";
@@ -135,7 +135,7 @@ export async function salesScan(ctx: JobContext): Promise<JobOutput> {
   const { docs, memories, seen } = await ctx.step(
     "read_doc",
     "Read your product and strategy",
-    async () => ({ docs: await store.documents(run.user_id), memories: await store.memories(run.user_id, 15), seen: await store.seenUrls(run.user_id) }),
+    async () => ({ docs: await store.documents(run.user_id), memories: await recall(store, run.user_id, 15, "sales"), seen: await store.seenUrls(run.user_id) }),
   );
 
   const queries = await ctx.step("make_queries", "Writing searches from your customers' pains", async () => {
@@ -228,7 +228,7 @@ export async function salesScan(ctx: JobContext): Promise<JobOutput> {
       await structured({
         agent: "sales",
         system: REPLY_SYSTEM,
-        prompt: `${documentsBlock(docs)}\n\n${memoriesBlock(memories)}\n\n${avoid.length ? `Words to avoid: ${avoid.join(", ")}\n\n` : ""}${ranked
+        prompt: `${documentsBlock(docs)}\n\n${memories}\n\n${avoid.length ? `Words to avoid: ${avoid.join(", ")}\n\n` : ""}${ranked
           .map((r, i) => threadBlock(r.thread, i))
           .join("\n\n")}\n\nDraft one reply per thread.`,
         schema: ReplySchema,

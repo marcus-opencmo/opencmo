@@ -367,3 +367,87 @@ Two rules from §2 still hold:
 A 3D scene is just another generation: its spec hash (JCS) is the cache key, and the editor
 and exporter treat the result like any generated video. three.js does not run inside the
 exporter because software WebGL measured 178–531 ms per frame, far above the 150 ms budget.
+
+---
+
+## 11. AI CMO: scheduling, memory, goals and providers
+
+Implemented in PR #21. The review with diagrams (in Vietnamese) is the "Kiến trúc AI CMO"
+artifact linked there.
+
+### Language boundary
+
+> **TypeScript for product logic. Python only for video. Postgres for data and money.**
+
+| Question when adding a feature | Answer |
+|---|---|
+| Does it touch ffmpeg, MediaPipe, a GPU or large video files? | Python on Modal (`packages/engine`) |
+| Everything else: agents, CMO jobs, API, editor | TypeScript on Vercel (`apps/web`, `packages/*`) |
+| Does it write data or move credits? | An RPC in Supabase |
+
+The editor packages (`editor-core`, `clip-doc`, `clip-render`) run in the browser and on the
+server, and the editor assistant's tools are `editor-core` ops. A Python backend would need a
+second copy of them, so the backend stays TypeScript. TypeScript and Python meet only through
+`packages/contracts/*.json` and JCS hashes.
+
+### Scheduling: Modal is the only clock
+
+`apps/web/vercel.json` has no crons. Modal (`packages/engine/modal_app.py`) keeps time and
+dispatches; CMO jobs stay TypeScript and run on Vercel, in parallel:
+
+```
+Modal cmo_schedule  (00:05 UTC daily) ──GET──▶ /api/cron/cmo           enqueue the loops due today
+Modal sweep()       (every minute)    ──POST─▶ /api/internal/cmo/run   ×N, one per claimable run (max 10)
+Modal cleanup       (03:00 UTC daily) ──GET──▶ /api/cron/cleanup
+```
+
+- Enqueue stays **once a day** on purpose: the loops are daily and `cmo_enqueue` only dedupes runs
+  still queued or running, so enqueuing more often would run a finished loop again.
+- `/api/internal/cmo/run` answers 202 and drains inside `after()`; each call claims its own lease,
+  so an extra call does nothing. `sweep()` counts claimable runs with the same rule as
+  `claim_cmo_run` (`opencmo/worker/cmo_dispatch.py`).
+- Both directions authenticate with `CRON_SECRET`; Modal also needs `OPENCMO_WEB_URL`.
+
+### Memory in three tiers
+
+| Tier | Where | Read by |
+|---|---|---|
+| 1. Profile | the four `marketing_documents` | every job and the chat |
+| 2. Events | `cmo_memories` with `kind`, `topic`, `importance`, `expires_at` | each job reads its own topic + `general`, most important first, unexpired |
+| 3. Lessons | `cmo_lessons`, one per topic per week | every job and the chat, before events |
+
+`summarize_memory` (Sunday, free) writes the topic lessons; `review_week` writes the `general`
+lesson. Skip reasons expire after 90 days; notes the founder typed do not.
+
+### Weekly goal loop
+
+`cmo_goals` holds at most one goal per week, counted in `posts`, `replies`, `clips` or `views`.
+The CMO proposes (chat tool `set_week_goal`, or `review_week` for next week); it becomes the goal
+only when the founder approves the card in Approvals. `review_week` (Sunday, free) records the
+result, writes the lesson and proposes the next goal; W1 plans around the approved goal. Chat tool
+`get_run_result` lets the CMO check on work it handed out.
+
+### CMO → editor assistant
+
+Chat tool `create_video_brief` writes a brief (hook, b-roll, visuals, pacing) for a project the
+founder already clipped from their own video. Approving the card opens the project with the brief
+prefilled in the project assistant; the founder sends it and approves each change there. The CMO
+never applies edits.
+
+### Providers: one per function
+
+| Function | Provider | Called from |
+|---|---|---|
+| Agent LLM | one default: `CMO_LLM_PROVIDER` (web) = `OPENCMO_LLM_PROVIDER` (engine); choose with `npm run cmo:eval` | Vercel, Modal (moment selection) |
+| Moderation | OpenAI moderations (free) | Vercel, Modal |
+| Image, video, voice generation | fal as the main door; Gemini media and ElevenLabs move only after checking fal covers them, with word timestamps | Modal |
+| Transcripts | Groq Whisper | Modal |
+| Social reading · payments · errors | ScrapeCreators · Polar · Sentry | Vercel |
+
+### Deploy order
+
+1. Apply migrations (`supabase db push`): 20261109–20261111 add memory tiers, goals and briefs.
+2. Add `OPENCMO_WEB_URL` and `CRON_SECRET` to the Modal secret `opencmo`, then `modal deploy`.
+3. Merge: Vercel deploys and drops the old crons.
+4. Run `npm run cmo:eval -- --provider gemini --yes` and `-- --provider anthropic --yes`, then set
+   `CMO_LLM_PROVIDER` (Vercel) and `OPENCMO_LLM_PROVIDER` (Modal) to the winner.

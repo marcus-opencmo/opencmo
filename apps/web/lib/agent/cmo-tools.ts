@@ -14,9 +14,10 @@ import { z } from "zod";
 import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { DOCUMENT_KINDS, DOCUMENTS } from "@/lib/cmo/documents";
 import { startCmoRun } from "@/lib/cmo/jobs/start";
-import { insightBlock } from "@/lib/cmo/jobs/context";
+import { insightBlock, latestPerTopic } from "@/lib/cmo/jobs/context";
+import { mondayOf } from "@/lib/cmo/jobs/summarize-memory";
 import { readSite, SiteError } from "@/lib/cmo/site";
-import { isoDay, type CompetitorInsight } from "@/lib/cmo/jobs/types";
+import { isoDay, type CompetitorInsight, type Lesson } from "@/lib/cmo/jobs/types";
 
 import { CMO_SKILLS } from "@/lib/cmo/skills/index.gen";
 import { SKILL_NAMES, skillText, type SkillName } from "@/lib/cmo/skills";
@@ -82,14 +83,18 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
   },
   {
     name: "remember",
-    description: "Save a short note the user asked you to remember (a preference, a fact, something to avoid). It is used in every future plan and draft.",
+    description:
+      "Save a short note the user asked you to remember (a preference, a fact, something to avoid). It is used in every future plan and draft. Set topic when the note is only about one area: post (X posts), sales (Reddit), video, or research.",
     schema: {
       type: "object",
-      properties: { note: { type: "string" } },
+      properties: {
+        note: { type: "string" },
+        topic: { type: "string", enum: ["general", "post", "sales", "video", "research"] },
+      },
       required: ["note"],
       additionalProperties: false,
     },
-    strict: true,
+    strict: false,
   },
   {
     name: "read_skill",
@@ -117,9 +122,60 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     },
     strict: true,
   },
+  // Weekly goal loop (architecture P2). Added at the END: tool order is the head of the prompt cache.
+  {
+    name: "get_run_result",
+    description:
+      "Check on tasks you handed out: the status, steps and result of one task (by run_id) or of the 8 most recent tasks. Use it before telling the founder something is done, and to learn from what failed.",
+    schema: {
+      type: "object",
+      properties: { run_id: { type: "string", description: "A run id from an earlier create_task result. Omit for the latest tasks." } },
+      additionalProperties: false,
+    },
+    strict: false,
+  },
+  {
+    name: "set_week_goal",
+    description:
+      "Propose one measurable goal for this week or next week, like \"Approve and post 5 posts on X\" (metric posts, target 5). It appears as a card the founder approves or edits; it is not the goal until they do. Metrics: posts (X posts approved), replies (Reddit threads the founder replied to), clips (clip packs approved), views (views on their posts).",
+    schema: {
+      type: "object",
+      properties: {
+        week: { type: "string", enum: ["this", "next"] },
+        goal: { type: "string", description: "One sentence, 3 to 300 characters." },
+        metric: { type: "string", enum: ["posts", "replies", "clips", "views"] },
+        target: { type: "integer", description: "1 to 1,000,000." },
+      },
+      required: ["week", "goal", "metric", "target"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
+  // CMO → editor assistant bridge (architecture P3).
+  {
+    name: "create_video_brief",
+    description: [
+      "Write an editing brief for clips the founder already cut from their OWN video: the hook, b-roll, visuals and pacing.",
+      "It becomes a card in Approvals. If the founder approves it, the project opens with the brief filled into the editor assistant; they send it, and every edit still needs their approval there.",
+      "project_id is a video pack's job_id from list_approvals; omit it to use their latest project with clips. You cannot cut new clips or upload video.",
+    ].join(" "),
+    schema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string" },
+        hook: { type: "string", description: "The opening line or on-screen hook, up to 200 characters." },
+        broll: { type: "string", description: "B-roll or cutaway ideas, up to 600 characters." },
+        visuals: { type: "string", description: "Captions, colors, layout, up to 600 characters." },
+        pacing: { type: "string", description: "Cut rhythm and length, up to 300 characters." },
+      },
+      required: ["hook"],
+      additionalProperties: false,
+    },
+    strict: false,
+  },
 ];
 
-const WRITES = new Set(["create_task", "remember"]);
+const WRITES = new Set(["create_task", "remember", "set_week_goal", "create_video_brief"]);
 export const isCmoWrite = (name: string) => WRITES.has(name);
 
 const readInput = z.object({ kind: z.enum(DOCUMENT_KINDS) });
@@ -134,15 +190,38 @@ const taskInput = z.object({
 });
 const JOB_OF = { planner: "plan_week", x_writer: "post_draft", sales: "sales_scan", research: "competitor_research" } as const;
 const DEPARTMENT_OF = { x_writer: "post", sales: "sales", video: "video" } as const;
-const rememberInput = z.object({ note: z.string().trim().min(1).max(600) });
+const rememberInput = z.object({ note: z.string().trim().min(1).max(600), topic: z.enum(["general", "post", "sales", "video", "research"]).default("general") });
 const siteInput = z.object({ url: z.string().trim().min(3).max(300) });
+const runInput = z.object({ run_id: z.string().uuid().optional() });
+const briefInput = z.object({
+  project_id: z.string().uuid().optional(),
+  hook: z.string().trim().min(1).max(200),
+  broll: z.string().trim().max(600).default(""),
+  visuals: z.string().trim().max(600).default(""),
+  pacing: z.string().trim().max(300).default(""),
+});
+const goalInput = z.object({
+  week: z.enum(["this", "next"]),
+  goal: z.string().trim().min(3).max(300),
+  metric: z.enum(["posts", "replies", "clips", "views"]),
+  target: z.number().int().min(1).max(1_000_000),
+});
 
 const invalid = (message: string): ToolOutcome => ({ ok: false, content: JSON.stringify({ INVALID_INPUT: message }), summary: "Invalid request" });
 
 /** Dữ liệu người dùng/agent khác viết trả về trong `untrusted_data`, như tool project. */
 const data = (value: unknown) => JSON.stringify({ untrusted_data: value });
 
-export async function runCmoTool(supabase: SupabaseClient, name: string, input: unknown): Promise<ToolOutcome> {
+/**
+ * Each `read_site` fetches up to four pages from someone else's server; without a cap a model
+ * that loops on it keeps a turn busy and hammers that site.
+ */
+export const SITE_READS_PER_TURN = 3;
+
+/** Counters that live for one request (the scope is rebuilt every turn). */
+export type CmoTurn = { siteReads: number };
+
+export async function runCmoTool(supabase: SupabaseClient, name: string, input: unknown, turn: CmoTurn = { siteReads: 0 }): Promise<ToolOutcome> {
   switch (name) {
     case "read_doc": {
       const parsed = readInput.safeParse(input);
@@ -179,7 +258,7 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         .limit(10);
       const { data: packs } = await supabase
         .from("video_packs")
-        .select("id, status, clips, created_at, decided_at")
+        .select("id, job_id, status, clips, created_at, decided_at")
         .in("status", ["in_review", "approved"])
         .gte("created_at", since)
         .order("created_at", { ascending: false })
@@ -225,12 +304,20 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
     case "remember": {
       const parsed = rememberInput.safeParse(input);
       if (!parsed.success) return invalid("note must be 1 to 600 characters.");
-      await rpcOrThrow(supabase, "cmo_remember", { p_body: parsed.data.note });
+      await rpcOrThrow(supabase, "cmo_remember", { p_body: parsed.data.note, p_topic: parsed.data.topic });
       return { ok: true, content: JSON.stringify({ saved: true }), summary: "Saved to memory" };
     }
     case "read_site": {
       const parsed = siteInput.safeParse(input);
       if (!parsed.success) return invalid("url must be a website address, like example.com.");
+      if (turn.siteReads >= SITE_READS_PER_TURN) {
+        return {
+          ok: false,
+          content: JSON.stringify({ error: `You can read ${SITE_READS_PER_TURN} websites per request. Work with what you have read.` }),
+          summary: "Website limit reached",
+        };
+      }
+      turn.siteReads += 1;
       try {
         // Cùng bộ đọc của Onboarding: đã chặn SSRF, trần thời gian và dung lượng mỗi trang.
         const snapshot = await readSite(parsed.data.url);
@@ -239,6 +326,54 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         const message = error instanceof SiteError ? error.message : "We could not read that website.";
         return { ok: false, content: JSON.stringify({ error: message }), summary: "Could not read the website" };
       }
+    }
+    case "get_run_result": {
+      const parsed = runInput.safeParse(input ?? {});
+      if (!parsed.success) return invalid("run_id must be a run id from create_task.");
+      let query = supabase.from("cmo_runs").select("id, kind, status, error, steps, output, created_at, finished_at").order("created_at", { ascending: false });
+      query = parsed.data.run_id ? query.eq("id", parsed.data.run_id).limit(1) : query.limit(8);
+      const { data: runs } = await query;
+      const rows = ((runs ?? []) as { id: string; kind: string; status: string; error: string | null; steps: { label: string; status: string }[] | null; output: unknown; created_at: string; finished_at: string | null }[]).map((r) => ({
+        run_id: r.id,
+        task: r.kind,
+        status: r.status,
+        error: r.error,
+        steps: (r.steps ?? []).map((step) => `${step.status}: ${step.label}`),
+        result: r.output,
+        started: r.created_at,
+        finished: r.finished_at,
+      }));
+      if (parsed.data.run_id && !rows.length) return { ok: false, content: JSON.stringify({ error: "No task with that id." }), summary: "Task not found" };
+      return { ok: true, content: data(rows), summary: rows.length === 1 ? `Checked a ${rows[0]!.task} task` : `Checked ${rows.length} tasks` };
+    }
+    case "set_week_goal": {
+      const parsed = goalInput.safeParse(input);
+      if (!parsed.success) return invalid("week must be this or next; goal 3 to 300 characters; metric posts, replies, clips or views; target 1 to 1,000,000.");
+      const week = isoDay(parsed.data.week === "next" ? 7 : 0, new Date(`${mondayOf()}T00:00:00Z`));
+      await rpcOrThrow(supabase, "cmo_set_week_goal", { p_week: week, p_goal: parsed.data.goal, p_metric: parsed.data.metric, p_target: parsed.data.target });
+      return {
+        ok: true,
+        content: JSON.stringify({ proposed: true, week, note: "The founder approves or edits it on the goal card in Approvals." }),
+        summary: "Proposed a weekly goal",
+      };
+    }
+    case "create_video_brief": {
+      const parsed = briefInput.safeParse(input);
+      if (!parsed.success) return invalid("hook is required (up to 200 characters); broll and visuals up to 600; pacing up to 300; project_id must be a project id.");
+      let project = parsed.data.project_id ?? null;
+      if (!project) {
+        // Latest finished clipping project: under RLS, so only the founder's own videos.
+        const { data: latest } = await supabase.from("jobs").select("id").eq("status", "done").order("created_at", { ascending: false }).limit(1).maybeSingle();
+        project = (latest as { id: string } | null)?.id ?? null;
+      }
+      if (!project) return { ok: false, content: JSON.stringify({ error: "The founder has no clips yet. Suggest they make clips from one of their own videos first." }), summary: "No project with clips" };
+      const { hook, broll, visuals, pacing } = parsed.data;
+      await rpcOrThrow(supabase, "cmo_create_video_brief", { p_job: project, p_hook: hook, p_broll: broll, p_visuals: visuals, p_pacing: pacing });
+      return {
+        ok: true,
+        content: JSON.stringify({ created: true, project_id: project, note: "The brief is a card in Approvals. Nothing is edited until the founder approves it and then approves the assistant's changes." }),
+        summary: "Wrote a video brief",
+      };
     }
     default:
       return { ok: false, content: JSON.stringify({ error: `Unknown tool ${name}.` }), summary: "Unknown tool" };
@@ -253,8 +388,16 @@ export async function cmoState(supabase: SupabaseClient): Promise<string> {
     supabase.from("video_packs").select("id").eq("status", "in_review").limit(5),
     supabase.from("content_items").select("department, platform, idea, status").eq("day", isoDay()).limit(10),
     supabase.from("cmo_runs").select("kind, status").in("status", ["queued", "running"]).limit(5),
-    supabase.from("cmo_memories").select("body").order("created_at", { ascending: false }).limit(10),
+    // Most important unexpired notes first (memory tier 2); lessons below are tier 3.
+    supabase
+      .from("cmo_memories")
+      .select("body")
+      .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
+      .order("importance", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
+  const { data: lessonRows } = await supabase.from("cmo_lessons").select("week, topic, body").order("week", { ascending: false }).limit(20);
   return `<cmo_state>${JSON.stringify({
     today: isoDay(),
     awaiting_approval: pending?.length ?? 0,
@@ -263,6 +406,7 @@ export async function cmoState(supabase: SupabaseClient): Promise<string> {
     calendar_today: today ?? [],
     jobs_running: runs ?? [],
     memories: ((memories ?? []) as { body: string }[]).map((m) => m.body),
+    lessons: latestPerTopic((lessonRows ?? []) as Lesson[]).map((l) => `${l.topic}: ${l.body}`),
   })}</cmo_state>`;
 }
 

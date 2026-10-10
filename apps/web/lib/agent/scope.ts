@@ -31,7 +31,7 @@ import {
   type ClipOutcome,
 } from "./project-tools";
 import { RESEARCH_CALLS_PER_TURN, RESEARCH_TOOLS, runResearchTool } from "./cmo-research";
-import { CMO_TOOL_SPECS, cmoContext, cmoState, isCmoWrite, runCmoTool } from "./cmo-tools";
+import { CMO_TOOL_SPECS, cmoContext, cmoState, isCmoWrite, runCmoTool, type CmoTurn } from "./cmo-tools";
 import { CMO_SYSTEM_PROMPT, PROJECT_SYSTEM_PROMPT, SYSTEM_PROMPT, projectStateBlock } from "./prompt";
 import type { ToolCall } from "./providers/types";
 import { runSkillTool, SKILL_SPECS, SKILL_TOOLS, skillIndex } from "./skills";
@@ -345,6 +345,7 @@ export function projectScope(supabase: SupabaseClient, jobId: string, turn: Turn
  */
 export function cmoScope(supabase: SupabaseClient): Scope {
   const budget = new ScBudget(RESEARCH_CALLS_PER_TURN);
+  const turn: CmoTurn = { siteReads: 0 };
   return {
     kind: "cmo",
     tools: CMO_TOOL_SPECS,
@@ -354,7 +355,7 @@ export function cmoScope(supabase: SupabaseClient): Scope {
     async plan() {
       return { kind: "run" };
     },
-    run: (call) => (RESEARCH_TOOLS.has(call.name) ? runResearchTool(call.name, call.input, budget) : runCmoTool(supabase, call.name, call.input)),
+    run: (call) => (RESEARCH_TOOLS.has(call.name) ? runResearchTool(call.name, call.input, budget) : runCmoTool(supabase, call.name, call.input, turn)),
     async decide(call) {
       throw new Error(`CMO scope has no approval tool ${call.name}.`);
     },

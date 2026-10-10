@@ -1647,7 +1647,7 @@ CREATE TABLE public.cmo_runs (
     CONSTRAINT cmo_runs_credits_check CHECK ((credits >= 0)),
     CONSTRAINT cmo_runs_error_check CHECK ((char_length(error) <= 500)),
     CONSTRAINT cmo_runs_input_check CHECK (((jsonb_typeof(input) = 'object'::text) AND (octet_length((input)::text) <= 4096))),
-    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text]))),
+    CONSTRAINT cmo_runs_kind_check CHECK ((kind = ANY (ARRAY['onboard'::text, 'plan_week'::text, 'post_draft'::text, 'sales_scan'::text, 'video_pack'::text, 'competitor_research'::text, 'pull_metrics'::text, 'summarize_memory'::text, 'review_week'::text]))),
     CONSTRAINT cmo_runs_output_check CHECK (((output IS NULL) OR ((jsonb_typeof(output) = 'object'::text) AND (octet_length((output)::text) <= 16384)))),
     CONSTRAINT cmo_runs_status_check CHECK ((status = ANY (ARRAY['queued'::text, 'running'::text, 'done'::text, 'failed'::text]))),
     CONSTRAINT cmo_runs_steps_check CHECK (((jsonb_typeof(steps) = 'array'::text) AND (octet_length((steps)::text) <= 16384)))
@@ -1898,6 +1898,132 @@ $$;
 
 
 --
+-- Name: cmo_video_briefs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_video_briefs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    job_id uuid NOT NULL,
+    hook text NOT NULL,
+    broll text DEFAULT ''::text NOT NULL,
+    visuals text DEFAULT ''::text NOT NULL,
+    pacing text DEFAULT ''::text NOT NULL,
+    status text DEFAULT 'in_review'::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT cmo_video_briefs_broll_check CHECK ((char_length(broll) <= 600)),
+    CONSTRAINT cmo_video_briefs_hook_check CHECK (((char_length(hook) >= 1) AND (char_length(hook) <= 200))),
+    CONSTRAINT cmo_video_briefs_pacing_check CHECK ((char_length(pacing) <= 300)),
+    CONSTRAINT cmo_video_briefs_status_check CHECK ((status = ANY (ARRAY['in_review'::text, 'approved'::text, 'skipped'::text]))),
+    CONSTRAINT cmo_video_briefs_visuals_check CHECK ((char_length(visuals) <= 600))
+);
+
+
+--
+-- Name: cmo_create_video_brief(uuid, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_create_video_brief(p_job uuid, p_hook text, p_broll text, p_visuals text, p_pacing text) RETURNS public.cmo_video_briefs
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_video_briefs;
+begin
+  if not exists (select 1 from public.jobs where id = p_job and user_id = v_user) then
+    raise exception 'Project not found.' using errcode = 'P0002';
+  end if;
+  if not exists (select 1 from public.clips where job_id = p_job and kind = 'moment') then
+    raise exception 'This project has no clips yet. Make clips first.' using errcode = 'P0001';
+  end if;
+  if p_hook is null or char_length(trim(p_hook)) = 0 or char_length(p_hook) > 200 then
+    raise exception 'The hook must be 1 to 200 characters.' using errcode = '22023';
+  end if;
+  if char_length(coalesce(p_broll, '')) > 600 or char_length(coalesce(p_visuals, '')) > 600 or char_length(coalesce(p_pacing, '')) > 300 then
+    raise exception 'This brief is too long.' using errcode = '22023';
+  end if;
+  if (select count(*) from public.cmo_video_briefs where user_id = v_user and status = 'in_review') >= 10 then
+    raise exception 'You have 10 video briefs waiting. Approve or skip some first.' using errcode = 'P0001';
+  end if;
+  insert into public.cmo_video_briefs (user_id, job_id, hook, broll, visuals, pacing)
+  values (v_user, p_job, trim(p_hook), trim(coalesce(p_broll, '')), trim(coalesce(p_visuals, '')), trim(coalesce(p_pacing, '')))
+  returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_goals; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_goals (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    run_id uuid,
+    week date NOT NULL,
+    goal text NOT NULL,
+    metric text NOT NULL,
+    target integer NOT NULL,
+    status text DEFAULT 'proposed'::text NOT NULL,
+    result integer,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    decided_at timestamp with time zone,
+    CONSTRAINT cmo_goals_goal_check CHECK (((char_length(goal) >= 3) AND (char_length(goal) <= 300))),
+    CONSTRAINT cmo_goals_metric_check CHECK ((metric = ANY (ARRAY['posts'::text, 'replies'::text, 'clips'::text, 'views'::text]))),
+    CONSTRAINT cmo_goals_result_check CHECK ((result >= 0)),
+    CONSTRAINT cmo_goals_status_check CHECK ((status = ANY (ARRAY['proposed'::text, 'approved'::text, 'rejected'::text]))),
+    CONSTRAINT cmo_goals_target_check CHECK (((target >= 1) AND (target <= 1000000))),
+    CONSTRAINT cmo_goals_week_check CHECK ((EXTRACT(isodow FROM week) = (1)::numeric))
+);
+
+
+--
+-- Name: cmo_decide_goal(uuid, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_decide_goal(p_id uuid, p_action text, p_goal text DEFAULT NULL::text, p_target integer DEFAULT NULL::integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_goals;
+begin
+  if p_action is null or p_action not in ('approve', 'reject') then
+    raise exception 'Choose approve or reject.' using errcode = '22023';
+  end if;
+  if p_goal is not null and (char_length(trim(p_goal)) < 3 or char_length(p_goal) > 300) then
+    raise exception 'Describe the goal in 3 to 300 characters.' using errcode = '22023';
+  end if;
+  if p_target is not null and (p_target < 1 or p_target > 1000000) then
+    raise exception 'The target must be between 1 and 1,000,000.' using errcode = '22023';
+  end if;
+  update public.cmo_goals
+  set status = case p_action when 'approve' then 'approved' else 'rejected' end,
+      -- A new target rewrites the old number in the CMO's wording, or the card would read
+      -- "3 posts" above "0 of 4 posts approved".
+      goal = coalesce(
+        nullif(trim(p_goal), ''),
+        case when p_target is not null and p_target <> target
+          then regexp_replace(goal, '\m' || target || '\M', p_target::text)
+          else goal end
+      ),
+      target = coalesce(p_target, target),
+      decided_at = now()
+  where id = p_id and user_id = v_user
+  returning * into v_row;
+  if not found then
+    raise exception 'Goal not found.' using errcode = 'P0002';
+  end if;
+  return v_row;
+end;
+$$;
+
+
+--
 -- Name: opportunities; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2025,6 +2151,40 @@ $$;
 
 
 --
+-- Name: cmo_decide_video_brief(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_decide_video_brief(p_id uuid, p_action text, p_reason text DEFAULT NULL::text) RETURNS public.cmo_video_briefs
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.cmo_video_briefs;
+begin
+  if p_action is null or p_action not in ('approve', 'skip') then
+    raise exception 'Choose approve or skip.' using errcode = '22023';
+  end if;
+  update public.cmo_video_briefs
+  set status = case p_action when 'approve' then 'approved' else 'skipped' end, decided_at = now()
+  where id = p_id and user_id = v_user and status = 'in_review'
+  returning * into v_row;
+  if not found then
+    if exists (select 1 from public.cmo_video_briefs where id = p_id and user_id = v_user) then
+      raise exception 'This brief was already decided.' using errcode = 'P0001';
+    end if;
+    raise exception 'Brief not found.' using errcode = 'P0002';
+  end if;
+  if p_action = 'skip' and p_reason is not null and char_length(trim(p_reason)) > 0 then
+    insert into public.cmo_memories (user_id, type, kind, topic, body)
+    values (v_user, 'feedback', 'feedback', 'video', left('Skipped a video brief "' || left(v_row.hook, 120) || '": ' || trim(p_reason), 600));
+  end if;
+  return v_row;
+end;
+$$;
+
+
+--
 -- Name: video_packs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2114,7 +2274,7 @@ declare
   v_row public.cmo_runs;
   v_price integer := public.cmo_job_price(p_kind);
 begin
-  if p_kind is null or p_kind not in ('plan_week', 'post_draft', 'sales_scan', 'video_pack', 'competitor_research', 'pull_metrics') then
+  if p_kind is null or p_kind = 'onboard' or public.cmo_job_daily_limit(p_kind) <= 0 then
     raise exception 'Unknown task.' using errcode = '22023';
   end if;
   if p_input is null or jsonb_typeof(p_input) <> 'object' or octet_length(p_input::text) > 4096 then
@@ -2158,7 +2318,8 @@ CREATE FUNCTION public.cmo_job_daily_limit(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 5 when 'post_draft' then 10 when 'sales_scan' then 3 when 'video_pack' then 3
-    when 'competitor_research' then 2 when 'pull_metrics' then 2 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 2 when 'summarize_memory' then 1 when 'review_week' then 1
+    else 0 end
 $$;
 
 
@@ -2170,7 +2331,8 @@ CREATE FUNCTION public.cmo_job_price(p_kind text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
   select case p_kind when 'plan_week' then 1 when 'post_draft' then 1 when 'sales_scan' then 5 when 'video_pack' then 1
-    when 'competitor_research' then 2 when 'pull_metrics' then 0 else 0 end
+    when 'competitor_research' then 2 when 'pull_metrics' then 0 when 'summarize_memory' then 0 when 'review_week' then 0
+    else 0 end
 $$;
 
 
@@ -2199,6 +2361,31 @@ begin
   insert into public.operation_log (user_id, platform, action, target) values (v_user, 'x', 'publish', p_id::text)
   on conflict do nothing;
   return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_memories_classify(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_memories_classify() RETURNS trigger
+    LANGUAGE plpgsql
+    SET search_path TO 'public'
+    AS $$
+begin
+  if new.type = 'feedback' then
+    new.kind := 'feedback';
+    if new.topic = 'general' then
+      new.topic := case
+        when new.body like 'Skipped the X post%' then 'post'
+        when new.body like 'Dismissed the Reddit thread%' then 'sales'
+        when new.body like 'Skipped a video pack%' then 'video'
+        else 'general' end;
+    end if;
+    new.expires_at := coalesce(new.expires_at, now() + interval '90 days');
+  end if;
+  return new;
 end;
 $$;
 
@@ -2238,6 +2425,77 @@ $$;
 
 
 --
+-- Name: cmo_propose_goal(uuid, uuid, date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_propose_goal(p_user uuid, p_run uuid, p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  return public.cmo_put_goal(p_user, p_run, p_week, p_goal, p_metric, p_target);
+end;
+$$;
+
+
+--
+-- Name: cmo_put_goal(uuid, uuid, date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_put_goal(p_user uuid, p_run uuid, p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_row public.cmo_goals;
+begin
+  if p_week is null or extract(isodow from p_week) <> 1 then
+    raise exception 'The week must start on a Monday.' using errcode = '22023';
+  end if;
+  if p_week < date_trunc('week', current_date)::date or p_week > date_trunc('week', current_date)::date + 7 then
+    raise exception 'Goals are for this week or next week.' using errcode = '22023';
+  end if;
+  if p_goal is null or char_length(trim(p_goal)) < 3 or char_length(p_goal) > 300 then
+    raise exception 'Describe the goal in 3 to 300 characters.' using errcode = '22023';
+  end if;
+  if p_metric is null or p_metric not in ('posts', 'replies', 'clips', 'views') then
+    raise exception 'The goal must count posts, replies, clips or views.' using errcode = '22023';
+  end if;
+  if p_target is null or p_target < 1 or p_target > 1000000 then
+    raise exception 'The target must be between 1 and 1,000,000.' using errcode = '22023';
+  end if;
+  select * into v_row from public.cmo_goals where user_id = p_user and week = p_week for update;
+  if found and v_row.status = 'approved' then
+    raise exception 'This week''s goal is already approved. Edit it on the goal card.' using errcode = 'P0001';
+  end if;
+  insert into public.cmo_goals (user_id, run_id, week, goal, metric, target)
+  values (p_user, p_run, p_week, trim(p_goal), p_metric, p_target)
+  on conflict (user_id, week) do update
+    set goal = excluded.goal, metric = excluded.metric, target = excluded.target, run_id = excluded.run_id,
+        status = 'proposed', decided_at = null, created_at = now()
+  returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_record_goal_result(uuid, date, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_record_goal_result(p_user uuid, p_week date, p_result integer) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  update public.cmo_goals set result = greatest(0, p_result)
+  where user_id = p_user and week = p_week and status = 'approved';
+  return found;
+end;
+$$;
+
+
+--
 -- Name: cmo_refund_run(public.cmo_runs); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2263,16 +2521,24 @@ CREATE TABLE public.cmo_memories (
     type text NOT NULL,
     body text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    kind text DEFAULT 'fact'::text NOT NULL,
+    topic text DEFAULT 'general'::text NOT NULL,
+    importance smallint DEFAULT 2 NOT NULL,
+    expires_at timestamp with time zone,
+    source_run uuid,
     CONSTRAINT cmo_memories_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 600))),
+    CONSTRAINT cmo_memories_importance_check CHECK (((importance >= 1) AND (importance <= 3))),
+    CONSTRAINT cmo_memories_kind_check CHECK ((kind = ANY (ARRAY['preference'::text, 'fact'::text, 'feedback'::text, 'result'::text]))),
+    CONSTRAINT cmo_memories_topic_check CHECK ((topic = ANY (ARRAY['general'::text, 'post'::text, 'sales'::text, 'video'::text, 'research'::text]))),
     CONSTRAINT cmo_memories_type_check CHECK ((type = ANY (ARRAY['feedback'::text, 'user'::text])))
 );
 
 
 --
--- Name: cmo_remember(text); Type: FUNCTION; Schema: public; Owner: -
+-- Name: cmo_remember(text, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.cmo_remember(p_body text) RETURNS public.cmo_memories
+CREATE FUNCTION public.cmo_remember(p_body text, p_topic text DEFAULT 'general'::text) RETURNS public.cmo_memories
     LANGUAGE plpgsql SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -2283,12 +2549,18 @@ begin
   if p_body is null or char_length(trim(p_body)) = 0 or char_length(p_body) > 600 then
     raise exception 'Keep the note under 600 characters.' using errcode = '22023';
   end if;
+  if p_topic is null or p_topic not in ('general', 'post', 'sales', 'video', 'research') then
+    raise exception 'Unknown topic.' using errcode = '22023';
+  end if;
+  -- At the cap, drop the least important, oldest note rather than simply the oldest one.
   if (select count(*) from public.cmo_memories where user_id = v_user) >= 200 then
     delete from public.cmo_memories where id in (
-      select id from public.cmo_memories where user_id = v_user order by created_at limit 1
+      select id from public.cmo_memories where user_id = v_user order by importance, created_at limit 1
     );
   end if;
-  insert into public.cmo_memories (user_id, type, body) values (v_user, 'user', trim(p_body)) returning * into v_row;
+  insert into public.cmo_memories (user_id, type, kind, topic, importance, body)
+  values (v_user, 'user', 'preference', p_topic, 3, trim(p_body))
+  returning * into v_row;
   return v_row;
 end;
 $$;
@@ -2400,6 +2672,41 @@ $$;
 
 
 --
+-- Name: cmo_save_lessons(uuid, uuid, date, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_save_lessons(p_user uuid, p_run uuid, p_week date, p_lessons jsonb) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_item jsonb;
+  v_count integer := 0;
+begin
+  if p_week is null or extract(isodow from p_week) <> 1 then
+    raise exception 'The week must start on a Monday.' using errcode = '22023';
+  end if;
+  if p_lessons is null or jsonb_typeof(p_lessons) <> 'array' or jsonb_array_length(p_lessons) > 5 then
+    raise exception 'These lessons are not valid.' using errcode = '22023';
+  end if;
+  for v_item in select * from jsonb_array_elements(p_lessons) loop
+    if coalesce(v_item->>'topic', '') not in ('general', 'post', 'sales', 'video', 'research')
+       or char_length(trim(coalesce(v_item->>'body', ''))) = 0 then
+      continue;
+    end if;
+    insert into public.cmo_lessons (user_id, run_id, week, topic, body)
+    values (p_user, p_run, p_week, v_item->>'topic', left(trim(v_item->>'body'), 600))
+    on conflict (user_id, week, topic) do update set body = excluded.body, run_id = excluded.run_id, created_at = now();
+    v_count := v_count + 1;
+  end loop;
+  -- Keep a year of lessons; older weeks no longer describe the business.
+  delete from public.cmo_lessons where user_id = p_user and week < p_week - 364;
+  return v_count;
+end;
+$$;
+
+
+--
 -- Name: cmo_save_metrics(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2487,6 +2794,20 @@ begin
   on conflict (run_id) do update set clips = excluded.clips, captions = excluded.captions
   returning * into v_row;
   return v_row;
+end;
+$$;
+
+
+--
+-- Name: cmo_set_week_goal(date, text, text, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_set_week_goal(p_week date, p_goal text, p_metric text, p_target integer) RETURNS public.cmo_goals
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  return public.cmo_put_goal(public.require_user(), null, p_week, p_goal, p_metric, p_target);
 end;
 $$;
 
@@ -6929,6 +7250,24 @@ CREATE TABLE public.caption_translations (
 
 
 --
+-- Name: cmo_lessons; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.cmo_lessons (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    run_id uuid,
+    week date NOT NULL,
+    topic text NOT NULL,
+    body text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT cmo_lessons_body_check CHECK (((char_length(body) >= 1) AND (char_length(body) <= 600))),
+    CONSTRAINT cmo_lessons_topic_check CHECK ((topic = ANY (ARRAY['general'::text, 'post'::text, 'sales'::text, 'video'::text, 'research'::text]))),
+    CONSTRAINT cmo_lessons_week_check CHECK ((EXTRACT(isodow FROM week) = (1)::numeric))
+);
+
+
+--
 -- Name: credit_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -7432,11 +7771,43 @@ ALTER TABLE ONLY public.clips
 
 
 --
+-- Name: cmo_goals cmo_goals_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_goals cmo_goals_user_id_week_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_user_id_week_key UNIQUE (user_id, week);
+
+
+--
 -- Name: cmo_insights cmo_insights_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.cmo_insights
     ADD CONSTRAINT cmo_insights_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_lessons cmo_lessons_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_lessons cmo_lessons_user_id_week_topic_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_user_id_week_topic_key UNIQUE (user_id, week, topic);
 
 
 --
@@ -7453,6 +7824,14 @@ ALTER TABLE ONLY public.cmo_memories
 
 ALTER TABLE ONLY public.cmo_runs
     ADD CONSTRAINT cmo_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: cmo_video_briefs cmo_video_briefs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_pkey PRIMARY KEY (id);
 
 
 --
@@ -7855,10 +8234,31 @@ CREATE UNIQUE INDEX clips_one_full_idx ON public.clips USING btree (job_id) WHER
 
 
 --
+-- Name: cmo_goals_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_goals_user_idx ON public.cmo_goals USING btree (user_id, week DESC);
+
+
+--
 -- Name: cmo_insights_user_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX cmo_insights_user_idx ON public.cmo_insights USING btree (user_id, kind, created_at DESC);
+
+
+--
+-- Name: cmo_lessons_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_lessons_user_idx ON public.cmo_lessons USING btree (user_id, week DESC);
+
+
+--
+-- Name: cmo_memories_topic_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_memories_topic_idx ON public.cmo_memories USING btree (user_id, topic, importance DESC, created_at DESC);
 
 
 --
@@ -7887,6 +8287,13 @@ CREATE INDEX cmo_runs_queue_idx ON public.cmo_runs USING btree (created_at) WHER
 --
 
 CREATE INDEX cmo_runs_user_created_idx ON public.cmo_runs USING btree (user_id, created_at DESC);
+
+
+--
+-- Name: cmo_video_briefs_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX cmo_video_briefs_user_idx ON public.cmo_video_briefs USING btree (user_id, status, created_at DESC);
 
 
 --
@@ -8142,6 +8549,13 @@ CREATE TRIGGER clips_record_storage_deletions BEFORE DELETE ON public.clips FOR 
 
 
 --
+-- Name: cmo_memories cmo_memories_classify; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER cmo_memories_classify BEFORE INSERT ON public.cmo_memories FOR EACH ROW EXECUTE FUNCTION public.cmo_memories_classify();
+
+
+--
 -- Name: editor_revisions editor_revisions_immutable; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -8325,6 +8739,22 @@ ALTER TABLE ONLY public.clips
 
 
 --
+-- Name: cmo_goals cmo_goals_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: cmo_goals cmo_goals_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_goals
+    ADD CONSTRAINT cmo_goals_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: cmo_insights cmo_insights_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8341,6 +8771,30 @@ ALTER TABLE ONLY public.cmo_insights
 
 
 --
+-- Name: cmo_lessons cmo_lessons_run_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
+
+
+--
+-- Name: cmo_lessons cmo_lessons_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_lessons
+    ADD CONSTRAINT cmo_lessons_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_memories cmo_memories_source_run_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_memories
+    ADD CONSTRAINT cmo_memories_source_run_fkey FOREIGN KEY (source_run) REFERENCES public.cmo_runs(id) ON DELETE SET NULL;
+
+
+--
 -- Name: cmo_memories cmo_memories_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -8354,6 +8808,22 @@ ALTER TABLE ONLY public.cmo_memories
 
 ALTER TABLE ONLY public.cmo_runs
     ADD CONSTRAINT cmo_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_video_briefs cmo_video_briefs_job_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_job_id_fkey FOREIGN KEY (job_id) REFERENCES public.jobs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: cmo_video_briefs cmo_video_briefs_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.cmo_video_briefs
+    ADD CONSTRAINT cmo_video_briefs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -8789,10 +9259,22 @@ ALTER TABLE public.caption_translations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clips ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: cmo_goals; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_goals ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: cmo_insights; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
 ALTER TABLE public.cmo_insights ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cmo_lessons; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_lessons ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: cmo_memories; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8805,6 +9287,12 @@ ALTER TABLE public.cmo_memories ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.cmo_runs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cmo_video_briefs; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.cmo_video_briefs ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: content_items; Type: ROW SECURITY; Schema: public; Owner: -
@@ -8937,6 +9425,27 @@ ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.rate_limits ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: cmo_goals read own CMO goals; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own CMO goals" ON public.cmo_goals FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: cmo_lessons read own CMO lessons; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own CMO lessons" ON public.cmo_lessons FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: cmo_video_briefs read own video briefs; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own video briefs" ON public.cmo_video_briefs FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
 
 --
 -- Name: scene_codes; Type: ROW SECURITY; Schema: public; Owner: -

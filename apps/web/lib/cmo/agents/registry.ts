@@ -5,7 +5,10 @@ import "server-only";
  * thay agent hợp từng nhiệm vụ mà không sửa code. Chỗ đổi là env trên Vercel (Marcus chốt: không
  * UI, khoá không nằm trong DB):
  *
- *   CMO_AGENT_<ID>_PROVIDER = gemini | anthropic
+ *   CMO_LLM_PROVIDER        = gemini | anthropic   (one default for every agent; set it from the
+ *                             W2 eval, `npm run cmo:eval`, and the same value as Modal's
+ *                             OPENCMO_LLM_PROVIDER so the whole product runs on one LLM)
+ *   CMO_AGENT_<ID>_PROVIDER = gemini | anthropic   (overrides the default for one agent)
  *   CMO_AGENT_<ID>_MODEL    = id model của provider đó
  *   CMO_AGENT_<ID>_API_KEY  = khoá riêng của agent; vắng thì khoá chung của provider
  *                             (GEMINI_API_KEY / ANTHROPIC_API_KEY)
@@ -60,9 +63,10 @@ export type ResolvedAgent = AgentSpec & { provider: ProviderKind; model: string;
 export function resolveAgent(id: AgentId, env: NodeJS.ProcessEnv = process.env): ResolvedAgent {
   const spec = AGENT_SPECS[id];
   const prefix = `CMO_AGENT_${id.toUpperCase()}_`;
-  const wanted = env[`${prefix}PROVIDER`]?.trim().toLowerCase();
+  const own = env[`${prefix}PROVIDER`]?.trim().toLowerCase();
+  const wanted = own || env.CMO_LLM_PROVIDER?.trim().toLowerCase();
   if (wanted && wanted !== "gemini" && wanted !== "anthropic") {
-    console.error(`[cmo] ${prefix}PROVIDER="${wanted}" không hợp lệ — dùng gemini`);
+    console.error(`[cmo] ${own ? `${prefix}PROVIDER` : "CMO_LLM_PROVIDER"}="${wanted}" is not a provider; using gemini`);
   }
   const provider: ProviderKind = wanted === "anthropic" ? "anthropic" : "gemini";
   const model = env[`${prefix}MODEL`]?.trim() || defaultModel(provider, spec.tier, env);

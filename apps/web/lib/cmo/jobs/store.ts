@@ -3,7 +3,8 @@ import "server-only";
 import type { SupabaseClient as BaseClient } from "@supabase/supabase-js";
 
 import { DOCUMENT_KINDS, type DocumentKind } from "../documents";
-import type { ClipJob, CmoStore, CompetitorInsight, Documents, ItemRow, QueuedRun } from "./types";
+import { latestPerTopic } from "./context";
+import type { ClipJob, CmoStore, CompetitorInsight, Documents, Goal, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
 
 const ITEM_COLUMNS =
   "id, run_id, department, platform, day, idea, reason, status, priority, body, final_text, external_url, decided_at, published_at, created_at";
@@ -37,10 +38,74 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       }
       return out;
     },
-    async memories(userId, limit) {
-      const { data } = await admin.from("cmo_memories").select("body").eq("user_id", userId).order("created_at", { ascending: false }).limit(limit);
+    async memories(userId, limit, topic) {
+      let query = admin
+        .from("cmo_memories")
+        .select("body")
+        .eq("user_id", userId)
+        .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`);
+      if (topic) query = query.in("topic", topic === "general" ? ["general"] : [topic, "general"]);
+      const { data } = await query.order("importance", { ascending: false }).order("created_at", { ascending: false }).limit(limit);
       return ((data ?? []) as { body: string }[]).map((m) => m.body);
     },
+    async memoryEvents(userId, since) {
+      const { data, error } = await admin
+        .from("cmo_memories")
+        .select("kind, topic, body, created_at")
+        .eq("user_id", userId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw new Error(`memoryEvents: ${error.message}`);
+      return (data ?? []) as MemoryEvent[];
+    },
+    async lessons(userId) {
+      const { data } = await admin.from("cmo_lessons").select("week, topic, body").eq("user_id", userId).order("week", { ascending: false }).limit(20);
+      return latestPerTopic((data ?? []) as Lesson[]);
+    },
+    saveLessons: (userId, runId, week, lessons) => rpc<number>("cmo_save_lessons", { p_user: userId, p_run: runId, p_week: week, p_lessons: lessons }),
+    async goal(userId, week) {
+      const { data } = await admin
+        .from("cmo_goals")
+        .select("id, week, goal, metric, target, status, result")
+        .eq("user_id", userId)
+        .eq("week", week)
+        .maybeSingle();
+      return (data as Goal | null) ?? null;
+    },
+    async weekResults(userId, since) {
+      const count = async (table: string, status: string[], extra?: { column: string; value: string }) => {
+        let query = admin.from(table).select("id", { count: "exact", head: true }).eq("user_id", userId).in("status", status).gte("decided_at", since);
+        if (extra) query = query.eq(extra.column, extra.value);
+        const { count: n } = await query;
+        return n ?? 0;
+      };
+      const [posts, replies, clips, { data: measured }] = await Promise.all([
+        count("content_items", ["approved", "published"], { column: "department", value: "post" }),
+        count("opportunities", ["replied"]),
+        count("video_packs", ["approved"]),
+        admin.from("post_metrics").select("item_id, views").eq("user_id", userId).gte("measured_at", since).limit(1000),
+      ]);
+      // Several measurements per post: keep the highest per post, then add them up.
+      const best = new Map<string, number>();
+      for (const row of (measured ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+      return { posts, replies, clips, views: [...best.values()].reduce((a, b) => a + b, 0) };
+    },
+    async proposeGoal(userId, runId, week, goal) {
+      const { data, error } = await admin.rpc("cmo_propose_goal", {
+        p_user: userId,
+        p_run: runId,
+        p_week: week,
+        p_goal: goal.goal,
+        p_metric: goal.metric,
+        p_target: goal.target,
+      });
+      // The founder already approved that week's goal: their choice stands.
+      if (error?.code === "P0001") return null;
+      if (error) throw new Error(`cmo_propose_goal: ${error.message}`);
+      return one<Goal>(data);
+    },
+    recordGoalResult: (userId, week, result) => rpc<boolean>("cmo_record_goal_result", { p_user: userId, p_week: week, p_result: result }),
     async items(userId, filter) {
       let query = admin.from("content_items").select(ITEM_COLUMNS).eq("user_id", userId);
       if (filter.statuses) query = query.in("status", filter.statuses);

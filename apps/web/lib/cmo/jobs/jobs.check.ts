@@ -8,104 +8,17 @@ import assert from "node:assert/strict";
 process.env.OPENCMO_AGENT_FAKE = "1";
 
 import { checkPost } from "./check-post";
-import { knownNumbers } from "./context";
+import { mondayOf } from "./summarize-memory";
+import { goalBlock, knownNumbers, recall } from "./context";
+import { goalLine, nextGoalFallback } from "./review-week";
 import { pickDueItem } from "./draft-post";
 import { toPlanItems } from "./plan-week";
 import { drainCmoQueue } from "./runner";
 import { PASS_SCORE, quoteIn, reachScore, scoreThread, timingScore } from "./sales-scan";
 import { parseRedditSearch } from "../social/reddit";
 import { checkCaptions } from "./video-pack";
-import { isoDay, type ClipJob, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type ItemRow, type Opportunity, type PlatformCaptions, type QueuedRun, type Step } from "./types";
-
-type RunState = QueuedRun & { status: string; steps: Step[]; error: string | null; output: unknown; notBefore?: number };
-
-function memoryStore(docs: Documents) {
-  const runs: RunState[] = [];
-  const items: ItemRow[] = [];
-  const opps: Opportunity[] = [];
-  const jobs = new Map<string, ClipJob>();
-  const packs: Array<{ id: string; runId: string; jobId: string; clips: unknown[]; captions: Record<string, PlatformCaptions> }> = [];
-  const insights: CompetitorInsight[] = [];
-  const metrics: MetricRow[] = [];
-  let seq = 0;
-  const id = () => `id-${++seq}`;
-  const store: CmoStore = {
-    async claim(runId) {
-      const run = runs.find((r) => r.status === "queued" && (!runId || r.id === runId) && (!r.notBefore || r.notBefore <= Date.now()));
-      if (!run) return null;
-      run.status = "running";
-      run.attempt += 1;
-      return { id: run.id, user_id: run.user_id, kind: run.kind, input: run.input, attempt: run.attempt };
-    },
-    async step(run, steps) {
-      const r = runs.find((x) => x.id === run.id)!;
-      if (r.attempt !== run.attempt || r.status !== "running") return false;
-      r.steps = steps.map((s) => ({ ...s }));
-      return true;
-    },
-    async complete(run, ok, output, error) {
-      const r = runs.find((x) => x.id === run.id)!;
-      r.status = ok ? "done" : "failed";
-      r.output = output;
-      r.error = error;
-      return true;
-    },
-    documents: async () => docs,
-    memories: async () => ["Skipped the X post \"Pricing\": too salesy"],
-    async items(_u, f) {
-      return items.filter((i) => (!f.statuses || f.statuses.includes(i.status)) && (!f.department || i.department === f.department));
-    },
-    async planWeek(_u, runId, plan) {
-      for (let i = items.length - 1; i >= 0; i--) if (items[i].status === "planned") items.splice(i, 1);
-      for (const p of plan) {
-        items.push({ id: id(), run_id: runId, ...p, status: "planned", priority: "medium", body: {}, final_text: null, external_url: null, decided_at: null, published_at: null, created_at: new Date().toISOString() });
-      }
-      return plan.length;
-    },
-    async saveDraft(_u, runId, itemId, idea, body, priority) {
-      let item = itemId ? items.find((i) => i.id === itemId) : undefined;
-      if (!item) {
-        item = { id: id(), run_id: runId, department: "post", platform: "x", day: isoDay(), idea, reason: "", status: "planned", priority, body: {}, final_text: null, external_url: null, decided_at: null, published_at: null, created_at: new Date().toISOString() };
-        items.push(item);
-      }
-      Object.assign(item, { status: "in_review", body, priority, run_id: runId });
-      return item;
-    },
-    seenUrls: async () => new Set(opps.map((o) => o.url)),
-    async saveOpportunities(_u, _r, list) {
-      const fresh = list.filter((o) => !opps.some((x) => x.url === o.url));
-      opps.push(...fresh);
-      return fresh.length;
-    },
-    clipJob: async (_u, jobId) => jobs.get(jobId) ?? null,
-    async saveVideoPack(_u, runId, jobId, clips, captions) {
-      const pack = { id: id(), runId, jobId, clips, captions };
-      packs.push(pack);
-      return pack.id;
-    },
-    async defer(run, seconds, steps) {
-      const r = runs.find((x) => x.id === run.id)!;
-      if (r.attempt !== run.attempt || r.status !== "running") return false;
-      Object.assign(r, { status: "queued", attempt: Math.max(0, r.attempt - 1), notBefore: Date.now() + seconds * 1000, steps: steps.map((s) => ({ ...s })) });
-      return true;
-    },
-    async saveInsight(_u, _run, body) {
-      insights.push(body);
-    },
-    latestInsight: async () => insights.at(-1) ?? null,
-    async saveMetrics(_u, rows) {
-      const ok = rows.filter((row) => items.some((i) => i.id === row.item_id && i.status === "published"));
-      metrics.push(...ok);
-      return ok.length;
-    },
-  };
-  const enqueue = (kind: QueuedRun["kind"], input: Record<string, unknown> = {}) => {
-    const run: RunState = { id: id(), user_id: "u1", kind, input, attempt: 0, status: "queued", steps: [], error: null, output: null };
-    runs.push(run);
-    return run;
-  };
-  return { store, runs, items, opps, jobs, packs, insights, metrics, enqueue };
-}
+import { memoryStore } from "./memory-store";
+import { isoDay, type ClipJob, type Documents, type ItemRow, type MemoryEvent, type PlatformCaptions } from "./types";
 
 async function main() {
   const docs: Documents = {
@@ -341,12 +254,61 @@ async function main() {
   const base = { weekday: 3, duePost: null, dueSales: null, competitorHandles: 0, publishedRecently: 0, socialReader: true };
   assert.deepEqual(dueLoops(base), []);
   assert.deepEqual(dueLoops({ ...base, weekday: 1 }).map((r) => r.kind), ["plan_week", "post_draft"]);
-  assert.deepEqual(dueLoops({ ...base, weekday: 0, competitorHandles: 2, publishedRecently: 3 }).map((r) => r.kind), ["competitor_research", "pull_metrics"]);
+  assert.deepEqual(
+    dueLoops({ ...base, weekday: 0, competitorHandles: 2, publishedRecently: 3 }).map((r) => r.kind),
+    ["competitor_research", "summarize_memory", "review_week", "pull_metrics"],
+  );
   const sales = dueLoops({ ...base, dueSales: { idea: "People chasing late invoices" } });
   assert.deepEqual([sales[0]!.kind, sales[0]!.input.brief], ["sales_scan", "People chasing late invoices"]);
   assert.deepEqual(dueLoops({ ...base, dueSales: { idea: "x" }, socialReader: false }), [], "không khoá ScrapeCreators thì không tự tiêu credit");
 
-  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
+  // Memory tiers: the weekly summary writes one lesson per topic; jobs then read lessons for their topic.
+  assert.equal(mondayOf(new Date(Date.UTC(2026, 10, 15))), "2026-11-09", "Sunday belongs to the week that started Monday");
+  assert.equal(mondayOf(new Date(Date.UTC(2026, 10, 9))), "2026-11-09", "Monday is its own week");
+  const events: MemoryEvent[] = [
+    { kind: "feedback", topic: "post", body: "Skipped the X post \"Launch\": too hypey", created_at: new Date().toISOString() },
+    { kind: "feedback", topic: "sales", body: "Dismissed the Reddit thread \"Help\": not our buyer", created_at: new Date().toISOString() },
+  ];
+  const mem8 = memoryStore(docs, ["Never mention competitors by name."], events);
+  const w8 = mem8.enqueue("summarize_memory");
+  await drainCmoQueue(mem8.store);
+  assert.equal(w8.status, "done", `weekly memory done (${w8.error})`);
+  assert.deepEqual(mem8.lessons.map((l) => l.topic).sort(), ["post", "sales"]);
+  const postRecall = await recall(mem8.store, "u1", 10, "post");
+  assert.ok(postRecall.includes("<lessons>") && postRecall.includes("post (week of"), "post jobs read the post lesson");
+  assert.ok(!postRecall.includes("sales (week of"), "and not the sales one");
+  assert.ok((await recall(mem8.store, "u1", 10)).includes("sales (week of"), "the weekly plan reads every topic");
+  const quiet = memoryStore(docs, [], []);
+  const w8q = quiet.enqueue("summarize_memory");
+  await drainCmoQueue(quiet.store);
+  assert.deepEqual([w8q.status, quiet.lessons.length], ["done", 0], "a quiet week writes nothing");
+
+  // Weekly review: measures the approved goal, writes the general lesson, proposes next week's goal.
+  const week = mondayOf();
+  const nextWeek = isoDay(7, new Date(`${week}T00:00:00Z`));
+  const mem9 = memoryStore(docs, []);
+  mem9.goals.push({ id: "g1", week, goal: "Approve 3 posts on X", metric: "posts", target: 3, status: "approved", result: null });
+  Object.assign(mem9.results, { posts: 4, replies: 1, clips: 0, views: 120 });
+  const w9 = mem9.enqueue("review_week");
+  await drainCmoQueue(mem9.store);
+  assert.equal(w9.status, "done", `weekly review done (${w9.error})`);
+  assert.equal(mem9.goals[0]!.result, 4, "the week's result is recorded on the approved goal");
+  assert.ok(mem9.lessons.some((l) => l.topic === "general" && l.body.includes("met")), "general lesson written");
+  const proposal = mem9.goals.find((g) => g.week === nextWeek);
+  assert.deepEqual([proposal?.status, proposal?.metric, proposal?.target], ["proposed", "posts", 4], "met → next target a little higher, still only proposed");
+  assert.equal(nextGoalFallback(null, mem9.results).metric, "posts", "no goal yet → start with posts");
+  assert.ok(goalLine({ ...mem9.goals[0]!, target: 10 }, mem9.results).includes("not met"));
+  // An approved next-week goal is never replaced by a proposal.
+  const mem9b = memoryStore(docs, []);
+  mem9b.goals.push({ id: "g2", week: nextWeek, goal: "Join 2 Reddit threads", metric: "replies", target: 2, status: "approved", result: null });
+  mem9b.enqueue("review_week");
+  await drainCmoQueue(mem9b.store);
+  assert.deepEqual(mem9b.goals.map((g) => [g.status, g.goal]), [["approved", "Join 2 Reddit threads"]]);
+  // The weekly plan reads the approved goal.
+  assert.ok(goalBlock(mem9.goals[0]!).includes("Approve 3 posts on X"));
+  assert.equal(goalBlock(proposal ?? null), "", "a goal still proposed does not steer the plan");
+
+  console.log("jobs.check — hàng đợi CMO: W1, W2, W4, W5, W6-lite, W7, W8 memory, W9 review, vòng lặp, kiểm bài, lease, hoãn đều đúng.");
 }
 
 main().catch((error) => {

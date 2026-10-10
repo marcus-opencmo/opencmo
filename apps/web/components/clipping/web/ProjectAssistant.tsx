@@ -37,7 +37,7 @@ type Live = { prompt: string; reply: string; actions: Action[] };
 
 const EXAMPLES = ["Which clip has the strongest hook?", "Use the same caption style on every clip"];
 
-export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChanged: () => void }) {
+export function ProjectAssistant({ jobId, brief = null, onChanged }: { jobId: string; brief?: string | null; onChanged: () => void }) {
   const [loaded, setLoaded] = useState<Loaded | null>(null);
   const [open, setOpen] = useState(false);
   const [prompt, setPrompt] = useState("");
@@ -47,6 +47,8 @@ export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChange
   /** Clip đã Retry thành công, theo `lượt:clip` — chỉ trong tab này. */
   const [retried, setRetried] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const shownBrief = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const next = await api<Loaded>(`/agent/sessions?job_id=${jobId}`);
@@ -57,6 +59,22 @@ export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChange
   useEffect(() => {
     void load().catch(() => setLoaded({ available: false, session: null }));
   }, [load]);
+
+  // A brief from the CMO: open the panel with it ready to send. The founder sends it, and the
+  // assistant still asks before changing any clip.
+  useEffect(() => {
+    if (!brief) return;
+    setOpen(true);
+    setPrompt(brief);
+  }, [brief]);
+
+  // The panel sits below every clip, so a founder arriving from the brief card would not see it.
+  useEffect(() => {
+    if (!brief || !loaded || shownBrief.current === brief) return;
+    shownBrief.current = brief;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    sectionRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
+  }, [brief, loaded]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -177,7 +195,7 @@ export function ProjectAssistant({ jobId, onChanged }: { jobId: string; onChange
   const waiting = turns.find((turn) => turn.status === "awaiting_approval");
 
   return (
-    <section className="project-assistant" aria-label="Assistant">
+    <section ref={sectionRef} className="project-assistant" aria-label="Assistant">
       <button type="button" className="project-assistant-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>Assistant</span>
         <small>{loaded.available ? "Ask about your clips or change many at once" : "Not available yet"}</small>

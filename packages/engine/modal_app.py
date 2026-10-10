@@ -5,6 +5,7 @@ Deploy:
         GROQ_API_KEY=... GEMINI_API_KEY=... \
         SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... \
         OPENCMO_WORKER_TOKEN=...   # cùng giá trị với biến của web app
+        OPENCMO_WEB_URL=https://... CRON_SECRET=...   # AI CMO schedule + cleanup; same CRON_SECRET as Vercel
     modal secret create opencmo-voice ELEVENLABS_API_KEY=...   # cùng khoá với Vercel
     modal deploy modal_app.py
 
@@ -20,6 +21,9 @@ Hai đường vào, cố ý:
      `run_job.spawn(...)`. Không độ trễ.
   2. `sweep()` — cron mỗi phút: reconciler trả job hết lease về hàng đợi, rồi
      nhặt job còn queued. Đây là lưới an toàn, không phải đường chính.
+     It also dispatches queued AI CMO runs to the web app (`_dispatch_cmo`).
+  3. `cmo_schedule()` and `cleanup()` — daily crons that call the web app's cron routes.
+     Modal is the only scheduler; `apps/web/vercel.json` has no crons.
 
 Nhờ có (2), (1) được phép hỏng: web app coi lỗi gọi `submit` là chuyện nhỏ, job
 vẫn nằm ở 'queued' và chạy chậm nhất một phút sau.
@@ -449,6 +453,58 @@ def sweep() -> None:
             run_task.spawn(task.id, task.attempt_id)
     finally:
         store.close()
+
+    _dispatch_cmo()
+
+
+def _dispatch_cmo() -> None:
+    """Send the AI CMO runs waiting in `cmo_runs` to the web app, one call per run.
+
+    Errors only warn: the runs stay queued and the next sweep, a minute later, tries again.
+    """
+    from opencmo.worker import cmo_dispatch
+
+    web = cmo_dispatch.web_config(dict(os.environ))
+    if web is None:
+        log.info("OPENCMO_WEB_URL or CRON_SECRET missing: AI CMO runs are not dispatched")
+        return
+    try:
+        waiting = cmo_dispatch.count_dispatchable(
+            os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+        )
+        if waiting:
+            sent = cmo_dispatch.dispatch(*web, waiting)
+            log.info("AI CMO: %s waiting, %s dispatched", waiting, sent)
+    except Exception:
+        log.warning("AI CMO dispatch failed; next sweep tries again", exc_info=True)
+
+
+@app.function(secrets=[secret], schedule=modal.Cron("5 0 * * *"), timeout=330)
+def cmo_schedule() -> None:
+    """Enqueue the AI CMO loops due today (00:05 UTC, right after the calendar's day starts).
+
+    Only enqueues; `sweep()` dispatches the runs. Once a day on purpose: the loops are daily, and
+    enqueuing again after a run finished would run it twice.
+    """
+    from opencmo.worker import cmo_dispatch
+
+    web = cmo_dispatch.web_config(dict(os.environ))
+    if web is None:
+        log.error("OPENCMO_WEB_URL or CRON_SECRET missing: the AI CMO schedule did not run")
+        return
+    log.info("AI CMO schedule: %s", cmo_dispatch.call_cron(*web, "/api/cron/cmo"))
+
+
+@app.function(secrets=[secret], schedule=modal.Cron("0 3 * * *"), timeout=90)
+def cleanup() -> None:
+    """Daily cleanup of expired files and free accounts (the web route does the work)."""
+    from opencmo.worker import cmo_dispatch
+
+    web = cmo_dispatch.web_config(dict(os.environ))
+    if web is None:
+        log.error("OPENCMO_WEB_URL or CRON_SECRET missing: cleanup did not run")
+        return
+    log.info("Cleanup: %s", cmo_dispatch.call_cron(*web, "/api/cron/cleanup", timeout=75.0))
 
 
 @app.local_entrypoint()

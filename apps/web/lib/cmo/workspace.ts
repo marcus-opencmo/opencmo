@@ -11,7 +11,7 @@
 import type { DocumentKind } from "./documents";
 
 export type Department = "post" | "sales" | "video";
-export type JobId = "W0" | "W1" | "W2" | "W3" | "W4" | "W5" | "W6" | "W7";
+export type JobId = "W0" | "W1" | "W2" | "W3" | "W4" | "W5" | "W6" | "W7" | "W8" | "W9";
 
 /** Một agent trong danh sách "Your agents": department × nền tảng. */
 export type AgentSummary = {
@@ -93,6 +93,22 @@ export type VideoCard = {
 
 export type InboxCard = PostCard | SalesCard | VideoCard;
 
+/** A video brief from the CMO (P3): approving it opens the project with the brief in the assistant. */
+export type BriefView = { id: string; projectId: string; projectTitle: string; hook: string; broll: string; visuals: string; pacing: string; createdAt: string };
+
+/** A weekly goal (P2): proposed ones wait for the founder; the approved one shows progress. */
+export type GoalView = {
+  id: string;
+  /** Monday of the goal's week. */
+  week: string;
+  goal: string;
+  metric: "posts" | "replies" | "clips" | "views";
+  target: number;
+  status: "proposed" | "approved";
+  /** Reached so far this week (approved goal of the current week only). */
+  progress: number | null;
+};
+
 export type Metrics = {
   windowDays: number;
   tiles: { label: string; value: number; change: number | null; hint: string }[];
@@ -160,6 +176,10 @@ export type Workspace = {
   documents: Partial<Record<DocumentKind, { body: Record<string, unknown>; createdBy: "agent" | "user"; version: number }>>;
   agents: AgentSummary[];
   inbox: InboxCard[];
+  /** This week's and next week's goals, proposed or approved. */
+  goals: GoalView[];
+  /** Video briefs waiting for the founder (P3). */
+  briefs: BriefView[];
   calendar: CalendarItem[];
   insight: InsightView | null;
   /** Tab Social: số liệu bài đăng (W6). */
@@ -191,4 +211,6 @@ export const JOB_TITLE: Record<JobId, string> = {
   W5: "Video pack",
   W6: "Pull numbers",
   W7: "Competitor research",
+  W8: "Weekly memory",
+  W9: "Weekly review",
 };

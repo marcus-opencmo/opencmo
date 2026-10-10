@@ -58,7 +58,7 @@ export function TopBar({ ws, logOpen, onToggleLog, onOpenPlan }: Props) {
       </details>
 
       <button type="button" className="cmo-bar-btn" onClick={onToggleLog} aria-expanded={logOpen} aria-controls="cmo-console" data-testid="cmo-log-open">
-        <Icon name={logOpen ? "chevron-up" : "chevron-down"} size={14} /> Activity
+        <Icon name={logOpen ? "chevron-up" : "chevron-down"} size={14} /> <span className="cmo-bar-btn-label">Activity</span>
         {running ? <span className="cmo-dot is-running" aria-label="A task is running" /> : null}
       </button>
 

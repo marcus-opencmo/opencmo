@@ -31,7 +31,21 @@ const TERMINAL = new Set(["done", "failed", "cancelled"]);
 
 type ZipTask = { id: string; status: string; error: string | null; url: string | null };
 
-export function ProjectView({ projectId }: { projectId: string }) {
+export function ProjectView({ projectId, briefId = null }: { projectId: string; briefId?: string | null }) {
+  // A video brief from the CMO (approved in Approvals): its text is prefilled in the assistant.
+  const [brief, setBrief] = useState<string | null>(null);
+  useEffect(() => {
+    if (!briefId) return;
+    let live = true;
+    api<{ prompt: string; project_id: string }>(`/cmo/video-briefs/${briefId}`)
+      .then((found) => {
+        if (live && found.project_id === projectId) setBrief(found.prompt);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [briefId, projectId]);
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
   const [missing, setMissing] = useState(false);
@@ -305,7 +319,7 @@ export function ProjectView({ projectId }: { projectId: string }) {
         />
       )}
 
-      {project.clips.length > 0 && <ProjectAssistant jobId={project.id} onChanged={() => void load()} />}
+      {project.clips.length > 0 && <ProjectAssistant jobId={project.id} brief={brief} onChanged={() => void load()} />}
 
       <Toast message={toast} onDone={() => setToast(null)} />
     </section>

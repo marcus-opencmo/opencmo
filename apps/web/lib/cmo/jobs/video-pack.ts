@@ -13,7 +13,7 @@
 
 import { z } from "zod";
 
-import { avoidList, documentsBlock, knownNumbers, memoriesBlock } from "./context";
+import { avoidList, documentsBlock, knownNumbers, recall } from "./context";
 import { fakeAllowed, LlmError, structured } from "./llm";
 import { skillText } from "../skills";
 import { VIDEO_LIMITS, type Platform } from "./playbook-video";
@@ -118,7 +118,7 @@ export async function videoPack(ctx: JobContext): Promise<JobOutput> {
 
   const { docs, memories } = await ctx.step("read_doc", "Read your product and voice", async () => ({
     docs: await store.documents(run.user_id),
-    memories: await store.memories(run.user_id, 15),
+    memories: await recall(store, run.user_id, 15, "video"),
   }));
 
   const captions = await ctx.step("write_captions", "Writing captions for TikTok, Reels, Shorts, Facebook and Threads", async () => {
@@ -132,7 +132,7 @@ export async function videoPack(ctx: JobContext): Promise<JobOutput> {
     const out = await structured({
       agent: "video",
       system: SYSTEM,
-      prompt: `${documentsBlock(docs as Documents)}\n\n${memoriesBlock(memories)}\n\n${avoid.length ? `Words to avoid: ${avoid.join(", ")}\n\n` : ""}${clips
+      prompt: `${documentsBlock(docs as Documents)}\n\n${memories}\n\n${avoid.length ? `Words to avoid: ${avoid.join(", ")}\n\n` : ""}${clips
         .map(clipBlock)
         .join("\n\n")}\n\nWrite one set per clip.`,
       schema: CaptionSchema,

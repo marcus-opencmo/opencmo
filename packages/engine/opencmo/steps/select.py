@@ -1,7 +1,7 @@
 """Chọn khoảnh khắc đáng cắt từ transcript, bằng LLM.
 
-Chạy được với Gemini hoặc Anthropic — có key nào dùng key đó (xem
-`Config.select_provider`). Transcript video 45 phút ~12k token vào: Gemini 2.5
+Runs on Gemini or Anthropic: OPENCMO_LLM_PROVIDER picks one (the same default LLM as the
+web app's CMO_LLM_PROVIDER), otherwise whichever key exists (`Config.select_provider`). Transcript video 45 phút ~12k token vào: Gemini 2.5
 Flash ~$0.01/video (có bậc miễn phí), Claude Haiku 4.5 ~$0.02/video.
 
 Cả hai đường đều dùng structured output (ràng model trả đúng Pydantic schema),

@@ -34,6 +34,11 @@ const writer = resolveAgent("x_writer", env);
 assert.deepEqual([writer.provider, writer.model, writer.apiKey], ["gemini", "gemini-2.5-pro", "g-writer"]);
 assert.equal(resolveAgent("planner", env).apiKey, "g-shared");
 
+// CMO_LLM_PROVIDER moves every agent to one provider; a per-agent setting still wins.
+const one = { ...base, ANTHROPIC_API_KEY: "a", CMO_LLM_PROVIDER: "anthropic", CMO_AGENT_CHECKER_PROVIDER: "gemini" } as unknown as NodeJS.ProcessEnv;
+assert.deepEqual([resolveAgent("planner", one).provider, resolveAgent("planner", one).model], ["anthropic", "claude-opus-5-5"]);
+assert.equal(resolveAgent("checker", one).provider, "gemini");
+
 // Provider lạ rơi về gemini; thiếu khoá thì rỗng (nơi gọi báo lỗi tiếng Anh).
 const errors = console.error;
 console.error = () => undefined;
