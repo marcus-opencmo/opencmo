@@ -1898,6 +1898,43 @@ $$;
 
 
 --
+-- Name: marketing_documents; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.marketing_documents (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    kind text NOT NULL,
+    version integer NOT NULL,
+    body jsonb NOT NULL,
+    created_by text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT marketing_documents_body_check CHECK (((jsonb_typeof(body) = 'object'::text) AND (octet_length((body)::text) <= 65536))),
+    CONSTRAINT marketing_documents_created_by_check CHECK ((created_by = ANY (ARRAY['agent'::text, 'user'::text]))),
+    CONSTRAINT marketing_documents_kind_check CHECK ((kind = ANY (ARRAY['product'::text, 'strategy'::text, 'competitors'::text, 'content_strategy'::text, 'calendar'::text]))),
+    CONSTRAINT marketing_documents_version_check CHECK ((version >= 1))
+);
+
+
+--
+-- Name: cmo_chat_save_document(text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_chat_save_document(p_kind text, p_body jsonb) RETURNS public.marketing_documents
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_row public.marketing_documents;
+begin
+  v_row := public.save_marketing_document(p_kind, p_body, null);
+  update public.marketing_documents set created_by = 'agent' where id = v_row.id returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
 -- Name: cmo_video_briefs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6600,25 +6637,6 @@ begin
   return v_row;
 end;
 $_$;
-
-
---
--- Name: marketing_documents; Type: TABLE; Schema: public; Owner: -
---
-
-CREATE TABLE public.marketing_documents (
-    id uuid DEFAULT gen_random_uuid() NOT NULL,
-    user_id uuid NOT NULL,
-    kind text NOT NULL,
-    version integer NOT NULL,
-    body jsonb NOT NULL,
-    created_by text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT marketing_documents_body_check CHECK (((jsonb_typeof(body) = 'object'::text) AND (octet_length((body)::text) <= 65536))),
-    CONSTRAINT marketing_documents_created_by_check CHECK ((created_by = ANY (ARRAY['agent'::text, 'user'::text]))),
-    CONSTRAINT marketing_documents_kind_check CHECK ((kind = ANY (ARRAY['product'::text, 'strategy'::text, 'competitors'::text, 'content_strategy'::text, 'calendar'::text]))),
-    CONSTRAINT marketing_documents_version_check CHECK ((version >= 1))
-);
 
 
 --

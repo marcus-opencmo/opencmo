@@ -49,8 +49,8 @@ function workingLabel(tool: string): string {
   return "Reading your plan…";
 }
 
-// Tools whose result is a new card or calendar item; the workspace reloads so it shows up.
-const CARD_TOOLS = new Set(["create_task", "set_week_goal", "create_video_brief"]);
+// Tools whose result is a new card, calendar item or document version; the workspace reloads so it shows up.
+const CARD_TOOLS = new Set(["create_task", "set_week_goal", "create_video_brief", "update_document"]);
 
 export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: Workspace; onToast: (message: string) => void; onWorkStarted: () => void | Promise<void> }) {
   const live = ws.live.chat;
