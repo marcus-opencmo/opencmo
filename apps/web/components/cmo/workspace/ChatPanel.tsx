@@ -49,6 +49,9 @@ function workingLabel(tool: string): string {
   return "Reading your plan…";
 }
 
+// Tools whose result is a new card or calendar item; the workspace reloads so it shows up.
+const CARD_TOOLS = new Set(["create_task", "set_week_goal", "create_video_brief"]);
+
 export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: Workspace; onToast: (message: string) => void; onWorkStarted: () => void | Promise<void> }) {
   const live = ws.live.chat;
   const [messages, setMessages] = useState<ChatMessage[]>(ws.chat);
@@ -135,7 +138,7 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: Workspace; onToa
           if (event === "tool_start") setWorking(workingLabel(String(data.name)));
           if (event === "tool_result") {
             setWorking(null);
-            if (data.name === "create_task" && data.ok) void onWorkStarted();
+            if (CARD_TOOLS.has(String(data.name)) && data.ok) void onWorkStarted();
           }
           if (event === "done") done = data as Done;
         });
