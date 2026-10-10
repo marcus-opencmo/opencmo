@@ -142,45 +142,59 @@ Work top to bottom. Tick boxes in this file as you go and commit it with your fi
 
 ### A. Set up
 
-- [ ] `git fetch origin && git checkout claude/cmo-architecture-plan && npm install`
-- [ ] Use the Supabase CLI pinned in CI (**2.117.0**), not a newer `npx supabase` (CLAUDE.md).
-- [ ] Engine: `cd packages/engine && .venv312/bin/pip install -e '.[dev,face]'`
+- [x] `git fetch origin && git checkout claude/cmo-architecture-plan && npm install`
+- [x] Use the Supabase CLI pinned in CI (**2.117.0**), not a newer `npx supabase` (CLAUDE.md).
+- [x] Engine: `cd packages/engine && .venv312/bin/pip install -e '.[dev,face]'`
 
 ### B. Build and test
 
-- [ ] `npm run db:reset && npm run db:test`: migrations 20261109–20261111 apply, all pgTAP passes.
-- [ ] `bash scripts/dump-schema.sh`, then `git diff supabase/schema/current.sql`. The committed dump
+- [x] `npm run db:reset && npm run db:test`: migrations 20261109–20261111 apply, all pgTAP passes.
+- [x] `bash scripts/dump-schema.sh`, then `git diff supabase/schema/current.sql`. The committed dump
       came from Postgres 16 in the cloud session; commit the PG17 version if anything differs.
-- [ ] `npm run typecheck && npm run build`
-- [ ] `cd apps/web && npm run check:contracts` (includes `jobs.check`, `registry.check` and the
+- [x] `npm run typecheck && npm run build`
+- [x] `cd apps/web && npm run check:contracts` (includes `jobs.check`, `registry.check` and the
       fake W2 eval)
-- [ ] `cd packages/engine && .venv312/bin/python -m pytest -q && .venv312/bin/python -m ruff check .`
+- [x] `cd packages/engine && .venv312/bin/python -m pytest -q && .venv312/bin/python -m ruff check .`
       (stop `npm run dev` first: two engine tests fail while it runs)
 
 ### C. Check by looking (`npm run dev`, signed in as a test user)
 
-- [ ] `curl -X POST localhost:3000/api/internal/cmo/run` answers **401** without
+- [x] `curl -X POST localhost:3000/api/internal/cmo/run` answers **401** without
       `Authorization: Bearer $CRON_SECRET` and **202** with it.
-- [ ] `curl -H "Authorization: Bearer $CRON_SECRET" localhost:3000/api/cron/cmo` returns
+- [x] `curl -H "Authorization: Bearer $CRON_SECRET" localhost:3000/api/cron/cmo` returns
       `{ users, queued }` and does not run jobs itself.
-- [ ] Goal card: ask the CMO chat "set a goal of 3 posts this week". Then check that:
-  - [ ] the card appears in Approvals;
-  - [ ] changing the target and approving saves the new target;
-  - [ ] the progress bar moves after approving an X post;
-  - [ ] "Not this one" removes the card.
-- [ ] `get_run_result`: ask "did the last task finish?"; the chat answers from the real run.
-- [ ] `remember` with a topic: "remember: never use emojis in X posts". The row in
+- [x] Goal card: ask the CMO chat "set a goal of 3 posts this week". Then check that:
+  - [x] the card appears in Approvals;
+  - [x] changing the target and approving saves the new target;
+  - [x] the progress bar moves after approving an X post;
+  - [x] "Not this one" removes the card.
+- [x] `get_run_result`: ask "did the last task finish?"; the chat answers from the real run.
+- [x] `remember` with a topic: "remember: never use emojis in X posts". The row in
       `cmo_memories` has `topic = 'post'` and `importance = 3`.
-- [ ] Video brief (needs a project with clips):
-  - [ ] ask "write a video brief for my latest clips"; the brief card appears;
-  - [ ] "Open in assistant" goes to `/app/projects/<id>?brief=<id>` with the assistant open and
+- [x] Video brief (needs a project with clips):
+  - [x] ask "write a video brief for my latest clips"; the brief card appears;
+  - [x] "Open in assistant" goes to `/app/projects/<id>?brief=<id>` with the assistant open and
         the brief in the box;
-  - [ ] sending it ends in an approval card; nothing changes before Approve;
-  - [ ] skipping with a reason adds a `video` memory.
-- [ ] Jobs: from SQL, `select public.enqueue_cmo_run_for('<user>', 'summarize_memory', '{}')`
+  - [x] sending it ends in an approval card; nothing changes before Approve;
+  - [x] skipping with a reason adds a `video` memory.
+- [x] Jobs: from SQL, `select public.enqueue_cmo_run_for('<user>', 'summarize_memory', '{}')`
       and `'review_week'`, then trigger `/api/internal/cmo/run`. Check rows in `cmo_lessons` and a
       proposed goal for next week.
-- [ ] Mobile width and dark mode: goal and brief cards stay readable, nothing overflows.
+- [x] Mobile width and dark mode: goal and brief cards stay readable, nothing overflows.
+
+Findings from the local run (2026-10-10):
+
+- Fixed: the CMO chat only reloaded the workspace after `create_task`, so goal and brief cards
+  from `set_week_goal` and `create_video_brief` stayed hidden until a page reload.
+- Fixed: the project assistant sits below every clip, so "Open in assistant" landed at the top of
+  the page with the prefilled brief out of sight. It now scrolls into view and focuses the box.
+- Not fixed (code this PR does not touch): the CMO chat column overflows its column by ~90 px
+  while a conversation is open, and at 390 px the top bar's theme toggle makes the page scroll
+  sideways.
+- Known: editing a proposed goal's target keeps the model's wording ("3 posts") while the
+  progress line uses the new target ("of 4 posts").
+- The brief's approval-card step was checked against a stand-in clip without media; the assistant
+  asked before changing anything. A full apply needs a project with real clips.
 
 ### D. Fix, push, keep CI green
 
