@@ -77,7 +77,7 @@ of the queue waited until the user opened the app.
 - `packages/engine/modal_app.py`: `_dispatch_cmo()` at the end of `sweep()`, plus `cmo_schedule`
   and `cleanup` crons.
 - `apps/web/lib/agent/cmo-tools.ts`: `read_site` capped at `SITE_READS_PER_TURN = 3`.
-- `apps/web/lib/cmo/jobs/eval-w2.ts` (`npm run cmo:eval`) and `memory-store.ts`, the in-memory
+- `apps/web/lib/cmo/jobs/eval.ts` (`npm run cmo:eval`, W1, W2 and W5) and `memory-store.ts`, the in-memory
   store shared by checks and evals.
 - Tests: `packages/engine/tests/test_cmo_dispatch.py`.
 - Env: `CRON_SECRET` (Vercel and Modal), `OPENCMO_WEB_URL` (Modal).
