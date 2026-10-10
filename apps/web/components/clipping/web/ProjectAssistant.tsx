@@ -47,6 +47,8 @@ export function ProjectAssistant({ jobId, brief = null, onChanged }: { jobId: st
   /** Clip đã Retry thành công, theo `lượt:clip` — chỉ trong tab này. */
   const [retried, setRetried] = useState<Set<string>>(new Set());
   const listRef = useRef<HTMLDivElement>(null);
+  const sectionRef = useRef<HTMLElement>(null);
+  const shownBrief = useRef<string | null>(null);
 
   const load = useCallback(async () => {
     const next = await api<Loaded>(`/agent/sessions?job_id=${jobId}`);
@@ -65,6 +67,14 @@ export function ProjectAssistant({ jobId, brief = null, onChanged }: { jobId: st
     setOpen(true);
     setPrompt(brief);
   }, [brief]);
+
+  // The panel sits below every clip, so a founder arriving from the brief card would not see it.
+  useEffect(() => {
+    if (!brief || !loaded || shownBrief.current === brief) return;
+    shownBrief.current = brief;
+    sectionRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    sectionRef.current?.querySelector("textarea")?.focus({ preventScroll: true });
+  }, [brief, loaded]);
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
@@ -185,7 +195,7 @@ export function ProjectAssistant({ jobId, brief = null, onChanged }: { jobId: st
   const waiting = turns.find((turn) => turn.status === "awaiting_approval");
 
   return (
-    <section className="project-assistant" aria-label="Assistant">
+    <section ref={sectionRef} className="project-assistant" aria-label="Assistant">
       <button type="button" className="project-assistant-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
         <span>Assistant</span>
         <small>{loaded.available ? "Ask about your clips or change many at once" : "Not available yet"}</small>
