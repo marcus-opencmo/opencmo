@@ -13,7 +13,7 @@ insert into public.jobs (id, user_id, source_url, duration_seconds, status) valu
 insert into public.credit_ledger(user_id, delta, reason) values
   ('e9900000-0000-4000-8000-00000000000a', 30, 'test grant');
 
-select is((select count(*) from public.ai_models where provider = 'gemini' and enabled), 3::bigint, 'ba model Gemini');
+select is((select count(*) from public.ai_models where id in ('gemini-image', 'gemini-video', 'gemini-voice') and enabled), 3::bigint, 'three Gemini models (served through fal since 20261112)');
 select is(public.ai_price((select m from public.ai_models m where id = 'gemini-video'), '{"prompt":"x","aspectRatio":"9:16","duration":8}'), 24, 'Veo: 3 credit mỗi giây');
 
 set local role authenticated;

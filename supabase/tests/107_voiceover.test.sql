@@ -14,7 +14,7 @@ insert into public.credit_ledger(user_id, delta, reason) values
   ('e1070000-0000-4000-8000-00000000000a', 20, 'test grant');
 
 -- ================================================================ catalog
-select is((select provider from public.ai_models where id = 'elevenlabs-voice'), 'elevenlabs', 'model elevenlabs-voice có trong catalog');
+select is((select enabled from public.ai_models where id = 'elevenlabs-voice'), true, 'elevenlabs-voice is in the catalog (served through fal since 20261112)');
 select is(public.ai_price((select m from public.ai_models m where id = 'elevenlabs-voice'),
   jsonb_build_object('prompt', repeat('a', 1500), 'voice', 'Aria')), 10, '5 credit mỗi nghìn ký tự, làm tròn lên');
 select ok((select limits->'voices' ? 'Test A' from public.ai_models where id = 'fake-voice'), 'giọng thử tên Test A');

@@ -440,7 +440,7 @@ never applies edits.
 |---|---|---|
 | Agent LLM | one default: `CMO_LLM_PROVIDER` (web) = `OPENCMO_LLM_PROVIDER` (engine); choose with `npm run cmo:eval` | Vercel, Modal (moment selection) |
 | Moderation | OpenAI moderations (free) | Vercel, Modal |
-| Image, video, voice generation | fal as the main door; Gemini media and ElevenLabs move only after checking fal covers them, with word timestamps | Modal |
+| Image, video, voice, sound generation | fal for every model, including Veo, Nano Banana, Gemini TTS and ElevenLabs (voice with word timestamps, sound effects, music); the direct Gemini and ElevenLabs adapters stay only as a fallback | Modal |
 | Transcripts | Groq Whisper | Modal |
 | Social reading · payments · errors | ScrapeCreators · Polar · Sentry | Vercel |
 

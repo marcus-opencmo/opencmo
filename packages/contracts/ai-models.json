@@ -5,8 +5,8 @@
     {
       "id": "gemini-image",
       "kind": "image",
-      "provider": "gemini",
-      "providerModel": "gemini-2.5-flash-image",
+      "provider": "fal",
+      "providerModel": "fal-ai/nano-banana",
       "name": "Nano Banana",
       "description": "Google's fast image model. Good for thumbnails and B-roll stills.",
       "price": {
@@ -28,8 +28,11 @@
     {
       "id": "gemini-video",
       "kind": "video",
-      "provider": "gemini",
-      "providerModel": "veo-3.1-fast-generate-preview",
+      "provider": "fal",
+      "providerModel": "fal-ai/veo3.1/fast",
+      "providerModels": {
+        "image": "fal-ai/veo3.1/fast/image-to-video"
+      },
       "name": "Veo 3.1 Fast",
       "description": "Google's video model with sound. Short B-roll shots.",
       "price": {
@@ -53,8 +56,8 @@
     {
       "id": "gemini-voice",
       "kind": "voice",
-      "provider": "gemini",
-      "providerModel": "gemini-2.5-flash-preview-tts",
+      "provider": "fal",
+      "providerModel": "fal-ai/gemini-tts",
       "name": "Gemini voice",
       "description": "Natural narration for intros and calls to action.",
       "price": {
@@ -78,8 +81,8 @@
     {
       "id": "elevenlabs-voice",
       "kind": "voice",
-      "provider": "elevenlabs",
-      "providerModel": "eleven_multilingual_v2",
+      "provider": "fal",
+      "providerModel": "fal-ai/elevenlabs/tts/multilingual-v2",
       "name": "ElevenLabs voice",
       "description": "Studio-quality narration in 29 languages, with word timing for captions.",
       "price": {
@@ -107,8 +110,8 @@
     {
       "id": "elevenlabs-sfx",
       "kind": "audio",
-      "provider": "elevenlabs",
-      "providerModel": "eleven_text_to_sound_v2",
+      "provider": "fal",
+      "providerModel": "fal-ai/elevenlabs/sound-effects/v2",
       "name": "Sound effects",
       "description": "A short sound effect from a description: whooshes, impacts, clicks, room tone.",
       "price": {
@@ -124,8 +127,8 @@
     {
       "id": "elevenlabs-music",
       "kind": "audio",
-      "provider": "elevenlabs",
-      "providerModel": "music_v1",
+      "provider": "fal",
+      "providerModel": "fal-ai/elevenlabs/music",
       "name": "Music",
       "description": "Instrumental background music from a mood, genre and tempo. No vocals.",
       "price": {
