@@ -4,7 +4,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(16);
+select plan(17);
 
 insert into auth.users (id, email) values
   ('e1400000-0000-4000-8000-00000000000a', 'wg-a@test.local'),
@@ -47,6 +47,10 @@ select is(
   4, 'approving can change the target'
 );
 select is((select status from public.cmo_goals where week = (select this_week from w)), 'approved', 'approved');
+select is(
+  (select goal from public.cmo_goals where week = (select this_week from w)),
+  'Join 4 Reddit threads', 'a new target rewrites the number in the goal text'
+);
 select throws_ok(
   $$ select public.cmo_set_week_goal((select this_week from w), 'Something else', 'posts', 2) $$,
   'P0001', null, 'an approved goal is not replaced by a new proposal'

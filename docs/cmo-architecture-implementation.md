@@ -188,11 +188,11 @@ Findings from the local run (2026-10-10):
   from `set_week_goal` and `create_video_brief` stayed hidden until a page reload.
 - Fixed: the project assistant sits below every clip, so "Open in assistant" landed at the top of
   the page with the prefilled brief out of sight. It now scrolls into view and focuses the box.
-- Not fixed (code this PR does not touch): the CMO chat column overflows its column by ~90 px
-  while a conversation is open, and at 390 px the top bar's theme toggle makes the page scroll
-  sideways.
-- Known: editing a proposed goal's target keeps the model's wording ("3 posts") while the
-  progress line uses the new target ("of 4 posts").
+- Fixed: the CMO chat column overflowed by ~90 px while a conversation was open (the grid's
+  auto column grew to the title's nowrap width).
+- Fixed: at 390 px the top bar was 429 px wide; below 480 px "Activity" is icon-only (its name
+  stays for screen readers).
+- Fixed: changing a goal's target now rewrites the old number in the goal text.
 - The brief's approval-card step was checked against a stand-in clip without media; the assistant
   asked before changing anything. A full apply needs a project with real clips.
 

@@ -2003,7 +2003,14 @@ begin
   end if;
   update public.cmo_goals
   set status = case p_action when 'approve' then 'approved' else 'rejected' end,
-      goal = coalesce(nullif(trim(p_goal), ''), goal),
+      -- A new target rewrites the old number in the CMO's wording, or the card would read
+      -- "3 posts" above "0 of 4 posts approved".
+      goal = coalesce(
+        nullif(trim(p_goal), ''),
+        case when p_target is not null and p_target <> target
+          then regexp_replace(goal, '\m' || target || '\M', p_target::text)
+          else goal end
+      ),
       target = coalesce(p_target, target),
       decided_at = now()
   where id = p_id and user_id = v_user
