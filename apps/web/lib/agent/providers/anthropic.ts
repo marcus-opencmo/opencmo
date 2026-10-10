@@ -16,6 +16,12 @@ type Block = Anthropic.Beta.Messages.BetaContentBlockParam;
 
 /** Beta header của `fallbacks: "default"`. */
 const FALLBACK_BETA = "server-side-fallback-2026-07-01";
+/**
+ * Thinking blocks are bound to the system prompt and tool list that produced them. A deploy that
+ * changes either (or `trimImages` replacing an old image) would make every stored conversation
+ * fail with a 400; with `drop_block` the API drops the stale blocks and the turn still runs.
+ */
+const THINKING_BINDING_BETA = "thinking-binding-controls-2026-08-01";
 
 export const ANTHROPIC_MODEL = "claude-opus-5";
 
@@ -121,13 +127,13 @@ export function anthropicProvider(model: string = ANTHROPIC_MODEL, apiKey?: stri
         const stream = client.beta.messages.stream({
           model,
           max_tokens: MAX_TOKENS,
-          thinking: { type: "adaptive", display: "summarized" },
+          thinking: { type: "adaptive", display: "summarized", block_binding: { prefix_mismatch_behavior: "drop_block" } },
           system: [{ type: "text", text: system, cache_control: { type: "ephemeral" } }],
           // Breakpoint thứ hai: đuôi hội thoại, để bước sau chỉ trả phần mới.
           cache_control: { type: "ephemeral" },
           tools: tools(specs),
           messages: history as Anthropic.Beta.Messages.BetaMessageParam[],
-          betas: [FALLBACK_BETA],
+          betas: [FALLBACK_BETA, THINKING_BINDING_BETA],
           fallbacks: "default",
         }, { signal });
         try {
