@@ -245,6 +245,12 @@ proxy_secret = modal.Secret.from_name("opencmo-proxy")
 # Chỉ `run_task` cần (task `generate` của voice).
 voice_secret = modal.Secret.from_name("opencmo-voice")
 
+# fal key, separate for the same reason. Every generated image, video, voice and sound goes
+# through fal, so without it the web sells generation that the worker reports as "not set up".
+#
+#   modal secret create fal-secret FAL_KEY=...   # same key as Vercel
+fal_secret = modal.Secret.from_name("fal-secret")
+
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("opencmo.worker")
 
@@ -291,7 +297,7 @@ def run_job(job_id: str, attempt_id: str) -> None:
 
 
 @app.function(
-    secrets=[secret, proxy_secret, voice_secret],
+    secrets=[secret, proxy_secret, voice_secret, fal_secret],
     timeout=1800,
     cpu=4,
     memory=4096,

@@ -96,3 +96,67 @@ def test_bi_tu_choi_4xx_khong_retry_429_thi_retry(tmp_path):
         with pytest.raises(ProviderError) as info:
             provider.submit(get_model("fal-hailuo"), {"prompt": "x", "aspectRatio": "9:16", "duration": 6}, tmp_path)
         assert info.value.retryable is retryable
+
+
+def _mp3(path: Path, seconds: int) -> Path:
+    subprocess.run(
+        ["ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-c:a", "libmp3lame", str(path)],
+        check=True,
+    )
+    return path
+
+
+def _queue(result: dict, audio: bytes) -> FalProvider:
+    def api(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"status_url": "https://queue.fal.run/x/requests/r1/status", "response_url": "https://queue.fal.run/x/requests/r1"})
+        if request.url.path.endswith("/status"):
+            return httpx.Response(200, json={"status": "COMPLETED"})
+        return httpx.Response(200, json=result)
+
+    return FalProvider(
+        "k",
+        client=httpx.Client(transport=httpx.MockTransport(api)),
+        download=httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, content=audio, headers={"content-type": "audio/mpeg"}))),
+    )
+
+
+def test_media_moved_from_gemini_and_elevenlabs_keeps_its_parameters(tmp_path):
+    voice = build_payload(get_model("elevenlabs-voice"), {"prompt": "Get paid on day three.", "voice": "Aria"})
+    assert voice == {"text": "Get paid on day three.", "voice": "Aria", "timestamps": True}
+    assert build_payload(get_model("gemini-voice"), {"prompt": "Welcome back", "voice": "Kore"})["prompt"] == "Welcome back"
+    sfx = build_payload(get_model("elevenlabs-sfx"), {"prompt": "a whoosh", "duration": 3})
+    assert sfx == {"text": "a whoosh", "duration_seconds": 3, "prompt_influence": 0.3}
+    music = build_payload(get_model("elevenlabs-music"), {"prompt": "calm lo-fi", "duration": 15})
+    assert music == {"prompt": "calm lo-fi", "music_length_ms": 15000, "force_instrumental": True}
+
+    veo = get_model("gemini-video")
+    assert build_payload(veo, {"prompt": "waves", "aspectRatio": "9:16", "duration": 8})["duration"] == "8s"
+    image = str(_png(tmp_path / "a.png"))
+    assert endpoint_for(veo, {"prompt": "waves", "aspectRatio": "9:16", "duration": 4, "startImage": image}).endswith("/fast/image-to-video")
+
+
+def test_voice_returns_word_timings_for_captions(tmp_path):
+    # The shape fal returned for "Get paid on day three." (one alignment chunk, per character).
+    text = " Get paid on day three. "
+    starts = [round(i * 0.1, 3) for i in range(len(text))]
+    timestamps = [{"characters": list(text), "character_start_times_seconds": starts, "character_end_times_seconds": [s + 0.1 for s in starts]}]
+    provider = _queue({"audio": {"url": "https://v3.fal.media/files/voice.mp3"}, "timestamps": timestamps}, _mp3(tmp_path / "v.mp3", 2).read_bytes())
+
+    result = provider.run(get_model("elevenlabs-voice"), {"prompt": "Get paid on day three.", "voice": "Aria"}, tmp_path, sleep=lambda _s: None)
+
+    assert result is not None and result.extension == "m4a"
+    assert [w["text"] for w in result.words] == ["Get", "paid", "on", "day", "three."]
+    assert result.words[0]["start"] == 0.1
+
+
+def test_sound_is_trimmed_to_the_seconds_paid_for(tmp_path):
+    provider = _queue({"audio": {"url": "https://v3.fal.media/files/sfx.mp3"}}, _mp3(tmp_path / "s.mp3", 5).read_bytes())
+
+    result = provider.run(get_model("elevenlabs-sfx"), {"prompt": "a whoosh", "duration": 2}, tmp_path, sleep=lambda _s: None)
+
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(result.path)], check=True, capture_output=True, text=True
+    )
+    assert float(json.loads(probe.stdout)["format"]["duration"]) <= 2.1
+    assert result.words is None

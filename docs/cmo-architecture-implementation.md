@@ -54,7 +54,7 @@ loop again. Only dispatch runs every minute.
 |---|---|
 | Agent LLM | one default: `CMO_LLM_PROVIDER` (web) = `OPENCMO_LLM_PROVIDER` (engine) |
 | Moderation | OpenAI moderations (free) |
-| Image, video, voice | fal as the main door (Gemini media and ElevenLabs move later, see G) |
+| Image, video, voice, sound | fal for every model (moved 2026-10-10, see G) |
 | Transcripts | Groq Whisper |
 | Social reading · payments · errors | ScrapeCreators · Polar · Sentry |
 
@@ -222,9 +222,11 @@ Findings from the local run (2026-10-10):
 
 ### G. Follow-ups (not built yet)
 
-- [ ] Check that fal offers image, video and voice with **word timestamps** for voiceover
+- [x] Check that fal offers image, video and voice with **word timestamps** for voiceover
       captions. Only then move the Gemini media and ElevenLabs entries in
-      `packages/contracts/ai-models.json` to fal.
+      `packages/contracts/ai-models.json` to fal. Done 2026-10-10: ElevenLabs on fal returns the
+      same per-character alignment as the direct API; all six models were run once on real fal.
+      The ids stay the same and only `provider` changes (migration `20261112090000`).
 - [ ] Optional: `workflow_dispatch` GitHub Actions for `supabase db push` and `modal deploy`, so
       deploys work from a phone (needs `SUPABASE_ACCESS_TOKEN`, the DB password,
       `MODAL_TOKEN_ID` and `MODAL_TOKEN_SECRET` in GitHub Secrets).

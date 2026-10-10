@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,9 +18,25 @@ import httpx
 import pytest
 from google.genai import errors, types
 
-from opencmo.ai.catalog import get_model
+from opencmo.ai.catalog import AiModel
+from opencmo.ai.catalog import get_model as catalog_model
 from opencmo.ai.providers.base import ProviderError
 from opencmo.ai.providers.gemini import BUSY, DECLINED, NOT_SET_UP, REJECTED, GeminiProvider
+
+# The catalog routes these models through fal; the direct adapter stays so switching back is a
+# catalog change, and these tests pin it to its own endpoints.
+DIRECT = {
+    "gemini-image": "gemini-2.5-flash-image",
+    "gemini-video": "veo-3.1-fast-generate-preview",
+    "gemini-voice": "gemini-2.5-flash-preview-tts",
+}
+
+
+def get_model(model_id: str) -> AiModel:
+    model = catalog_model(model_id)
+    if model_id not in DIRECT:
+        return model
+    return replace(model, provider="gemini", provider_model=DIRECT[model_id], provider_models=None)
 
 
 def _png() -> bytes:

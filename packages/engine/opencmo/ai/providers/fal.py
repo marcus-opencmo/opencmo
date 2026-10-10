@@ -7,6 +7,10 @@ Hàng đợi: POST `queue.fal.run/<endpoint>` → `status_url` + `response_url`;
 
 Ảnh của người dùng (frame đầu/cuối, tham chiếu) đến đây là FILE ĐÃ TẢI về và đã kiểm
 duyệt (`generate_task`); gửi đi dạng data URI — bucket không phải mở ra ngoài.
+
+Voice and audio go through fal too (ElevenLabs and Gemini TTS endpoints), so one key covers
+every generated medium. ElevenLabs on fal returns the same per-character alignment as the
+direct API, so voiceover captions keep real word timings.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import httpx
 
 from opencmo.ai.catalog import AiModel
 from opencmo.ai.providers.base import Poll, ProviderAdapter, ProviderError, Result
+from opencmo.ai.providers.elevenlabs import words_from_alignment
 from opencmo.media.ffmpeg import run
 
 QUEUE = "https://queue.fal.run"
@@ -53,8 +58,25 @@ def endpoint_for(model: AiModel, spec: dict[str, Any]) -> str:
     return model.remote_id()
 
 
+def speech_payload(model: AiModel, spec: dict[str, Any]) -> dict[str, Any]:
+    """Voice and audio endpoints name their fields differently from the image/video ones."""
+    remote = model.remote_id()
+    if model.kind == "voice":
+        if "gemini-tts" in remote:
+            return {"prompt": str(spec["prompt"]), "voice": str(spec["voice"]), "output_format": "mp3"}
+        # Premade voices only, by name (product rule: no cloning); timestamps feed the captions.
+        return {"text": str(spec["prompt"]), "voice": str(spec["voice"]), "timestamps": True}
+    seconds = int(spec["duration"])
+    if "music" in remote:
+        # Always instrumental: no sung voice that could sound like a real person.
+        return {"prompt": str(spec["prompt"]), "music_length_ms": seconds * 1000, "force_instrumental": True}
+    return {"text": str(spec["prompt"]), "duration_seconds": seconds, "prompt_influence": 0.3}
+
+
 def build_payload(model: AiModel, spec: dict[str, Any]) -> dict[str, Any]:
     """Tham số chung của các endpoint fal; chỉ gửi thứ spec có (catalog đã kiểm khả năng)."""
+    if model.kind in ("voice", "audio"):
+        return speech_payload(model, spec)
     if model.limits.get("upscale"):
         # Upscale (G4, SeedVR2): chỉ video + độ phân giải đích; prompt không có nghĩa với model này.
         return {
@@ -77,8 +99,8 @@ def build_payload(model: AiModel, spec: dict[str, Any]) -> dict[str, Any]:
         else:
             payload["aspect_ratio"] = aspect
     if model.kind == "video" and spec.get("duration") is not None:
-        # Endpoint video của fal nhận thời lượng dạng chuỗi enum ("5", "10").
-        payload["duration"] = str(spec["duration"])
+        # Endpoint video của fal nhận thời lượng dạng chuỗi enum ("5", "10"); Veo wants "8s".
+        payload["duration"] = f"{spec['duration']}s" if "veo" in model.remote_id() else str(spec["duration"])
     if spec.get("resolution"):
         payload["resolution"] = spec["resolution"]
     if spec.get("seed") is not None:
@@ -132,7 +154,11 @@ class FalProvider(ProviderAdapter):
             raise ProviderError(BUSY, retryable=True) from exc
         if not body.get("status_url") or not body.get("response_url"):
             raise ProviderError(FAILED)
-        return json.dumps({"status_url": body["status_url"], "response_url": body["response_url"]})
+        ref: dict[str, Any] = {"status_url": body["status_url"], "response_url": body["response_url"]}
+        if model.kind == "audio":
+            # The model can return a little more than was paid for; fetch trims to this.
+            ref["seconds"] = int(spec["duration"])
+        return json.dumps(ref)
 
     def poll(self, ref: str) -> Poll:
         urls = json.loads(ref)
@@ -163,17 +189,31 @@ class FalProvider(ProviderAdapter):
                     if written > MAX_BYTES:
                         raise ProviderError(FAILED)
                     fh.write(chunk)
-        return _normalize(raw, content_type, dest_dir)
+        result = _normalize(raw, content_type, dest_dir, seconds=urls.get("seconds"))
+        words = speech_words(body)
+        return Result(result.path, result.content_type, result.extension, words=words) if words else result
 
 
-def _normalize(raw: Path, content_type: str, dest_dir: Path) -> Result:
+def speech_words(body: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """Word timings from ElevenLabs on fal: `timestamps` is a list of alignment chunks."""
+    chunks = body.get("timestamps")
+    if not isinstance(chunks, list):
+        return None
+    words: list[dict[str, Any]] = []
+    for chunk in chunks:
+        words.extend(words_from_alignment(chunk))
+    return words or None
+
+
+def _normalize(raw: Path, content_type: str, dest_dir: Path, *, seconds: int | None = None) -> Result:
     """Đổi về đúng định dạng editor đọc được: PNG cho ảnh, MP4 cho video, M4A cho tiếng."""
     if content_type.startswith("video/"):
         out = raw.rename(dest_dir / "result.mp4")
         return Result(out, "video/mp4", "mp4")
     if content_type.startswith("audio/"):
         out = dest_dir / "result.m4a"
-        run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), "-c:a", "aac", "-b:a", "192k", str(out)], timeout=300)
+        trim = ["-t", str(seconds)] if seconds else []
+        run(["ffmpeg", "-v", "error", "-y", "-i", str(raw), *trim, "-c:a", "aac", "-b:a", "192k", str(out)], timeout=300)
         return Result(out, "audio/mp4", "m4a")
     if content_type in ("image/png", "image/jpeg", "image/webp") or content_type.startswith("image/"):
         out = dest_dir / "result.png"
