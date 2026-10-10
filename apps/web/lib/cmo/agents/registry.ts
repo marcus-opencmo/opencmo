@@ -6,7 +6,7 @@ import "server-only";
  * UI, khoá không nằm trong DB):
  *
  *   CMO_LLM_PROVIDER        = gemini | anthropic   (one default for every agent; set it from the
- *                             W2 eval, `npm run cmo:eval`, and the same value as Modal's
+ *                             job evals (W1, W2, W5), `npm run cmo:eval`, and the same value as Modal's
  *                             OPENCMO_LLM_PROVIDER so the whole product runs on one LLM)
  *   CMO_AGENT_<ID>_PROVIDER = gemini | anthropic   (overrides the default for one agent)
  *   CMO_AGENT_<ID>_MODEL    = id model của provider đó
