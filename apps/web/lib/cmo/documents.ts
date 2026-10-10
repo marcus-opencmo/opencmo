@@ -92,10 +92,10 @@ export const DOCUMENTS: Record<DocumentKind, { title: string; summary: string; f
       { key: "category", label: "Category", type: "text" },
       { key: "one_liner", label: "One-liner", type: "text" },
       { key: "description", label: "Description", type: "long" },
-      { key: "audience", label: "Who buys it", type: "text" },
+      { key: "audience", label: "Who buys it", type: "long" },
       { key: "problems", label: "Problems it solves", type: "list" },
       { key: "features", label: "Main features", type: "list" },
-      { key: "pricing", label: "Pricing", type: "text" },
+      { key: "pricing", label: "Pricing", type: "long" },
       { key: "x_handle", label: "Your X handle", type: "text" },
     ],
   },
@@ -147,7 +147,7 @@ export const DOCUMENTS: Record<DocumentKind, { title: string; summary: string; f
       { key: "x", label: "On X", type: "long" },
       { key: "reddit", label: "On Reddit", type: "long" },
       { key: "short_video", label: "Short videos", type: "long" },
-      { key: "cadence", label: "Weekly rhythm", type: "text" },
+      { key: "cadence", label: "Weekly rhythm", type: "long" },
     ],
   },
 };
@@ -181,4 +181,18 @@ function clampFields(fields: Field[], body: Record<string, unknown>): Record<str
     }
   }
   return out;
+}
+
+/** True when clamping dropped text or list items (not when it only reordered keys or filled blanks). */
+export function wasCut(before: unknown, after: unknown): boolean {
+  if (typeof before === "string") return typeof after !== "string" || after.length < before.trim().length;
+  if (Array.isArray(before)) {
+    const kept = Array.isArray(after) ? after : [];
+    return kept.length < before.length || before.some((item, i) => wasCut(item, kept[i]));
+  }
+  if (before && typeof before === "object") {
+    const kept = after && typeof after === "object" ? (after as Record<string, unknown>) : {};
+    return Object.entries(before as Record<string, unknown>).some(([key, value]) => key in kept && wasCut(value, kept[key]));
+  }
+  return false;
 }

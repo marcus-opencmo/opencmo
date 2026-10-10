@@ -11,8 +11,8 @@ import "server-only";
 
 import { z } from "zod";
 
-import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
-import { DOCUMENT_KINDS, DOCUMENTS } from "@/lib/cmo/documents";
+import { firstRow, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
+import { clampDocument, DOCUMENT_KINDS, DOCUMENT_SCHEMAS, DOCUMENTS, wasCut, type DocumentKind } from "@/lib/cmo/documents";
 import { startCmoRun } from "@/lib/cmo/jobs/start";
 import { insightBlock, latestPerTopic } from "@/lib/cmo/jobs/context";
 import { mondayOf } from "@/lib/cmo/jobs/summarize-memory";
@@ -173,12 +173,32 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     },
     strict: false,
   },
+  // Last, so the cached prompt prefix stays the same.
+  {
+    name: "update_document",
+    description: [
+      "Rewrite fields of one of the founder's marketing documents when they ask you to update, fix or fill it in.",
+      "Read the document with read_doc first. fields_json is a JSON object of only the fields to replace, with the same names and shapes read_doc returned (strings, lists of strings, and for pillars or competitors the full list).",
+      "Each save is a new version; the old one stays in history. Use only facts from the founder, the documents or a website you read; never guess pricing or features.",
+    ].join(" "),
+    schema: {
+      type: "object",
+      properties: {
+        kind: { type: "string", enum: [...DOCUMENT_KINDS] },
+        fields_json: { type: "string", description: 'For example {"pricing": "$60/month billed annually", "features": ["...", "..."]}' },
+      },
+      required: ["kind", "fields_json"],
+      additionalProperties: false,
+    },
+    strict: true,
+  },
 ];
 
-const WRITES = new Set(["create_task", "remember", "set_week_goal", "create_video_brief"]);
+const WRITES = new Set(["create_task", "remember", "set_week_goal", "create_video_brief", "update_document"]);
 export const isCmoWrite = (name: string) => WRITES.has(name);
 
 const readInput = z.object({ kind: z.enum(DOCUMENT_KINDS) });
+const updateInput = z.object({ kind: z.enum(DOCUMENT_KINDS), fields_json: z.string().min(2).max(30_000) });
 const skillInput = z.object({ name: z.string() });
 const taskInput = z.object({
   agent: z.enum(["planner", "x_writer", "sales", "research", "video"]),
@@ -229,6 +249,11 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
       const { data: row } = await supabase.from("marketing_documents_latest").select("body, created_by, version").eq("kind", parsed.data.kind).maybeSingle();
       if (!row) return { ok: true, content: JSON.stringify({ missing: true }), summary: `No ${DOCUMENTS[parsed.data.kind].title} yet` };
       return { ok: true, content: data(row), summary: `Read ${DOCUMENTS[parsed.data.kind].title}` };
+    }
+    case "update_document": {
+      const parsed = updateInput.safeParse(input);
+      if (!parsed.success) return invalid("kind must be a document, and fields_json a JSON object of fields.");
+      return updateDocument(supabase, parsed.data.kind, parsed.data.fields_json);
     }
     case "list_calendar": {
       const { data: rows } = await supabase
@@ -421,3 +446,35 @@ export async function cmoContext(supabase: SupabaseClient): Promise<string> {
   const works = insightBlock((insight as { body?: CompetitorInsight } | null)?.body ?? null);
   return `<documents>\n${docs.join("\n") || "(none yet)"}\n</documents>${works ? `\n${works}` : ""}`;
 }
+
+/** Merges the changed fields into the latest version and saves it as a new, OpenCMO-badged version. */
+async function updateDocument(supabase: SupabaseClient, kind: DocumentKind, fieldsJson: string): Promise<ToolOutcome> {
+  let fields: unknown;
+  try {
+    fields = JSON.parse(fieldsJson);
+  } catch {
+    return invalid("fields_json is not valid JSON.");
+  }
+  if (!fields || typeof fields !== "object" || Array.isArray(fields)) return invalid("fields_json must be a JSON object of fields.");
+  const shape = (DOCUMENT_SCHEMAS[kind] as unknown as { shape: Record<string, z.ZodType> }).shape;
+  const changed = Object.keys(fields);
+  if (!changed.length) return invalid("fields_json has no fields to change.");
+  for (const key of changed) {
+    if (!(key in shape)) return invalid(`${DOCUMENTS[kind].title} has no field "${key}". Its fields are: ${Object.keys(shape).join(", ")}.`);
+    if (!shape[key].safeParse((fields as Record<string, unknown>)[key]).success) {
+      return invalid(`"${key}" has the wrong shape. Use the same shape read_doc returned.`);
+    }
+  }
+  const { data: latest } = await supabase.from("marketing_documents_latest").select("body").eq("kind", kind).maybeSingle();
+  const merged = { ...((latest?.body as Record<string, unknown> | undefined) ?? {}), ...(fields as Record<string, unknown>) };
+  const body = clampDocument(kind, merged);
+  // Fields longer than the document allows are cut; say so instead of saving half a sentence silently.
+  const shortened = changed.filter((key) => wasCut(merged[key], body[key]));
+  const row = firstRow(await rpcOrThrow<{ version: number } | { version: number }[]>(supabase, "cmo_chat_save_document", { p_kind: kind, p_body: body }));
+  return {
+    ok: true,
+    content: JSON.stringify({ saved: true, version: row?.version ?? null, changed, shortened }),
+    summary: `Updated ${DOCUMENTS[kind].title}`,
+  };
+}
+

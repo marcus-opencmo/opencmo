@@ -6,7 +6,7 @@
  */
 import assert from "node:assert/strict";
 
-import { clampDocument, DOCUMENT_KINDS, OnboardingSchema } from "./documents";
+import { clampDocument, DOCUMENT_KINDS, OnboardingSchema, wasCut } from "./documents";
 import { draftDocuments } from "./generate";
 import { extractPage, normalizeSite, privateAddress, readSite, SiteError } from "./site";
 import { suggestFixes } from "./suggest";
@@ -73,6 +73,18 @@ async function main(): Promise<void> {
   assert.equal(suggestFixes({ product: drafts.product ? { createdBy: "agent", version: 1, body: drafts.product as Record<string, unknown> } : undefined }, 10).some((s) => s.label === "Add a category"), true);
 
   console.log("cmo.check — onboarding: SSRF, rút chữ, cắt document, bản giả, gợi ý sửa đều đúng.");
+}
+
+// The chat reports cut fields: reordered keys and filled blanks are not cuts, dropped text is.
+{
+  const before = { competitors: [{ name: "Buffer", difference: "Short.", website: "" }] };
+  assert.equal(wasCut(before.competitors, clampDocument("competitors", before).competitors), false, "reordering is not a cut");
+  const long = { cadence: "x".repeat(2000) };
+  assert.equal(wasCut(long.cadence, clampDocument("content_strategy", long).cadence), true, "text over the limit is a cut");
+  const many = { features: Array.from({ length: 20 }, (_, i) => `f${i}`) };
+  assert.equal(wasCut(many.features, clampDocument("product", many).features), true, "dropped list items are a cut");
+  const cadence = "Spend 10 minutes every morning in Approvals. Approve or edit the X post, approve the clips, and send one helpful Reddit reply. Let OpenCMO draft; you decide what goes out.";
+  assert.equal(clampDocument("content_strategy", { cadence }).cadence, cadence, "a full weekly rhythm is not cut mid-sentence");
 }
 
 main().catch((error) => {
