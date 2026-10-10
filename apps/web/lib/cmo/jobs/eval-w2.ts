@@ -72,6 +72,7 @@ async function main() {
   const { drainCmoQueue } = await import("./runner");
 
   const rows: { fixture: string; ok: boolean; passing: number; seconds: number; error: string | null }[] = [];
+  const drafts: { fixture: string; texts: string[] }[] = [];
   for (const fixture of FIXTURES) {
     const mem = memoryStore(fixture.docs, []);
     const run = mem.enqueue("post_draft", { idea: fixture.brief });
@@ -83,8 +84,17 @@ async function main() {
     const rules = { avoid: avoidList(fixture.docs), known: knownNumbers(fixture.docs) };
     const passing = texts.filter((text) => text && checkPost(text, rules).length === 0).length;
     rows.push({ fixture: fixture.name, ok: run.status === "done", passing, seconds, error: run.error });
+    drafts.push({ fixture: fixture.name, texts });
   }
 
+  // The checks only catch rule breaks; the drafts still need reading before choosing a provider.
+  if (provider !== "fake") {
+    for (const { fixture, texts } of drafts) {
+      console.log(`\n--- ${fixture} ---`);
+      texts.forEach((text, i) => console.log(`[${i + 1}] ${text}`));
+    }
+    console.log("");
+  }
   console.table(rows.map((r) => ({ ...r, seconds: r.seconds.toFixed(1) })));
   const finished = rows.filter((r) => r.ok).length;
   const versions = rows.reduce((sum, r) => sum + r.passing, 0);
