@@ -179,21 +179,15 @@ def doctor() -> None:
                 "vẫn ra clip dùng được.[/dim]"
             )
 
-    if cfg.groq_api_key:
-        console.print("  [green]✓[/green] GROQ_API_KEY")
-    else:
-        console.print("  [red]✗[/red] thiếu GROQ_API_KEY")
-        ok = False
-
-    # Bước chọn khoảnh khắc cần Gemini HOẶC Anthropic.
-    if cfg.gemini_api_key or cfg.anthropic_api_key:
-        keys = " + ".join(
-            k for k, v in (("GEMINI_API_KEY", cfg.gemini_api_key), ("ANTHROPIC_API_KEY", cfg.anthropic_api_key)) if v
-        )
-        console.print(f"  [green]✓[/green] {keys}  [dim](chọn khoảnh khắc: {cfg.select_provider})[/dim]")
-    else:
-        console.print("  [red]✗[/red] thiếu GEMINI_API_KEY hoặc ANTHROPIC_API_KEY")
-        ok = False
+    for name, value in (
+        ("ELEVENLABS_API_KEY", cfg.elevenlabs_api_key),
+        ("ANTHROPIC_API_KEY", cfg.anthropic_api_key),
+    ):
+        if value:
+            console.print(f"  [green]✓[/green] {name}")
+        else:
+            console.print(f"  [red]✗[/red] missing {name}")
+            ok = False
 
     console.print(f"  [dim]song song tối đa: {cfg.max_parallel}[/dim]")
     console.print()

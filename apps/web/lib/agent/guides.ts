@@ -273,6 +273,18 @@ A new AI voice on the clip. It costs credits (the user approves the price) and a
 - The voice appears as a layer named "Voiceover: …"; deleting it restores the original audio and captions.
 - Do not claim that a new voice or new visuals make it fine to use someone else's video. If the user asks about rights, say that permission from the owner is still needed.`,
 
+  blank: `# Project without a script (blank "New edit", AI-only video)
+
+Nothing is spoken, so there are no quotes to anchor to: every piece of media is placed by time.
+
+1. Plan the video first with update_plan, one beat per line in seconds: "[0-3s] hook: a laptop glowing in a dark hotel room", "[3-7s] the dashboard fills with bookings". Keep each shot 2-5 seconds.
+2. work_area in <clip_context> is how long the video plays. When the plan is longer, set_workarea {start: 0, end: <plan length>} BEFORE adding media, or the shots past the end will not play.
+3. Stills first: generate_media kind "image" for every shot in ONE message (one card, one total price), each with idea, subject, action, setting, style, camera, mood, start = the beat's first second and length = the beat's seconds. No quote. One style and the frame's aspect ratio for every shot.
+4. After approval, list_library until they are ready, capture a frame on each, then ask_user which shots to animate (animation costs much more). Animate with generate_media kind "video": start_image = that still, the same brief, the same start, length = the beat, muted true. Delete the still each video replaces.
+5. Words: add_voiceover with mode "overlay" and start 0 (about 3 words per second of video), or add_text titles timed to the beats.
+6. Music: generate_media kind "audio" (instrumental, mood, genre, tempo), start 0, duration = the video length up to the model's limit, then set_props volume -18 when there is a voice.
+7. Capture a frame in the middle of every beat: nothing empty, nothing off-screen, text readable.`,
+
   document: "",
 } as const;
 

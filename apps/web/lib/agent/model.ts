@@ -1,86 +1,67 @@
 import "server-only";
 
 /**
- * Chọn provider cho Assistant.
+ * Picks the Assistant's provider.
  *
- * - `OPENCMO_AGENT_FAKE=1` (không bao giờ trên production): model giả của CI/E2E.
- * - `AGENT_PROVIDER=gemini|anthropic`: chọn tường minh.
- * - Không đặt: có key nào dùng key đó, **ưu tiên Claude** (quyết định của
- *   Marcus 26/09, spec agent-editor §3.6: agent dựng nhiều bước cần model dùng
- *   tool giỏi nhất). Chỉ có `GEMINI_API_KEY` thì dùng Gemini.
+ * - `OPENCMO_AGENT_FAKE=1` (never in production): the scripted model for CI/E2E.
+ * - Otherwise Claude, when the server has an Anthropic key.
  *
- * Phiên đã có gắn với model của nó (lịch sử native): `providerForModel` dựng
- * lại đúng provider đó, hoặc null khi server không còn khoá cho nó.
+ * A session is bound to its model (native history): `providerForModel` rebuilds that provider, or
+ * returns null when the server can no longer run it. Chats saved while Gemini was a provider stay
+ * readable through `formatFor` but cannot be continued.
  */
 
 import { resolveAgent, type AgentId } from "@/lib/cmo/agents/registry";
 
 import { ANTHROPIC_MODEL, anthropicFormat, anthropicProvider } from "./providers/anthropic";
 import { fakeProvider } from "./providers/fake";
-import { GEMINI_MODEL, geminiFormat, geminiProvider } from "./providers/gemini";
-import type { Format, Provider } from "./providers/types";
+import { geminiFormat } from "./providers/gemini-history";
+import type { Format, Provider, ProviderKind } from "./providers/types";
 
 function fakeAllowed(): boolean {
   return process.env.OPENCMO_AGENT_FAKE === "1" && process.env.VERCEL_ENV !== "production";
 }
 
 const hasAnthropicKey = () => Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
-const geminiKey = () => process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
 
-/** Provider cho phiên MỚI, hoặc null khi Assistant chưa được cấu hình. */
+/** Provider for a NEW session, or null when the Assistant is not set up. */
 export function agentProvider(): Provider | null {
   if (fakeAllowed()) return fakeProvider;
-  const wanted = process.env.AGENT_PROVIDER;
-  if (wanted === "anthropic") return hasAnthropicKey() ? anthropicProvider() : null;
-  if (wanted === "gemini") return geminiKey() ? geminiProvider(geminiKey()) : null;
-  if (hasAnthropicKey()) return anthropicProvider();
-  if (geminiKey()) return geminiProvider(geminiKey());
-  return null;
+  return hasAnthropicKey() ? anthropicProvider() : null;
 }
 
 /**
- * Provider cho một agent CMO có chat (H1): provider/model/khoá theo sổ agent
- * (`CMO_AGENT_<ID>_*`, mặc định Gemini), không theo `AGENT_PROVIDER` của Assistant editor.
- * Null khi agent chưa có khoá.
+ * Provider for a CMO agent that chats (H1): model and key come from the agent registry
+ * (`CMO_AGENT_<ID>_*`), not from the editor Assistant. Null when the agent has no key.
  */
 export function agentChatProvider(id: AgentId): Provider | null {
   if (fakeAllowed()) return fakeProvider;
   const agent = resolveAgent(id);
-  if (!agent.apiKey) return null;
-  return agent.provider === "anthropic" ? anthropicProvider(agent.model, agent.apiKey) : geminiProvider(agent.apiKey, undefined, agent.model);
+  return agent.apiKey ? anthropicProvider(agent.model, agent.apiKey) : null;
 }
 
-/** Họ provider của một id model đã lưu. */
-export const kindOf = (model: string): Provider["kind"] =>
+/** Provider family of a saved model id. */
+export const kindOf = (model: string): ProviderKind =>
   model === "fake" ? "fake" : model.startsWith("gemini") ? "gemini" : "anthropic";
 
-/** Định dạng lịch sử của một phiên — không cần khoá, dùng để vẽ panel. */
+/** History format of a session — needs no key, used to draw the panel. */
 export const formatFor = (model: string): Format =>
   kindOf(model) === "gemini" ? geminiFormat : { kind: kindOf(model), ...anthropicFormat };
 
-/** Provider để chạy tiếp một phiên đã có; null khi server không còn khoá cho nó. */
+/** Provider to continue an existing session; null when the server cannot run it any more. */
 export function providerForModel(model: string): Provider | null {
   switch (kindOf(model)) {
     case "fake":
       return fakeAllowed() ? fakeProvider : null;
     case "gemini":
-      // Model của phiên có thể là một id cụ thể do `modelVersion` trả về; phiên
-      // chạy tiếp bằng model đang cấu hình — cùng họ, cùng định dạng lịch sử.
-      return geminiKey() ? geminiProvider(geminiKey()) : null;
+      return null;
     default:
       return hasAnthropicKey() && model === ANTHROPIC_MODEL ? anthropicProvider() : null;
   }
 }
 
-/** Model người dùng chọn được ở panel (chỉ những model server có khoá), mặc định đứng đầu. */
+/** Models the panel can offer (only those the server has a key for), default first. */
 export function availableModels(): { id: string; label: string }[] {
   if (fakeAllowed()) return [{ id: "fake", label: "Test model" }];
-  const out: { id: string; label: string }[] = [];
-  if (hasAnthropicKey()) out.push({ id: ANTHROPIC_MODEL, label: "Claude Opus 5" });
-  if (geminiKey()) out.push({ id: GEMINI_MODEL, label: "Gemini Pro" });
-  // Mặc định (`agentProvider`) lên đầu — AGENT_PROVIDER có thể đổi thứ tự.
-  const preferred = agentProvider()?.model;
-  return out.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
+  return hasAnthropicKey() ? [{ id: ANTHROPIC_MODEL, label: "Claude Opus 5" }] : [];
 }
-
-export { GEMINI_MODEL };

@@ -17,6 +17,11 @@ from typing import Any, Literal
 
 from opencmo.ai.catalog import AiModel, price_of
 
+DECLINED = "The provider declined this prompt. Try rewording it. Your credits were refunded."
+BUSY = "The generation service is busy. We will try again shortly."
+REJECTED = "The provider could not run this request. Your credits were refunded."
+NOT_SET_UP = "Generation is not set up on the server yet. Your credits were refunded."
+
 
 class ProviderError(RuntimeError):
     """Provider từ chối hoặc hỏng. `str(exc)` là câu tiếng Anh cho người dùng.

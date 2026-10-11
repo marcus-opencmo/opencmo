@@ -110,6 +110,19 @@ test("New edit trống: nhập media, thêm chữ, export — không cần proje
   await expect(page.getByTestId("frame-1:1")).toHaveAttribute("aria-pressed", "true", { timeout: 60_000 });
   await page.screenshot({ path: testInfo.outputPath("03-assistant-blank.png") });
 
+  // AI media without a script: the agent places the image by time (2s), not by a quote, through
+  // the priced approval card.
+  await page.getByLabel("Message the assistant").fill("create an ai image at 2s of our app");
+  await page.getByTestId("assistant-send").click();
+  await expect(page.getByTestId("assistant-approval")).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByTestId("assistant-approval")).toContainText("Prompt:");
+  await page.getByTestId("assistant-approve").click();
+  await expect(page.getByTestId("assistant-reply").last()).toContainText(/being generated/, { timeout: 120_000 });
+  await expect
+    .poll(async () => JSON.stringify((await (await page.request.get(`/api/v1/editor/document?clip_id=${clipId}`)).json()).document), { timeout: 120_000 })
+    .toMatch(/"start":2,"end":5[^]*"generate":"image"|"generate":"image"[^]*"start":2,"end":5/);
+  await page.screenshot({ path: testInfo.outputPath("04-ai-image-by-time.png") });
+
   // Đổi tên bản sửa; bấm Editor trên rail mở lại đúng bản này; My projects không liệt kê nó.
   await page.getByTestId("clip-picker").click();
   await page.getByTestId("clip-picker-rename").click();

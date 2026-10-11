@@ -238,8 +238,8 @@ storage behind a few functions, so the provider can still be swapped.
 | Video download | `yt-dlp` | Supports the platforms users publish on |
 | Video processing | `ffmpeg` subprocess | Streaming, constant RAM |
 | Face tracking | MediaPipe — **required** | See the warning below |
-| Transcript | Groq `whisper-large-v3-turbo` | ~20 s per video |
-| Moment selection | Gemini Flash **or** Claude Haiku | Whichever key is present; Gemini preferred |
+| Transcript | ElevenLabs Scribe (word timestamps) | Upload capped at 24 MB |
+| Moment selection | Claude Haiku | Structured output |
 | Runtime | Modal | Scale-to-zero |
 
 > ⚠️ **Face tracking is not optional, even though the code can fall back.** Without
@@ -440,8 +440,8 @@ never applies edits.
 |---|---|---|
 | Agent LLM | one default: `CMO_LLM_PROVIDER` (web) = `OPENCMO_LLM_PROVIDER` (engine); choose with `npm run cmo:eval` | Vercel, Modal (moment selection) |
 | Moderation | OpenAI moderations (free) | Vercel, Modal |
-| Image, video, voice, sound generation | fal for every model, including Veo, Nano Banana, Gemini TTS and ElevenLabs (voice with word timestamps, sound effects, music); the direct Gemini and ElevenLabs adapters stay only as a fallback | Modal |
-| Transcripts | Groq Whisper | Modal |
+| Image, video, voice, sound generation | fal for every model, including Veo, Nano Banana, Gemini TTS and ElevenLabs (voice with word timestamps, sound effects, music); the direct ElevenLabs adapter stays only as a fallback | Modal |
+| Transcripts | ElevenLabs Scribe | Modal |
 | Social reading · payments · errors | ScrapeCreators · Polar · Sentry | Vercel |
 
 ### Deploy order

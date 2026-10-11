@@ -146,7 +146,7 @@ def _transcript_for_moments(
         language = part.language
         segments.extend(_shift(part.segments, moment.start))
 
-    return Transcript(segments=segments, language=language, source="whisper")
+    return Transcript(segments=segments, language=language, source="scribe")
 
 
 def run_pipeline(

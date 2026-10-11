@@ -20,22 +20,6 @@ def test_ytdlp_opts_have_socket_timeout():
     assert download._base_opts(Config())["socket_timeout"] > 0
 
 
-def test_gemini_client_has_timeout(monkeypatch):
-    seen = {}
-
-    class Client:
-        def __init__(self, **kwargs):
-            seen.update(kwargs)
-            raise RuntimeError("stop")
-
-    from google import genai
-
-    monkeypatch.setattr(genai, "Client", Client)
-    with pytest.raises(RuntimeError, match="stop"):
-        select._select_with_gemini("x", Config(gemini_api_key="k"))
-    assert seen["http_options"].timeout == select._LLM_TIMEOUT_S * 1000
-
-
 def test_anthropic_client_has_timeout(monkeypatch):
     seen = {}
 
@@ -55,14 +39,14 @@ def test_transcribe_rejects_oversized_audio_before_upload(tmp_path, monkeypatch)
     audio = tmp_path / "audio.m4a"
     audio.write_bytes(b"")
     with audio.open("r+b") as fh:
-        fh.truncate(transcribe.GROQ_MAX_BYTES + 1)
+        fh.truncate(transcribe.TRANSCRIBE_MAX_BYTES + 1)
 
     def no_upload(*_a, **_k):
         raise AssertionError("không được upload file quá cỡ")
 
     monkeypatch.setattr(transcribe.httpx, "post", no_upload)
     with pytest.raises(RuntimeError, match="^Audio is too large to transcribe"):
-        transcribe.transcribe_audio(audio, Config(groq_api_key="k"))
+        transcribe.transcribe_audio(audio, Config(elevenlabs_api_key="k"))
 
 
 @pytest.mark.skipif(
@@ -70,8 +54,8 @@ def test_transcribe_rejects_oversized_audio_before_upload(tmp_path, monkeypatch)
     reason="cần ffmpeg",
 )
 def test_download_audio_downmixes_oversized_stream(tmp_path, monkeypatch):
-    """Luồng gốc quá trần Groq phải ra mono 16kHz bitrate thấp; lọt trần thì giữ nguyên."""
-    monkeypatch.setattr(download, "GROQ_MAX_BYTES", 100_000)
+    """Luồng gốc quá trần upload phải ra mono 16kHz bitrate thấp; lọt trần thì giữ nguyên."""
+    monkeypatch.setattr(download, "TRANSCRIBE_MAX_BYTES", 100_000)
 
     class FakeYDL:
         def __init__(self, opts):

@@ -19,7 +19,7 @@ const WEB = path.join(ROOT, "apps", "web");
 
 /** Biến engine được phép đọc từ `.env.local`; phần còn lại tới từ Supabase. */
 const ENGINE_KEYS = new Set([
-  "GROQ_API_KEY", "GEMINI_API_KEY", "ANTHROPIC_API_KEY", "OPENCMO_SELECT_MODEL",
+  "ANTHROPIC_API_KEY", "OPENCMO_SELECT_MODEL", "OPENCMO_SCRIBE_MODEL",
   "OPENCMO_PROXY", "OPENCMO_ENCODER", "OPENCMO_WATERMARK", "OPENCMO_MAX_PARALLEL",
   // Web đọc thẳng apps/web/.env.local nên bật model voice khi có khoá; worker
   // thiếu khoá thì mọi lượt voiceover chết "not set up" trên local.

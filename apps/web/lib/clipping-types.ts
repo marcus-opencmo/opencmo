@@ -245,7 +245,7 @@ export type TranscriptArtifact = {
   transcript: {
     version: number;
     language: string;
-    source: "subs" | "whisper";
+    source: "subs" | "scribe" | "whisper";
     segments: TranscriptSegment[];
   };
 };

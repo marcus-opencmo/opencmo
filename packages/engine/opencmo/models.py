@@ -34,8 +34,9 @@ class TranscriptSegment:
 class Transcript:
     segments: list[TranscriptSegment]
     language: str = "en"
-    # Nguồn transcript quyết định chi phí: 'subs' là miễn phí, 'whisper' tốn tiền.
-    source: Literal["subs", "whisper"] = "whisper"
+    # The source decides the cost: 'subs' is free, speech-to-text is paid. 'whisper' marks
+    # transcripts saved before the switch to ElevenLabs Scribe.
+    source: Literal["subs", "scribe", "whisper"] = "scribe"
 
     @property
     def full_text(self) -> str:

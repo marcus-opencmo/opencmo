@@ -3,11 +3,11 @@
  * cùng origin: nút ▶ cạnh ô chat phát ngay, không tốn credit của người dùng).
  *
  * Vì sao tự sinh: khoá ElevenLabs của server không có quyền `voices_read` nên
- * không lấy được `preview_url` sẵn của họ; Gemini TTS không có mẫu công khai.
+ * không lấy được `preview_url` sẵn của họ.
  * Mỗi lần chạy tốn ~60 ký tự × số giọng. Tên giọng lấy từ catalog
  * (`ai-models.json`), id ElevenLabs lấy từ engine — một nguồn.
  *
- *   ELEVENLABS_API_KEY=… GEMINI_API_KEY=… npx tsx scripts/build-voice-previews.mts [--force]
+ *   ELEVENLABS_API_KEY=… npx tsx scripts/build-voice-previews.mts [--force]
  */
 
 import { spawnSync } from 'node:child_process';
@@ -56,35 +56,6 @@ if (eleven?.limits.voices?.length) {
     });
     if (!response.ok) throw new Error(`${voice}: ElevenLabs trả ${response.status} ${(await response.text()).slice(0, 200)}`);
     writeFileSync(file, Buffer.from(await response.arrayBuffer()));
-    console.log(`ghi ${voice} (${statSync(file).size} byte)`);
-  }
-}
-
-// ---- Gemini TTS: PCM 16-bit mono thô → mp3 bằng ffmpeg (như engine đóng m4a).
-const gemini = catalog.models.find((entry) => entry.kind === 'voice' && entry.provider === 'gemini');
-if (gemini?.limits.voices?.length) {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) throw new Error('Thiếu GEMINI_API_KEY');
-  for (const voice of gemini.limits.voices) {
-    const file = todo(voice);
-    if (!file) continue;
-    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${gemini.providerModel}:generateContent`, {
-      method: 'POST',
-      headers: { 'x-goog-api-key': key, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: sample(voice) }] }],
-        generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
-      }),
-    });
-    if (!response.ok) throw new Error(`${voice}: Gemini trả ${response.status} ${(await response.text()).slice(0, 200)}`);
-    const body = (await response.json()) as { candidates?: { content?: { parts?: { inlineData?: { data: string; mimeType: string } }[] } }[] };
-    const inline = body.candidates?.[0]?.content?.parts?.find((part) => part.inlineData)?.inlineData;
-    if (!inline) throw new Error(`${voice}: Gemini không trả audio`);
-    const rate = /rate=(\d+)/.exec(inline.mimeType)?.[1] ?? '24000';
-    const encoded = spawnSync('ffmpeg', ['-v', 'error', '-y', '-f', 's16le', '-ar', rate, '-ac', '1', '-i', 'pipe:0', '-c:a', 'libmp3lame', '-b:a', '64k', file], {
-      input: Buffer.from(inline.data, 'base64'),
-    });
-    if (encoded.status !== 0) throw new Error(`${voice}: ffmpeg lỗi ${encoded.stderr.toString().slice(0, 200)}`);
     console.log(`ghi ${voice} (${statSync(file).size} byte)`);
   }
 }

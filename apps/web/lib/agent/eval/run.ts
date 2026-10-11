@@ -3,14 +3,14 @@
  *
  *   npm run agent:eval -- --provider fake                 # CI: kiểm harness, không tốn tiền
  *   npm run agent:eval -- --provider anthropic --yes      # model thật: TỐN TIỀN API
- *   npm run agent:eval -- --provider gemini --task hook --yes
+ *   npm run agent:eval -- --provider anthropic --task hook --yes
  *
  * Mỗi bài: workspace trong bộ nhớ từ clip mẫu → cùng system prompt, cùng bộ
  * tool, cùng `runTool` với app; tool tab chạy bằng Node (`node-tools.ts`);
  * `ask_user` được trả lời bằng câu soạn sẵn của bài. Chấm bằng code
  * (`tasks.ts`), ghi báo cáo + contact sheet cuối vào `--out`.
  *
- * Model thật cần khoá trong env (`ANTHROPIC_API_KEY` / `GEMINI_API_KEY`) và
+ * Model thật cần khoá trong env (`ANTHROPIC_API_KEY`) và
  * `--yes`: không có `--yes` thì chỉ in ước lượng chi phí rồi thoát.
  */
 
@@ -25,7 +25,6 @@ import { KEEP_IMAGES } from "../limits";
 import { SYSTEM_PROMPT, projectStateBlock } from "../prompt";
 import { anthropicProvider } from "../providers/anthropic";
 import { fakeProvider } from "../providers/fake";
-import { geminiProvider } from "../providers/gemini";
 import type { Image, Provider, StoredMessage, ToolResult } from "../providers/types";
 import { generateToolSpec, prepareGeneration, prepareScene, prepareVoiceover, sceneToolSpec, voiceoverToolSpec, type PreparedGeneration } from "../generate-tool";
 import { BROWSER_INPUTS, TOOL_SPECS, applyOpTool, isWriteTool, runCheck, runTool } from "../tools";
@@ -60,10 +59,9 @@ function args(): Args {
   };
 }
 
-/** Giá mỗi triệu token (USD) — trùng `agent_model_prices`; Gemini là giá TẠM. */
+/** Price per million tokens (USD), same as `agent_model_prices`. */
 const PRICES: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
   anthropic: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
-  gemini: { input: 2.5, output: 15, cacheRead: 0.25, cacheWrite: 2.5 },
   fake: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 
@@ -72,11 +70,6 @@ function providerFor(name: string): Provider {
   if (name === "anthropic") {
     if (!process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) throw new Error("ANTHROPIC_API_KEY chưa có trong env.");
     return anthropicProvider();
-  }
-  if (name === "gemini") {
-    const key = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-    if (!key) throw new Error("GEMINI_API_KEY chưa có trong env.");
-    return geminiProvider(key);
   }
   throw new Error(`provider lạ: ${name}`);
 }

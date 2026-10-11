@@ -10,7 +10,7 @@
  */
 
 import type { ClipDocument } from "@opencmo/clip-doc";
-import { clipScript, frameRatio, readBrand, clipTranscript, formatScript, loadCaptions, summarizeProject, type OpContext } from "@opencmo/editor-core";
+import { activeScene, clipScript, frameRatio, readBrand, clipTranscript, formatScript, loadCaptions, summarizeProject, type OpContext } from "@opencmo/editor-core";
 
 export type ClipAbout = { hook?: string | null; reason?: string | null };
 
@@ -21,6 +21,9 @@ export async function clipContextBlock(document: ClipDocument, ctx: Pick<OpConte
     ...(about.hook ? { title: about.hook } : {}),
     ...(about.reason ? { why_this_clip: about.reason } : {}),
     duration: summarizeProject(document).duration,
+    // No speaker and no script (a blank "New edit", or AI-only video): media is placed by time,
+    // so the agent needs the work area and the guide that explains it.
+    ...(model ? {} : noScript(document)),
     // Hình khung: agent từng mặc định 9:16 cho 3D toàn khung trên clip 16:9 (02/10).
     ...(() => {
       const frame = frameRatio(document);
@@ -33,4 +36,18 @@ export async function clipContextBlock(document: ClipDocument, ctx: Pick<OpConte
     })(),
   };
   return `<clip_context>${JSON.stringify(payload)}\n<script clip_seconds="true">\n${script || "(no transcript)"}\n</script></clip_context>`;
+}
+
+function noScript(document: ClipDocument): Record<string, unknown> {
+  const workarea = (() => {
+    try {
+      return (activeScene(document) as { workarea?: [number, number] }).workarea;
+    } catch {
+      return undefined;
+    }
+  })();
+  return {
+    no_script: 'Nothing is spoken in this project. Place media by time (start in seconds), not by quote: read_guide "blank".',
+    ...(workarea ? { work_area: workarea } : {}),
+  };
 }

@@ -63,8 +63,8 @@ Sign-in is Google OAuth. For local sign-in through the UI, create an OAuth clien
 `SUPABASE_AUTH_GOOGLE_CLIENT_ID` / `SUPABASE_AUTH_GOOGLE_SECRET` (see `supabase/config.toml`);
 the test suites sign in with a password through the Auth API and need no Google setup.
 
-AI features need provider keys (Gemini or Anthropic for the agents, Groq for transcripts, and
-optional media providers). With `OPENCMO_AGENT_FAKE=1` and `OPENCMO_AI_FAKE=1` the app runs
+AI features need three provider keys: Anthropic (agents, moment selection and moderation),
+fal (images, video, voice and sound, plus image safety checks) and ElevenLabs (transcripts). With `OPENCMO_AGENT_FAKE=1` and `OPENCMO_AI_FAKE=1` the app runs
 with deterministic fake providers, which is what the tests use.
 
 ## Testing

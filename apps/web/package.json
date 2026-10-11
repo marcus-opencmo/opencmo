@@ -12,7 +12,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
-    "check:contracts": "tsx scripts/build-cmo-skills.mts --check && tsx lib/settings-schema.check.ts && tsx lib/api/handler.check.ts && tsx lib/api/source.check.ts && tsx lib/api/shapes.check.ts && tsx lib/api/task-kinds.check.ts && tsx lib/clip-presentation.check.ts && tsx lib/editor/generate-project.check.ts && tsx lib/editor/session.check.ts && tsx lib/editor/device.check.ts && tsx lib/editor/captions-translate.check.ts && tsx components/editor/library/local.check.ts && tsx components/editor/layout.check.ts && tsx lib/generate/brief.check.ts && tsx lib/generate/mentions.check.ts && tsx lib/generate/catalog.check.ts && tsx lib/markdown.check.ts && tsx lib/cleanup.check.ts && tsx lib/deploy.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/agent/providers.check.ts && tsx lib/cmo/social/research.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/agents/registry.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/cmo.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/jobs/jobs.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/jobs/eval.ts --provider fake",
+    "check:contracts": "tsx scripts/build-cmo-skills.mts --check && tsx lib/settings-schema.check.ts && tsx lib/api/handler.check.ts && tsx lib/api/source.check.ts && tsx lib/api/shapes.check.ts && tsx lib/api/task-kinds.check.ts && tsx lib/clip-presentation.check.ts && tsx lib/editor/generate-project.check.ts && tsx lib/editor/session.check.ts && tsx lib/editor/device.check.ts && tsx lib/editor/captions-translate.check.ts && tsx components/editor/library/local.check.ts && tsx components/editor/layout.check.ts && tsx lib/generate/brief.check.ts && tsx lib/generate/mentions.check.ts && tsx lib/generate/catalog.check.ts && tsx lib/generate/moderation.check.ts && tsx lib/markdown.check.ts && tsx lib/cleanup.check.ts && tsx lib/deploy.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/agent/providers.check.ts && tsx lib/cmo/social/research.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/agents/registry.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/cmo.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/jobs/jobs.check.ts && NODE_OPTIONS=--conditions=react-server tsx lib/cmo/jobs/eval.ts --provider fake",
     "check:api": "tsx lib/api/contract.check.ts",
     "agent:eval": "NODE_OPTIONS=--conditions=react-server tsx lib/agent/eval/run.ts",
     "cmo:eval": "NODE_OPTIONS=--conditions=react-server tsx lib/cmo/jobs/eval.ts",
@@ -25,7 +25,6 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0",
-    "@google/genai": "^2.27.0",
     "@opencmo/clip-assets": "*",
     "@opencmo/clip-doc": "*",
     "@opencmo/clip-icons": "*",
