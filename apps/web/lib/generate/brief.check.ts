@@ -6,7 +6,7 @@
 
 import assert from "node:assert/strict";
 
-import { prepareGeneration } from "@/lib/agent/generate-tool";
+import { generateCard, prepareGeneration } from "@/lib/agent/generate-tool";
 
 import type { SupabaseClient } from "@/lib/api/handler";
 
@@ -63,7 +63,21 @@ async function main(): Promise<void> {
     assert.match(ok.spec.prompt, /No text/);
 
     assert.match(String(await prepareGeneration({ kind: "image", ...brief, quote: "compound interest" }, locate)), /not in this clip's transcript/);
-    assert.match(String(await prepareGeneration({ kind: "image", prompt: "a sunset" }, locate)), /quote is required/);
+    assert.match(String(await prepareGeneration({ kind: "image", prompt: "a sunset" }, locate)), /idea is required/);
+    const { quote: _quote, ...noQuote } = brief;
+    assert.match(String(await prepareGeneration({ kind: "image", ...noQuote }, locate)), /quote is required.*pass start/);
+    // A project without a script places media by time: start replaces the quote and the
+    // transcript is never searched.
+    const noTranscript = async (): Promise<never> => {
+      throw new Error("This clip has no transcript to find that line in.");
+    };
+    const blank = await prepareGeneration({ kind: "image", ...noQuote, start: 2, length: 3 }, noTranscript);
+    assert.ok(typeof blank !== "string", String(blank));
+    assert.deepEqual([(blank.op as { start?: number }).start, (blank.op as { length?: number }).length], [2, 3]);
+    assert.equal(blank.quote, undefined);
+    assert.match(generateCard(blank, "clip").changes.join("\n"), /Prompt: /);
+    const pinned = await prepareGeneration({ kind: "video", ...brief, start: 4 }, noTranscript);
+    assert.ok(typeof pinned !== "string" && (pinned.op as { start?: number }).start === 4, "an explicit start wins over the quote");
     assert.match(String(await prepareGeneration({ kind: "video", ...brief, subject: "a 3D diagram of the funnel" }, locate)), /add_diagram/);
     // Giọng đọc giữ prompt: chữ cần đọc.
     const voice = await prepareGeneration({ kind: "voice", prompt: "Welcome back." }, locate);

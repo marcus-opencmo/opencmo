@@ -22,6 +22,7 @@
  *   "cinematic"        → get_project_state → apply_color look ấm cho mọi video (E3)
  *   "side by side with" → list_library → insert_asset → apply_layout side_by_side: người nói trái, B-roll phải (E5)
  *   "feedback"         → send_feedback (báo giới hạn, diễn đạt lại bằng tiếng Anh)
+ *   "ai image at Ns"   → generate_media image placed by time, no quote (project without a script)
  *   "generate b-roll:" → starter B-roll: nhiều generate_media image trong MỘT lượt (một thẻ duyệt)
  *   "generate"/"b-roll" → generate_media image: brief theo một dòng của <clip_context>
  *   "3d visual"        → update_plan + preview_3d (cảnh code: cột nhân đôi, neo "growing") → add_3d_scene
@@ -276,6 +277,22 @@ function script(history: StoredMessage[]): unknown[] {
           length: 2.5,
         }),
       ),
+    ];
+  }
+  const at = /ai image at (\d+(?:\.\d+)?)\s*s/.exec(ask);
+  if (at) {
+    // A project without a script: the shot is placed by time, there is no line to quote.
+    return [
+      text(`I'll create an image at ${at[1]}s.`),
+      use("generate_media", {
+        kind: "image",
+        idea: "the product at work late at night",
+        subject: "a laptop with a booking dashboard on a hotel desk",
+        setting: "a dim hotel room",
+        style: "cinematic",
+        start: Number(at[1]),
+        length: 3,
+      }),
     ];
   }
   if (/generate|create an image|b-roll/.test(ask)) {

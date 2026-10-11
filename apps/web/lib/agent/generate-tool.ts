@@ -56,7 +56,12 @@ export const generateInput = z
     aspect_ratio: z.string().max(10).optional(),
     duration: z.number().int().min(1).max(60).optional(),
     voice: z.string().max(100).optional(),
-    start: z.number().finite().min(0).optional().describe("Clip seconds. Omit for image/video: it starts on the quote."),
+    start: z
+      .number()
+      .finite()
+      .min(0)
+      .optional()
+      .describe("Clip seconds. Image/video on a clip with a script: omit it, the media starts on the quote. On a project without a script: required, it replaces the quote."),
     resolution: z.string().max(20).optional().describe("Video/image resolution, when the model lists resolutions. Higher costs more."),
     start_image: z
       .string()
@@ -83,8 +88,15 @@ export const generateInput = z
   })
   .superRefine((value, ctx) => {
     if (value.kind === "image" || value.kind === "video") {
-      for (const key of ["quote", "idea", "subject"] as const) {
+      for (const key of ["idea", "subject"] as const) {
         if (!value[key]) ctx.addIssue({ code: "custom", path: [key], message: `${key} is required for an AI ${value.kind}: fill the brief from <clip_context>.` });
+      }
+      if (!value.quote && value.start === undefined) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["quote"],
+          message: `quote is required for an AI ${value.kind}: the words it illustrates. On a project without a script, pass start (seconds) instead.`,
+        });
       }
     } else if (!value.prompt) {
       ctx.addIssue({ code: "custom", path: ["prompt"], message: value.kind === "voice" ? "prompt: the exact words to speak." : "prompt: the sound to make." });
@@ -108,7 +120,7 @@ export function generateToolSpec(): ToolSpec | null {
   return {
     name: "generate_media",
     description:
-      `Create new media with AI and place it on the clip: an image or a short video of a concrete real-world scene, a voice-over (kind "voice", prompt = the exact text to speak) or a sound effect (kind "audio", prompt = the sound). It costs credits, so the user sees the price and must approve before anything is created. Only use it when the user asks for new media. For image/video fill the brief from <clip_context> (read_guide "script"): quote = the words it illustrates (it starts when they are spoken), idea, subject, action, setting, style, camera, mood, avoid; the server writes the final prompt. Never use it for diagrams, charts, numbers, text or "3D explanations": draw those with add_diagram/add_chart/add_graph, or write a 3D animation (add_3d_scene). The result appears on the clip when it is ready (seconds for images and voice, minutes for video). Available models: ${listing}.`,
+      `Create new media with AI and place it on the clip: an image or a short video of a concrete real-world scene, a voice-over (kind "voice", prompt = the exact text to speak) or a sound effect (kind "audio", prompt = the sound). It costs credits, so the user sees the price and must approve before anything is created. Only use it when the user asks for new media. For image/video fill the brief from <clip_context> (read_guide "script"): quote = the words it illustrates (it starts when they are spoken) — or, on a project without a script, start = the second it appears (read_guide "blank") — idea, subject, action, setting, style, camera, mood, avoid; the server writes the final prompt. Never use it for diagrams, charts, numbers, text or "3D explanations": draw those with add_diagram/add_chart/add_graph, or write a 3D animation (add_3d_scene). The result appears on the clip when it is ready (seconds for images and voice, minutes for video). Available models: ${listing}.`,
     schema: sanitize(z.toJSONSchema(generateInput, { io: "input" })).schema as Record<string, unknown>,
     strict: true,
     approval: true,
@@ -162,7 +174,9 @@ export async function prepareGeneration(input: unknown, locate?: LocateQuote, lo
     const brief = request as Brief & typeof request;
     const misuse = briefMisuse(brief);
     if (misuse) return misuse;
-    if (locate) {
+    // A given start wins: the quote is only needed to find the time, and a project without a
+    // script has nothing to find it in.
+    if (locate && start === undefined && brief.quote) {
       try {
         const found = await locate(brief.quote);
         start ??= found.start;
@@ -248,7 +262,8 @@ export function generateCard(prepared: PreparedGeneration, clipId: string) {
     changes: [
       // Giọng phải có tên trên thẻ: "with ElevenLabs voice" không cho biết đang duyệt giọng nào.
       `${describeOp(prepared.op)} with ${typeof prepared.spec.voice === "string" ? `the voice ${prepared.spec.voice}` : prepared.model.name} · ${credits}`,
-      ...(prepared.quote ? [`For the line: “${prepared.quote}”`, `Prompt: ${prepared.spec.prompt}`] : []),
+      ...(prepared.quote ? [`For the line: “${prepared.quote}”`] : []),
+      ...(prepared.model.kind === "image" || prepared.model.kind === "video" ? [`Prompt: ${prepared.spec.prompt}`] : []),
     ],
     credits: prepared.credits,
   };

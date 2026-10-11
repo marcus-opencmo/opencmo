@@ -410,6 +410,26 @@ export const TASKS: EvalTask[] = [
     },
   },
   {
+    id: "blankgen",
+    prompt: "Create an AI image at 2s of our booking app on a laptop.",
+    // A blank "New edit": no speaker, no captions, nothing to quote.
+    setup(document) {
+      const scene = document.stage.children[0] as unknown as Entity;
+      scene.children = [];
+      scene.workarea = [0, 10];
+    },
+    grade(outcome) {
+      const notes: string[] = [];
+      const gen = outcome.generations?.find((item) => item.model.kind === "image");
+      if (!check(notes, Boolean(gen), "no AI image prepared")) return { pass: false, notes };
+      const op = gen!.op as { start?: number; length?: number };
+      const timed = check(notes, op.start === 2, `starts at ${op.start ?? 0}s, asked for 2s`);
+      const unquoted = check(notes, gen!.quote === undefined, `quoted "${gen!.quote}" on a project without a script`);
+      const placed = check(notes, JSON.stringify(outcome.document).includes('"generate":"image"'), "the image is not on the timeline");
+      return { pass: timed && unquoted && placed && Boolean(op.length), notes };
+    },
+  },
+  {
     id: "brollset",
     prompt: "Generate B-roll: AI shots for the lines that name something concrete",
     grade(outcome) {

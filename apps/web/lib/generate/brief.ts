@@ -28,7 +28,8 @@ export const briefShape = {
 };
 
 export type Brief = {
-  quote: string;
+  /** Absent on a project without a script: the media is placed by time instead. */
+  quote?: string;
   idea: string;
   subject: string;
   action?: string;
