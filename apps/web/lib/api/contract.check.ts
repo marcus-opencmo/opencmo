@@ -1458,6 +1458,25 @@ async function main(): Promise<void> {
     assert.equal(await balance(a.userId), afterTurn, "không trừ lần hai");
   });
 
+  await check("Assistant on a blank edit: AI image placed by time, no transcript needed", async () => {
+    const created = await callApi(a, "/editor/new", { method: "POST", body: JSON.stringify({ aspect: "9:16" }) });
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const blankClip = (created.body as { clip_id: string }).clip_id;
+    assert.equal((await callApi(a, `/editor/project?clip_id=${blankClip}`)).status, 200);
+    const opened = await callApi(a, "/agent/sessions", { method: "POST", body: JSON.stringify({ clip_id: blankClip }) });
+    const session = (opened.body as { id: string }).id;
+    const first = await callSse(a, `/agent/sessions/${session}/turns`, { prompt: "Create an AI image at 2s of our app" });
+    const request = first.events.find((event) => event.event === "approval_request");
+    assert.ok(request, `no approval card: ${JSON.stringify(first.events.map((event) => event.event))}`);
+    assert.match(JSON.stringify(request!.data), /Prompt: /);
+    const res = await callSse(a, `/agent/sessions/${session}/approvals`, { decisions: [{ tool_use_id: request!.data.id, approved: true }] });
+    assert.ok(res.events.some((event) => event.event === "project_changed"));
+    const placed = everything(await documentOf(a, blankClip)).find((node) => node.generate === "image");
+    assert.ok(placed, "the image declaration is on the blank edit");
+    const holder = everything(await documentOf(a, blankClip)).find((node) => JSON.stringify(node.paints ?? []).includes('"generate":"image"'));
+    assert.deepEqual([holder?.start, holder?.end], [2, 5], "placed at 2s for 3s");
+  });
+
   await check("Assistant + voiceover: repurpose = thẻ giá, Approve đặt giọng mới, tắt tiếng video gốc", async () => {
     const first = await callSse(a, `/agent/sessions/${agentSession}/turns`, { prompt: "Repurpose this clip with a new script" });
     const request = first.events.find((event) => event.event === "approval_request");
