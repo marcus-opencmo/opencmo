@@ -1,26 +1,20 @@
 import "server-only";
 
 /**
- * Sổ agent của CMO (H1, Marcus 04/10): MỖI việc là một agent có provider/model/khoá riêng, để
- * thay agent hợp từng nhiệm vụ mà không sửa code. Chỗ đổi là env trên Vercel (Marcus chốt: không
- * UI, khoá không nằm trong DB):
+ * The CMO agent registry (H1): EVERY job is an agent with its own model and key, so an agent can
+ * be swapped per task without code changes. Configured with env on Vercel (no UI, keys stay out of
+ * the database). Every agent runs on Claude:
  *
- *   CMO_LLM_PROVIDER        = gemini | anthropic   (one default for every agent; set it from the
- *                             job evals (W1, W2, W5), `npm run cmo:eval`, and the same value as Modal's
- *                             OPENCMO_LLM_PROVIDER so the whole product runs on one LLM)
- *   CMO_AGENT_<ID>_PROVIDER = gemini | anthropic   (overrides the default for one agent)
- *   CMO_AGENT_<ID>_MODEL    = id model của provider đó
- *   CMO_AGENT_<ID>_API_KEY  = khoá riêng của agent; vắng thì khoá chung của provider
- *                             (GEMINI_API_KEY / ANTHROPIC_API_KEY)
+ *   CMO_AGENT_<ID>_MODEL    = Claude model id
+ *   CMO_AGENT_<ID>_API_KEY  = the agent's own key; defaults to ANTHROPIC_API_KEY
  *
- * `<ID>` viết hoa: CMO, ONBOARDING, PLANNER, X_WRITER, SALES, RESEARCH, VIDEO, CHECKER, CAPTIONS.
- * Mặc định mọi agent chạy Gemini (Marcus: "giờ cứ dùng gemini"). Hai tầng như cũ: agent soạn
- * dùng bản Pro, agent chấm/kiểm dùng bản Flash — kiểm bài không cần nghĩ sâu, và context riêng
- * thì model kiểm không bị chính bản nháp thuyết phục.
+ * `<ID>` in capitals: CMO, ONBOARDING, PLANNER, X_WRITER, SALES, RESEARCH, VIDEO, CHECKER, CAPTIONS.
+ * Two tiers: drafting agents use Opus, checking agents use Haiku — a check does not need deep
+ * reasoning, and a separate context keeps the checker from being persuaded by the draft.
  */
 
 export type AgentId = "cmo" | "onboarding" | "planner" | "x_writer" | "sales" | "research" | "video" | "checker" | "captions";
-export type ProviderKind = "gemini" | "anthropic";
+export type ProviderKind = "anthropic";
 
 export type AgentSpec = {
   id: AgentId;
@@ -45,37 +39,26 @@ export const AGENT_SPECS: Record<AgentId, AgentSpec> = {
 
 export const AGENT_IDS = Object.keys(AGENT_SPECS) as AgentId[];
 
-/** Model mặc định theo tầng. Giữ tương thích env cũ (`AGENT_GEMINI_MODEL`, `CMO_GEMINI_CHECK_MODEL`). */
-function defaultModel(provider: ProviderKind, tier: AgentSpec["tier"], env: NodeJS.ProcessEnv): string {
-  if (provider === "anthropic") return tier === "check" ? "claude-haiku-4-5" : "claude-opus-5-5";
-  return tier === "check" ? env.CMO_GEMINI_CHECK_MODEL || "gemini-flash-latest" : env.AGENT_GEMINI_MODEL || "gemini-pro-latest";
-}
+const defaultModel = (tier: AgentSpec["tier"]): string => (tier === "check" ? "claude-haiku-4-5" : "claude-opus-5-5");
 
-const sharedKey = (provider: ProviderKind, env: NodeJS.ProcessEnv): string =>
-  provider === "anthropic" ? env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || "" : env.GEMINI_API_KEY || env.GOOGLE_API_KEY || "";
+const sharedKey = (env: NodeJS.ProcessEnv): string => env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN || "";
 
 export type ResolvedAgent = AgentSpec & { provider: ProviderKind; model: string; apiKey: string; source: "env" | "default" };
 
 /**
- * Provider/model/khoá thật của một agent. `apiKey` rỗng = agent chưa cấu hình được (thiếu khoá) —
- * nơi gọi báo lỗi tiếng Anh. Khoá không bao giờ rời server.
+ * An agent's real model and key. An empty `apiKey` means the agent is not set up (no key); the
+ * caller reports that in English. Keys never leave the server.
  */
 export function resolveAgent(id: AgentId, env: NodeJS.ProcessEnv = process.env): ResolvedAgent {
   const spec = AGENT_SPECS[id];
   const prefix = `CMO_AGENT_${id.toUpperCase()}_`;
-  const own = env[`${prefix}PROVIDER`]?.trim().toLowerCase();
-  const wanted = own || env.CMO_LLM_PROVIDER?.trim().toLowerCase();
-  if (wanted && wanted !== "gemini" && wanted !== "anthropic") {
-    console.error(`[cmo] ${own ? `${prefix}PROVIDER` : "CMO_LLM_PROVIDER"}="${wanted}" is not a provider; using gemini`);
-  }
-  const provider: ProviderKind = wanted === "anthropic" ? "anthropic" : "gemini";
-  const model = env[`${prefix}MODEL`]?.trim() || defaultModel(provider, spec.tier, env);
-  const apiKey = env[`${prefix}API_KEY`]?.trim() || sharedKey(provider, env);
-  const source = wanted || env[`${prefix}MODEL`] || env[`${prefix}API_KEY`] ? "env" : "default";
-  return { ...spec, provider, model, apiKey, source };
+  const model = env[`${prefix}MODEL`]?.trim() || defaultModel(spec.tier);
+  const apiKey = env[`${prefix}API_KEY`]?.trim() || sharedKey(env);
+  const source = env[`${prefix}MODEL`] || env[`${prefix}API_KEY`] ? "env" : "default";
+  return { ...spec, provider: "anthropic", model, apiKey, source };
 }
 
-/** Bảng cấu hình hiện tại, không có khoá — cho log khởi động và trang chẩn đoán nội bộ. */
+/** Current configuration without keys — for the startup log and the internal diagnostics page. */
 export function agentTable(env: NodeJS.ProcessEnv = process.env): { id: AgentId; provider: ProviderKind; model: string; ready: boolean; source: string }[] {
   return AGENT_IDS.map((id) => {
     const agent = resolveAgent(id, env);

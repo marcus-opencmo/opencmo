@@ -40,8 +40,8 @@ image bakes the model in that way.
 cp .env.example .env    # then export it, or use direnv
 ```
 
-You need `GROQ_API_KEY` (transcripts) and **one of** `GEMINI_API_KEY` or `ANTHROPIC_API_KEY`
-(moment selection). With both, Gemini is preferred.
+You need `ELEVENLABS_API_KEY` (transcripts, ElevenLabs Scribe) and `ANTHROPIC_API_KEY`
+(moment selection with Claude).
 
 ## Use
 
@@ -89,7 +89,7 @@ In production the engine runs as a Modal worker — see `modal_app.py`.
 pip install -e '.[worker]'
 
 modal secret create opencmo \
-    GROQ_API_KEY=... GEMINI_API_KEY=... \
+    ANTHROPIC_API_KEY=... \
     SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=...
 
 modal run modal_app.py --url "<url>"   # try one video on Modal, no database needed

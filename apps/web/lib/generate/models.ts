@@ -29,8 +29,6 @@ function providerEnabled(provider: string): boolean {
   switch (provider) {
     case "fake":
       return aiFakeEnabled();
-    case "gemini":
-      return Boolean(process.env.GEMINI_API_KEY);
     case "elevenlabs":
       return Boolean(process.env.ELEVENLABS_API_KEY);
     case "fal":

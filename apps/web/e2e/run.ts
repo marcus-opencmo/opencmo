@@ -61,13 +61,11 @@ function readEnv(): NodeJS.ProcessEnv {
     // Generate cũng bằng model giả (FakeProvider của worker): `check:api` trong
     // api-contract.spec cần danh sách model giả, và E2E không được tốn tiền thật.
     OPENCMO_AI_FAKE: "1",
-    // `next start` tự nạp `apps/web/.env.local`, và khoá nhà cung cấp trong đó bật model
-    // THẬT (Generate chọn `gemini-voice` thay `fake-voice`): test lệch, và có thể tốn
-    // tiền. `@next/env` không ghi đè biến đã có, nên đặt rỗng ở đây là chặn được.
-    GEMINI_API_KEY: "",
+    // `next start` loads `apps/web/.env.local`, and provider keys there turn on REAL models
+    // (Generate would pick a real voice over `fake-voice`): tests drift and may cost money.
+    // `@next/env` never overrides a variable that is already set, so blank ones block them.
     ELEVENLABS_API_KEY: "",
     FAL_KEY: "",
-    OPENAI_API_KEY: "",
     ANTHROPIC_API_KEY: "",
     NEXT_PUBLIC_SITE_URL: "http://127.0.0.1:3100",
     MODAL_SUBMIT_URL: "",

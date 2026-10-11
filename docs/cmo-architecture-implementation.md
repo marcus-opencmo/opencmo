@@ -55,7 +55,7 @@ loop again. Only dispatch runs every minute.
 | Agent LLM | one default: `CMO_LLM_PROVIDER` (web) = `OPENCMO_LLM_PROVIDER` (engine) |
 | Moderation | OpenAI moderations (free) |
 | Image, video, voice, sound | fal for every model (moved 2026-10-10, see G) |
-| Transcripts | Groq Whisper |
+| Transcripts | ElevenLabs Scribe |
 | Social reading · payments · errors | ScrapeCreators · Polar · Sentry |
 
 ---

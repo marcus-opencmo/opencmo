@@ -1,11 +1,7 @@
-"""Chọn khoảnh khắc đáng cắt từ transcript, bằng LLM.
+"""Picks the moments worth cutting from a transcript, with Claude.
 
-Runs on Gemini or Anthropic: OPENCMO_LLM_PROVIDER picks one (the same default LLM as the
-web app's CMO_LLM_PROVIDER), otherwise whichever key exists (`Config.select_provider`). Transcript video 45 phút ~12k token vào: Gemini 2.5
-Flash ~$0.01/video (có bậc miễn phí), Claude Haiku 4.5 ~$0.02/video.
-
-Cả hai đường đều dùng structured output (ràng model trả đúng Pydantic schema),
-nên không cần code chống đỡ khi model trả sai định dạng.
+A 45-minute transcript is ~12k input tokens: Claude Haiku costs ~$0.02 per video. Structured
+output binds the model to the Pydantic schema, so no code has to defend against a wrong format.
 """
 
 from __future__ import annotations
@@ -63,31 +59,6 @@ dùng đọc chúng trong một giao diện tiếng Anh."""
 _LLM_TIMEOUT_S = 120
 
 
-def _select_with_gemini(prompt: str, cfg: Config) -> _Selection:
-    from google import genai
-    from google.genai import types
-
-    # Mặc định SDK không có trần: một request treo làm job `running` mãi.
-    client = genai.Client(
-        api_key=cfg.gemini_api_key,
-        http_options=types.HttpOptions(timeout=_LLM_TIMEOUT_S * 1000),
-    )
-    response = client.models.generate_content(
-        model=cfg.resolved_select_model,
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            system_instruction=_SYSTEM,
-            response_mime_type="application/json",
-            response_schema=_Selection,
-            automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
-        ),
-    )
-    parsed = response.parsed
-    if parsed is None:
-        raise RuntimeError(f"Gemini did not return the expected schema: {response.text!r}")
-    return parsed
-
-
 def _select_with_anthropic(prompt: str, cfg: Config) -> _Selection:
     import anthropic
 
@@ -122,12 +93,8 @@ def select_moments(
         f"{cfg.clip_min_seconds:.0f}–{cfg.clip_max_seconds:.0f} giây."
     )
 
-    provider = cfg.select_provider
-    log.info("Chọn khoảnh khắc bằng %s (%s)", provider, cfg.resolved_select_model)
-    if provider == "gemini":
-        selection = _select_with_gemini(prompt, cfg)
-    else:
-        selection = _select_with_anthropic(prompt, cfg)
+    log.info("Selecting moments with %s", cfg.resolved_select_model)
+    selection = _select_with_anthropic(prompt, cfg)
 
     moments: list[Moment] = []
     for item in selection.moments:

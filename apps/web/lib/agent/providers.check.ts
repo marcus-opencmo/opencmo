@@ -1,16 +1,13 @@
 /**
- * Provider của Assistant, không mạng: schema tool dựng đúng cho cả hai họ, và
- * Gemini map lịch sử/tool/ảnh/usage đúng trên một response ghi sẵn.
+ * Assistant providers, offline: tool schemas build correctly, Claude history maps tool results and
+ * images, and chats saved while Gemini was a provider still read back.
  *
  *     NODE_OPTIONS=--conditions=react-server tsx lib/agent/providers.check.ts
  */
 import assert from "node:assert/strict";
 
-import type { GoogleGenAI } from "@google/genai";
-
 import { anthropicFormat } from "./providers/anthropic";
-import { geminiFormat, geminiProvider } from "./providers/gemini";
-import type { Delta } from "./providers/types";
+import { geminiFormat } from "./providers/gemini-history";
 import { BROWSER_INPUTS, TOOL_SPECS } from "./tools";
 
 // ---------------------------------------------------------------- tool
@@ -27,94 +24,18 @@ assert.equal(TOOL_SPECS.find((spec) => spec.name === "update_element")!.strict, 
 assert.equal(TOOL_SPECS.find((spec) => spec.name === "set_frame")!.strict, true);
 
 async function main(): Promise<void> {
-// ---------------------------------------------------------------- Gemini
-const chunks = [
-  { candidates: [{ content: { role: "model", parts: [{ text: "Planning the frame.", thought: true }] } }] },
-  { candidates: [{ content: { role: "model", parts: [{ text: "Switching to square." }] } }] },
-  {
-    candidates: [
-      {
-        content: {
-          role: "model",
-          parts: [
-            { functionCall: { name: "set_frame", args: { width: 1080, height: 1080 } }, thoughtSignature: "sig-A" },
-            { functionCall: { id: "call-xyz", name: "capture", args: { times: [1] } } },
-          ],
-        },
-        finishReason: "STOP",
-      },
-    ],
-    usageMetadata: { promptTokenCount: 5000, cachedContentTokenCount: 4000, candidatesTokenCount: 60, thoughtsTokenCount: 40 },
-    modelVersion: "gemini-9-pro-preview",
-  },
+// ---------------------------------------------------------------- saved Gemini chats
+const saved = [
+  { text: "Planning the frame.", thought: true },
+  { text: "Switching to square." },
+  { functionCall: { name: "set_frame", args: { width: 1080, height: 1080 } }, thoughtSignature: "sig-A" },
+  { functionCall: { id: "call-xyz", name: "capture", args: { times: [1] } } },
 ];
-let sent: { model?: string; contents?: unknown; config?: Record<string, unknown> } = {};
-const client = {
-  models: {
-    generateContentStream: async (params: typeof sent) => {
-      sent = params;
-      return (async function* () {
-        yield* chunks;
-      })();
-    },
-  },
-} as unknown as Pick<GoogleGenAI, "models">;
-
-const deltas: Delta[] = [];
-const provider = geminiProvider("test", client);
-const step = await provider.step(
-  {
-    history: [{ role: "user", content: geminiFormat.userTurn("make it square", "<project_state>{}</project_state>") }],
-    tools: TOOL_SPECS,
-    system: "system prompt",
-  },
-  (delta) => deltas.push(delta),
-);
-assert.equal(sent.config!.systemInstruction, "system prompt", "system prompt theo phạm vi phiên");
-
-assert.deepEqual((sent.contents as { role: string }[]).map((content) => content.role), ["user"]);
-assert.equal((sent.config!.automaticFunctionCalling as { disable: boolean }).disable, true, "SDK không tự chạy tool");
-assert.equal(((sent.config!.tools as { functionDeclarations: unknown[] }[])[0]!.functionDeclarations).length, TOOL_SPECS.length);
-
-assert.equal(step.stop, "tool");
-assert.equal(step.model, "gemini-9-pro-preview", "usage tính theo model thật");
-assert.deepEqual(step.usage, { input: 1000, output: 100, cacheRead: 4000, cacheWrite: 0 });
-assert.deepEqual(step.toolCalls.map((call) => [call.id, call.name]), [
+assert.deepEqual(geminiFormat.callsIn(saved).map((call) => [call.id, call.name]), [
   ["gc_2", "set_frame"],
   ["call-xyz", "capture"],
-]);
-assert.equal((step.content as { thoughtSignature?: string }[])[2]!.thoughtSignature, "sig-A", "thoughtSignature giữ nguyên");
-assert.deepEqual(geminiFormat.callsIn(step.content), step.toolCalls, "đọc lại tin nhắn đã lưu ra đúng id");
-assert.equal(geminiFormat.replyText(step.content), "Switching to square.", "trả lời không lẫn suy nghĩ");
-assert.deepEqual(deltas.map((delta) => delta.type), ["thinking", "text", "tool_start", "tool_start"]);
-
-const reply = geminiFormat.toolResults(
-  [
-    { id: "gc_2", name: "set_frame", ok: true, content: '{"ok":true,"version":3}' },
-    { id: "call-xyz", name: "capture", ok: true, content: '{"ok":true}', images: [{ data: "AAAA", mimeType: "image/jpeg" }] },
-    { id: "gc_9", name: "remove_words", ok: false, content: '{"error":"The word \\"x\\" is not in this transcript."}' },
-  ],
-  "<project_state>{}</project_state>",
-) as { functionResponse?: { id?: string; name: string; response: Record<string, unknown>; parts?: unknown[] }; text?: string }[];
-assert.equal(reply[0]!.functionResponse!.id, undefined, "id tự sinh không gửi cho Gemini");
-assert.deepEqual(reply[0]!.functionResponse!.response, { ok: true, version: 3 });
-assert.equal(reply[1]!.functionResponse!.id, "call-xyz");
-assert.deepEqual(reply[1]!.functionResponse!.parts, [{ inlineData: { mimeType: "image/jpeg", data: "AAAA" } }], "ảnh đi trong functionResponse");
-assert.deepEqual(reply[2]!.functionResponse!.response, { error: { error: 'The word "x" is not in this transcript.' } });
-assert.equal(reply[3]!.text, "<project_state>{}</project_state>", "trạng thái đứng sau kết quả tool");
-
-// Từ chối an toàn → refusal; hết token → max_tokens.
-for (const [finish, stop] of [["SAFETY", "refusal"], ["MAX_TOKENS", "max_tokens"]] as const) {
-  const blocked = geminiProvider("test", {
-    models: {
-      generateContentStream: async () =>
-        (async function* () {
-          yield { candidates: [{ content: { parts: [{ text: "…" }] }, finishReason: finish }] };
-        })(),
-    },
-  } as unknown as Pick<GoogleGenAI, "models">);
-  assert.equal((await blocked.step({ history: [], tools: [], system: "" }, () => undefined)).stop, stop);
-}
+], "saved calls read back with the ids sent to the browser");
+assert.equal(geminiFormat.replyText(saved), "Switching to square.", "reply without thinking");
 
 // ---------------------------------------------------------------- Claude
 const claude = anthropicFormat.toolResults(

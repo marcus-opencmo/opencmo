@@ -118,7 +118,7 @@ def test_base_opts_ignores_playlist_in_url():
     assert _base_opts(Config())["noplaylist"] is True
 
 
-def test_music_with_empty_whisper_result_is_a_valid_empty_transcript(monkeypatch, tmp_path):
+def test_music_with_empty_speech_to_text_result_is_a_valid_empty_transcript(monkeypatch, tmp_path):
     """Nhạc không lời không phải lỗi transcription."""
     from opencmo.config import Config
 
@@ -127,16 +127,17 @@ def test_music_with_empty_whisper_result_is_a_valid_empty_transcript(monkeypatch
 
         @staticmethod
         def json():
-            return {"segments": [], "language": "en"}
+            return {"words": [], "language_code": "eng", "text": ""}
 
     monkeypatch.setattr(transcribe.httpx, "post", lambda *_args, **_kwargs: Response())
     audio = tmp_path / "music.m4a"
     audio.write_bytes(b"audio")
 
-    transcript = transcribe.transcribe_audio(audio, Config(groq_api_key="test"))
+    transcript = transcribe.transcribe_audio(audio, Config(elevenlabs_api_key="test"))
 
     assert transcript.segments == []
-    assert transcript.source == "whisper"
+    assert transcript.source == "scribe"
+    assert transcript.language == "en"
 
 
 def test_vtt_giai_ma_entity_xml_cua_youtube():

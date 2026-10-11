@@ -8,10 +8,9 @@ import "server-only";
 
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
-import { ApiError, GoogleGenAI } from "@google/genai";
 import { z } from "zod";
 
-import { resolveAgent, type AgentId, type ResolvedAgent } from "@/lib/cmo/agents/registry";
+import { resolveAgent, type AgentId } from "@/lib/cmo/agents/registry";
 
 import { LlmError } from "./llm-error";
 
@@ -25,40 +24,6 @@ export function fakeAllowed(): boolean {
 /** Agent chạy được: bản giả, hoặc đã có khoá cho provider của nó. */
 export function llmReady(agent: AgentId = "planner"): boolean {
   return fakeAllowed() || Boolean(resolveAgent(agent).apiKey);
-}
-
-async function structuredGemini<S extends z.ZodType>(opts: Options<S>, agent: ResolvedAgent): Promise<z.infer<S>> {
-  let text: string | undefined;
-  try {
-    const response = await new GoogleGenAI({ apiKey: agent.apiKey }).models.generateContent({
-      model: agent.model,
-      contents: opts.prompt,
-      config: {
-        systemInstruction: opts.system,
-        responseMimeType: "application/json",
-        responseJsonSchema: z.toJSONSchema(opts.schema),
-        // Token suy nghĩ của Gemini tính vào trần này; không cộng thêm thì JSON bị cắt giữa chừng.
-        maxOutputTokens: (opts.maxTokens ?? 8000) + 16_000,
-      },
-    });
-    text = response.text;
-  } catch (error) {
-    if (error instanceof ApiError && error.status === 429) throw new LlmError("Our AI is busy right now. Try again in a minute.");
-    console.error(`[cmo] ${opts.label} (${agent.id}/${agent.model}): lỗi Gemini`, error instanceof ApiError ? error.status : "", error instanceof Error ? error.message : error);
-    throw new LlmError(opts.failure);
-  }
-  // Schema của Gemini là gợi ý định dạng, không phải bảo đảm: zod vẫn là lớp chốt.
-  let parsed;
-  try {
-    parsed = opts.schema.safeParse(JSON.parse(text ?? ""));
-  } catch {
-    throw new LlmError(opts.failure);
-  }
-  if (!parsed.success) {
-    console.error(`[cmo] ${opts.label} (${agent.id}/${agent.model}): Gemini trả sai schema`, parsed.error.issues.slice(0, 3));
-    throw new LlmError(opts.failure);
-  }
-  return parsed.data;
 }
 
 type Options<S extends z.ZodType> = {
@@ -77,7 +42,6 @@ type Options<S extends z.ZodType> = {
 export async function structured<S extends z.ZodType>(opts: Options<S>): Promise<z.infer<S>> {
   const agent = resolveAgent(opts.agent);
   if (!agent.apiKey) throw new LlmError("The AI CMO is not set up on this server yet.");
-  if (agent.provider === "gemini") return structuredGemini(opts, agent);
   const client = new Anthropic({ apiKey: agent.apiKey });
   // Haiku 4.5 không có `effort` và không có fallback phía server; Opus thì có.
   const isOpus = agent.model.startsWith("claude-opus");

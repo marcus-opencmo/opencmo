@@ -1,9 +1,9 @@
 /**
- * Evals for the AI CMO jobs, used to choose the default LLM provider and to catch regressions:
+ * Evals for the AI CMO jobs, used to compare models and to catch regressions:
  *
  *   npm run cmo:eval -- --provider fake                       # CI: checks the harness, costs nothing
  *   npm run cmo:eval -- --provider anthropic --yes            # real model: COSTS API MONEY
- *   npm run cmo:eval -- --provider gemini --yes --job w1      # one job: w1, w2 or w5
+ *   npm run cmo:eval -- --provider anthropic --yes --job w1   # one job: w1, w2 or w5
  *
  * Each job runs for real (prompts, schemas, checks, fixes) against an in-memory store for every
  * fixture product, then is graded with code only:
@@ -167,11 +167,10 @@ async function runW5(fixture: Fixture, drain: Drain): Promise<[Row, Output]> {
 
 type Drain = typeof import("./runner").drainCmoQueue;
 const RUNNERS: Record<Job, (fixture: Fixture, drain: Drain) => Promise<[Row, Output]>> = { w1: runW1, w2: runW2, w5: runW5 };
-const AGENTS: Record<Job, string[]> = { w1: ["PLANNER"], w2: ["X_WRITER", "CHECKER"], w5: ["VIDEO"] };
 
 async function main() {
   const { provider, yes, jobs } = args();
-  if (!["fake", "gemini", "anthropic"].includes(provider)) throw new Error(`Unknown provider ${provider}.`);
+  if (!["fake", "anthropic"].includes(provider)) throw new Error(`Unknown provider ${provider}.`);
   if (jobs.some((job) => !(job in RUNNERS))) throw new Error(`Unknown job ${jobs.join(", ")}; use w1, w2 or w5.`);
   if (provider === "fake") {
     process.env.OPENCMO_AGENT_FAKE = "1";
@@ -181,7 +180,6 @@ async function main() {
       return;
     }
     process.env.OPENCMO_AGENT_FAKE = "";
-    for (const job of jobs) for (const agent of AGENTS[job]) process.env[`CMO_AGENT_${agent}_PROVIDER`] = provider;
   }
   // Imported after the env is set: the jobs read the provider when they run.
   const { drainCmoQueue } = await import("./runner");

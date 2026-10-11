@@ -8,10 +8,8 @@ dependencies = [
     # `default`: kéo `yt-dlp-ejs` — script giải đề chữ ký YouTube cho JS runtime.
     "yt-dlp[default]>=2025.11.12",
     "httpx>=0.27",
-    # Bước chọn khoảnh khắc chạy được với một trong hai — cài cả hai để đổi
-    # provider chỉ bằng cách đổi API key.
+    # Moment selection and output moderation run on Claude.
     "anthropic>=0.40",
-    "google-genai>=1.0",
     "pydantic>=2.6",
     "rich>=13.7",
     "typer>=0.12",

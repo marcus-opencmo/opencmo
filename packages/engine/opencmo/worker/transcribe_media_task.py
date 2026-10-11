@@ -2,7 +2,7 @@
 
 Tải file đã lên Storage (bucket `media`), rút audio mono 16 kHz CHỈ đoạn
 sourceIn…sourceOut mà phần tử đang dùng (không transcribe phần không chiếu, không trả
-tiền cho nó), Groq Whisper, rồi `complete_media_captions` ghi transcript vào
+tiền cho nó), ElevenLabs Scribe, rồi `complete_media_captions` ghi transcript vào
 `editor_transcripts`. Mốc được dời về giây của FILE — cùng thang với `sourceIn` của lớp
 `captions` — nên phụ đề khớp dù đoạn chọn không bắt đầu từ 0.
 

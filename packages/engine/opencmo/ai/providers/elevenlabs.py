@@ -26,8 +26,16 @@ from typing import Any
 import httpx
 
 from opencmo.ai.catalog import AiModel
-from opencmo.ai.providers.base import Poll, ProviderAdapter, ProviderError, Result
-from opencmo.ai.providers.gemini import BUSY, DECLINED, NOT_SET_UP, REJECTED
+from opencmo.ai.providers.base import (
+    BUSY,
+    DECLINED,
+    NOT_SET_UP,
+    REJECTED,
+    Poll,
+    ProviderAdapter,
+    ProviderError,
+    Result,
+)
 from opencmo.media.ffmpeg import run
 
 log = logging.getLogger(__name__)

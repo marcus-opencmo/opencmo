@@ -108,10 +108,7 @@ def processing_error(exc: Exception, stage: str = "") -> str:
 
     # Các chuỗi dưới đây là tiền tố cố định do engine tạo, không match từ khoá chung.
     if isinstance(exc, (ValueError, RuntimeError)):
-        if message.startswith((
-            "not enough clear speech was found to create useful clips.",
-            "groq returned an empty transcript.",
-        )):
+        if message.startswith("not enough clear speech was found to create useful clips."):
             return _SPEECH
         if message.startswith((
             "the moments you picked fall outside this video.",
@@ -119,12 +116,10 @@ def processing_error(exc: Exception, stage: str = "") -> str:
             "the model did not find any usable moments in this video.",
         )):
             return _SELECTION
-        if message.startswith("gemini did not return the expected schema:"):
-            return "We could not select clips this time. Try again or select a time range yourself."
-        if message.startswith(("groq returned 429:", "groq returned 503:")):
+        if message.startswith(("speech-to-text returned 429:", "speech-to-text returned 503:")):
             return _BUSY
         if message.startswith((
-            "audio is too large to transcribe:", "groq returned 413:",
+            "audio is too large to transcribe:", "speech-to-text returned 413:",
         )):
             return _TOO_LONG
         if message.startswith("no video stream found in "):

@@ -1,12 +1,8 @@
-"""Transcript qua Groq Whisper.
+"""Transcript through ElevenLabs Scribe.
 
-Vì sao gọi API thay vì chạy Whisper local ở giai đoạn này:
-    Groq `whisper-large-v3-turbo` xử lý 45 phút audio trong ~20 giây với chi phí
-    ~$0.03. Whisper local trên CPU mất 2–5 phút, ăn 1–10GB RAM tùy model, và
-    tranh CPU với ffmpeg. Với một người code ban đêm sau giờ làm, việc không
-    phải debug CUDA/Vulkan đáng giá hơn 3 cent.
-
-Whisper local là tính năng của giai đoạn sau, bán dưới tên "Privacy mode".
+Why an API rather than local Whisper: on CPU local Whisper takes minutes, uses 1–10 GB of RAM
+and competes with ffmpeg for cores, which breaks the per-job budgets. Scribe returns word-level
+timestamps in one call; segments are rebuilt from the words here.
 """
 
 from __future__ import annotations
@@ -18,102 +14,101 @@ import httpx
 
 from ..config import Config
 from ..models import Transcript, TranscriptSegment, Word
-from ..wordmatch import keep_alignable
 
 log = logging.getLogger(__name__)
 
-_ENDPOINT = "https://api.groq.com/openai/v1/audio/transcriptions"
+_ENDPOINT = "https://api.elevenlabs.io/v1/speech-to-text"
 _TIMEOUT = httpx.Timeout(300.0, connect=15.0)
-# Groq trả 413 từ 25MB; chặn sớm hơn một chút để không tốn một lượt upload vô ích.
-GROQ_MAX_BYTES = 24 * 1024 * 1024
+# Scribe accepts far larger files; this cap keeps the upload short so the "45 minutes -> 5 clips
+# in under 3 minutes" budget holds (32 kbps mono fits ~100 minutes).
+TRANSCRIBE_MAX_BYTES = 24 * 1024 * 1024
+
+# A new segment starts after a sentence ends or after a pause, so captions and moment
+# selection get sentence-sized lines like the old Whisper segments.
+_SENTENCE_END = (".", "?", "!", "…", "。", "？", "！")
+_PAUSE_SECONDS = 0.8
+_MAX_SEGMENT_SECONDS = 12.0
+
+# Scribe answers ISO 639-3; the rest of the engine uses two-letter codes like subtitles do.
+_LANGUAGES = {
+    "eng": "en", "vie": "vi", "spa": "es", "fra": "fr", "deu": "de", "por": "pt", "ita": "it",
+    "jpn": "ja", "kor": "ko", "zho": "zh", "cmn": "zh", "rus": "ru", "hin": "hi", "ind": "id",
+    "tha": "th", "ara": "ar", "nld": "nl", "pol": "pl", "tur": "tr", "ukr": "uk",
+}
 
 
-def _attach_words(segments: list[TranscriptSegment], payload: dict) -> None:
-    """Gắn mốc từng từ vào đúng segment chứa nó.
-
-    Nhận CẢ HAI hình dạng payload: `words` ở cấp cao nhất (Groq trả kiểu này —
-    đã kiểm bằng lệnh gọi thật) hoặc lồng trong từng segment. Đỡ cả hai vì đoán
-    sai thì phụ đề âm thầm mất phần nhấn chứ không báo lỗi.
-
-    Ghép hai bước, cố ý KHÔNG dùng con trỏ chạy chung:
-
-    1. Lọc thô theo thời gian — từ nào chồng lấn khoảng của segment thì là ứng viên.
-    2. Lọc tinh theo chữ — bỏ những ứng viên không định vị được trong câu.
-
-    Vì sao không dùng một con trỏ duy nhất chạy suốt danh sách từ: chữ mức câu và
-    chữ mức từ của Whisper đến từ hai lượt giải mã khác nhau nên không trùng
-    (`he` vs `he's`). Một con trỏ chung sẽ lệch pha ở chỗ sai lệch đầu tiên rồi
-    kẹt luôn — đo thật: 18/67 segment còn từ. Làm độc lập từng segment thì một
-    chỗ lệch chỉ hỏng đúng chỗ đó.
-    """
-    if not segments:
-        return
-
-    flat: list[Word] = []
-    raws = list(payload.get("words") or [])
-    if not raws:
-        for seg_raw in payload.get("segments") or []:
-            raws.extend(seg_raw.get("words") or [])
-    for raw in raws:
-        text = str(raw.get("word", raw.get("text", ""))).strip()
+def _words(payload: dict) -> list[Word]:
+    words: list[Word] = []
+    for raw in payload.get("words") or []:
+        if raw.get("type", "word") != "word":
+            continue
+        text = str(raw.get("text", "")).strip()
         if not text:
             continue
         start = float(raw.get("start", 0.0))
-        flat.append(Word(start=start, end=float(raw.get("end", start)), text=text))
+        words.append(Word(start=start, end=max(start, float(raw.get("end", start))), text=text))
+    return words
 
-    for seg in segments:
-        cands = [w for w in flat if w.end > seg.start and w.start < seg.end]
-        kept = keep_alignable(seg.text, [w.text for w in cands])
-        # None chứ không phải [] — phân biệt "không có dữ liệu" với "có mà rỗng",
-        # và đó là điều kiện để captions.py rơi về cách cũ.
-        seg.words = [cands[i] for i in kept] or None
+
+def segments_from_words(words: list[Word]) -> list[TranscriptSegment]:
+    """Groups words into sentence-sized segments; every segment keeps its words."""
+    segments: list[TranscriptSegment] = []
+    current: list[Word] = []
+
+    def close() -> None:
+        if current:
+            segments.append(TranscriptSegment(
+                start=current[0].start,
+                end=current[-1].end,
+                text=" ".join(word.text for word in current),
+                words=list(current),
+            ))
+            current.clear()
+
+    for word in words:
+        if current and (
+            word.start - current[-1].end > _PAUSE_SECONDS
+            or word.end - current[0].start > _MAX_SEGMENT_SECONDS
+        ):
+            close()
+        current.append(word)
+        if word.text.endswith(_SENTENCE_END):
+            close()
+    close()
+    return segments
 
 
 def transcribe_audio(audio_path: Path, cfg: Config) -> Transcript:
     cfg.validate_for_transcribe()
 
     size = audio_path.stat().st_size
-    if size > GROQ_MAX_BYTES:
-        # Tiền tố cố định: `worker/errors.py` ánh xạ nó ra câu cho người dùng.
+    if size > TRANSCRIBE_MAX_BYTES:
+        # Fixed prefix: `worker/errors.py` maps it to a sentence for the user.
         raise RuntimeError(f"Audio is too large to transcribe: {size} bytes.")
 
     with audio_path.open("rb") as fh:
         response = httpx.post(
             _ENDPOINT,
-            headers={"Authorization": f"Bearer {cfg.groq_api_key}"},
+            headers={"xi-api-key": cfg.elevenlabs_api_key},
             files={"file": (audio_path.name, fh, "audio/m4a")},
             data={
-                "model": cfg.whisper_model,
-                "response_format": "verbose_json",
-                # Xin CẢ hai mức: mốc câu để định vị khoảnh khắc, mốc từ để nhấn
-                # từng từ trên phụ đề. Groq không tính thêm tiền cho mức `word`,
-                # nó cùng một lượt giải mã.
-                "timestamp_granularities[]": ["segment", "word"],
+                "model_id": cfg.scribe_model,
+                "timestamps_granularity": "word",
+                "tag_audio_events": "false",
             },
             timeout=_TIMEOUT,
         )
 
     if response.status_code != 200:
-        raise RuntimeError(f"Groq returned {response.status_code}: {response.text[:300]}")
+        raise RuntimeError(
+            f"Speech-to-text returned {response.status_code}: {response.text[:300]}"
+        )
 
     payload = response.json()
-    segments = [
-        TranscriptSegment(
-            start=float(s.get("start", 0.0)),
-            end=float(s.get("end", 0.0)),
-            text=str(s.get("text", "")).strip(),
-        )
-        for s in payload.get("segments", [])
-        if str(s.get("text", "")).strip()
-    ]
-    _attach_words(segments, payload)
+    segments = segments_from_words(_words(payload))
 
-    # Nhạc không lời, montage và footage im lặng có thể trả về 0 đoạn.
-    # Đó là kết quả hợp lệ: pipeline sẽ chọn cửa sổ fallback và render
-    # không phụ đề, thay vì biến "không có lời" thành lỗi hệ thống.
-    log.info("Đã transcribe: %d đoạn", len(segments))
-    return Transcript(
-        segments=segments,
-        language=payload.get("language", "en"),
-        source="whisper",
-    )
+    # Music without words, montages and silent footage can return no segments. That is a valid
+    # result: the pipeline picks a fallback window and renders without captions.
+    log.info("Transcribed: %d segments", len(segments))
+    code = str(payload.get("language_code") or "en").lower()
+    return Transcript(segments=segments, language=_LANGUAGES.get(code, code), source="scribe")
