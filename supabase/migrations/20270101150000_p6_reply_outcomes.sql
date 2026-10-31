@@ -39,7 +39,7 @@ begin
     raise exception 'This reply check is not valid.' using errcode = '22023';
   end if;
   update public.cmo_draft_outcomes
-  set outcome_status = p_status, outcome_votes = p_votes, outcome_replies = greatest(0, p_replies), outcome_checked_at = now()
+  set outcome_status = p_status, outcome_votes = p_votes, outcome_replies = case when p_replies is null then null else greatest(0, p_replies) end, outcome_checked_at = now()
   where id = p_outcome and user_id = p_user and department = 'sales' and action = 'replied' and outcome_checked_at is null
   returning * into v_row;
   if not found then

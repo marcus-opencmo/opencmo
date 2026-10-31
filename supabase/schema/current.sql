@@ -2326,7 +2326,7 @@ declare
 begin
   delete from public.best_slots where user_id = p_user;
   insert into public.best_slots (user_id, platform, hour, median_views_per_hour, posts, computed_at)
-  select p_user, b.platform, b.hour, percentile_cont(0.5) within group (order by b.views), count(*), now()
+  select p_user, b.platform, b.hour, percentile_cont(0.5) within group (order by b.views_per_hour), count(*), now()
   from public.best_time_posts(p_user) b
   where b.platform in (
     select platform from public.best_time_posts(p_user) group by platform having count(*) >= (v_rules->>'minPosts')::integer)
@@ -2342,32 +2342,24 @@ $$;
 -- Name: best_time_posts(uuid); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.best_time_posts(p_user uuid) RETURNS TABLE(item_id uuid, platform text, hour smallint, views bigint)
+CREATE FUNCTION public.best_time_posts(p_user uuid) RETURNS TABLE(item_id uuid, platform text, hour smallint, views_per_hour double precision)
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
   with r as (select public.best_time_rules() as j),
   latest as (
-    select distinct on (m.item_id) m.item_id, greatest(m.views, coalesce(m.impressions, 0)) as views
+    select distinct on (m.item_id) m.item_id, greatest(m.views, m.impressions) as views, m.measured_at
     from public.post_metrics m
     where m.user_id = p_user
     order by m.item_id, m.measured_at desc
-  ),
-  posts as (
-    select i.id, public.platform_profile_id(i.platform) as platform, l.views,
-      coalesce(i.published_at, (
-        select max(s.publish_at) from public.schedule_slots s join public.deliverables d on d.id = s.deliverable_id
-        where s.user_id = p_user and s.status = 'published'
-          and ((d.ref_kind = 'content_item' and d.ref_id = i.id)
-            or (d.ref_kind = 'clip' and d.ref_id = i.clip_id and s.platform = public.platform_profile_id(i.platform)))
-      )) as published_at
-    from latest l join public.content_items i on i.id = l.item_id and i.user_id = p_user
   )
-  select p.id, p.platform, extract(hour from p.published_at at time zone public.schedule_timezone(p_user))::smallint, p.views
-  from posts p, r
-  where p.published_at is not null
-    and p.platform in ('x', 'threads', 'linkedin', 'tiktok', 'youtube', 'instagram')
-    and p.published_at >= now() - make_interval(days => (r.j->>'windowDays')::integer)
+  select p.item_id, public.slot_platform_of(p.platform),
+    extract(hour from p.published_at at time zone public.schedule_timezone(p_user))::smallint,
+    l.views / greatest(1.0, extract(epoch from l.measured_at - p.published_at) / 3600.0)
+  from r, public.published_items(p_user, now() - make_interval(days => (r.j->>'windowDays')::integer)) p
+  join latest l on l.item_id = p.item_id
+  where l.views is not null
+    and public.slot_platform_of(p.platform) in ('x', 'threads', 'linkedin', 'tiktok', 'youtube', 'instagram')
     and p.published_at <= now() - make_interval(hours => (r.j->>'settleHours')::integer)
 $$;
 
@@ -4601,9 +4593,14 @@ declare
   v_count integer := 0;
   v_source text;
   v_item uuid;
+  v_zernio uuid[];
 begin
   if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 200 then
     raise exception 'These numbers are not valid.' using errcode = '22023';
+  end if;
+  -- Once per save, not per row.
+  if exists (select 1 from jsonb_array_elements(p_rows) r where r->>'source' = 'zernio') then
+    v_zernio := array(select z.item_id from public.cmo_zernio_posts_all(p_user, '-infinity') z where z.item_id is not null);
   end if;
   for v_row in select * from jsonb_array_elements(p_rows) loop
     v_source := coalesce(v_row->>'source', 'public');
@@ -4614,14 +4611,14 @@ begin
     -- Only the founder's own published posts: the job never writes numbers onto someone else's.
     if (v_source = 'public' and exists (select 1 from public.content_items i
           where i.id = v_item and i.user_id = p_user and i.status = 'published'))
-       or (v_source = 'zernio' and exists (select 1 from public.cmo_zernio_posts(p_user, '-infinity') z where z.item_id = v_item)) then
+       or (v_source = 'zernio' and v_item = any(v_zernio)) then
       if coalesce(v_row->>'views', v_row->>'impressions', v_row->>'likes', v_row->>'replies', v_row->>'reposts', v_row->>'engagements') is null then
         continue;
       end if;
       insert into public.post_metrics (user_id, item_id, url, views, likes, replies, reposts, source, impressions, engagements)
       values (p_user, v_item, left(coalesce(v_row->>'url', ''), 500),
-        greatest(0, coalesce((v_row->>'views')::bigint, 0)), greatest(0, coalesce((v_row->>'likes')::bigint, 0)),
-        greatest(0, coalesce((v_row->>'replies')::bigint, 0)), greatest(0, coalesce((v_row->>'reposts')::bigint, 0)),
+        public.nonneg((v_row->>'views')::bigint), public.nonneg((v_row->>'likes')::bigint),
+        public.nonneg((v_row->>'replies')::bigint), public.nonneg((v_row->>'reposts')::bigint),
         v_source, public.nonneg((v_row->>'impressions')::bigint), public.nonneg((v_row->>'engagements')::bigint));
       v_count := v_count + 1;
     end if;
@@ -4706,7 +4703,7 @@ begin
     raise exception 'This reply check is not valid.' using errcode = '22023';
   end if;
   update public.cmo_draft_outcomes
-  set outcome_status = p_status, outcome_votes = p_votes, outcome_replies = greatest(0, p_replies), outcome_checked_at = now()
+  set outcome_status = p_status, outcome_votes = p_votes, outcome_replies = case when p_replies is null then null else greatest(0, p_replies) end, outcome_checked_at = now()
   where id = p_outcome and user_id = p_user and department = 'sales' and action = 'replied' and outcome_checked_at is null
   returning * into v_row;
   if not found then
@@ -4819,6 +4816,18 @@ CREATE FUNCTION public.cmo_zernio_posts(p_user uuid, p_since timestamp with time
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
+  select * from public.cmo_zernio_posts_all(p_user, p_since) limit 200;
+$$;
+
+
+--
+-- Name: cmo_zernio_posts_all(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_zernio_posts_all(p_user uuid, p_since timestamp with time zone) RETURNS TABLE(item_id uuid, external_id text, external_url text, platform text, social_account_id uuid, zernio_account_id text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
   select coalesce(case when d.ref_kind = 'content_item' then d.ref_id end, cap.id) as item_id,
     s.external_id, s.external_url, s.platform, s.account_id, a.zernio_account_id, s.publish_at
   from public.schedule_slots s
@@ -4832,8 +4841,7 @@ CREATE FUNCTION public.cmo_zernio_posts(p_user uuid, p_since timestamp with time
   ) cap on true
   where s.user_id = p_user and s.status = 'published' and s.mode = 'publish' and s.external_id is not null
     and s.publish_at >= p_since
-  order by s.publish_at desc
-  limit 200;
+  order by s.publish_at desc;
 $$;
 
 
@@ -7521,6 +7529,18 @@ $$;
 
 
 --
+-- Name: my_published_items(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_published_items(p_since timestamp with time zone) RETURNS TABLE(item_id uuid, platform text, idea text, final_text text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select * from public.published_items(public.require_user(), p_since) order by published_at desc limit 500
+$$;
+
+
+--
 -- Name: nonneg(bigint); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -8354,6 +8374,30 @@ begin
   end case;
   return v_slot;
 end;
+$$;
+
+
+--
+-- Name: published_items(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.published_items(p_user uuid, p_since timestamp with time zone) RETURNS TABLE(item_id uuid, platform text, idea text, final_text text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select p.id, p.platform, p.idea, p.final_text, p.at
+  from (
+    select i.id, i.platform, i.idea, i.final_text, i.status, coalesce(i.published_at, (
+        select max(coalesce(s.published_at, s.publish_at)) from public.schedule_slots s
+        join public.deliverables d on d.id = s.deliverable_id
+        where s.user_id = p_user and s.status = 'published'
+          and ((d.ref_kind = 'content_item' and d.ref_id = i.id)
+            or (d.ref_kind = 'clip' and d.ref_id = i.clip_id and s.platform = public.slot_platform_of(i.platform)))
+      )) as at
+    from public.content_items i
+    where i.user_id = p_user and (i.status = 'published' or (i.department = 'video' and i.clip_id is not null))
+  ) p
+  where p.at is not null and p.at >= p_since
 $$;
 
 
@@ -10297,13 +10341,21 @@ CREATE FUNCTION public.schedule_candidate_times(p_user uuid, p_platform text) RE
     LANGUAGE sql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
-  select coalesce(
-    (select array_agg(to_char(make_time(b.hour, 0, 0), 'HH24:MI') order by b.median_views_per_hour desc, b.hour)
-     from (select * from public.best_slots where user_id = p_user and platform = p_platform
-           order by median_views_per_hour desc, hour
-           limit greatest(1, jsonb_array_length(public.schedule_rules()->'platforms'->p_platform->'times'))) b),
-    (select array_agg(t) from jsonb_array_elements_text(public.schedule_rules()->'platforms'->p_platform->'times') t)
+  with defaults as (
+    select t, n from jsonb_array_elements_text(public.schedule_rules()->'platforms'->p_platform->'times') with ordinality d(t, n)
+  ),
+  best as (
+    select to_char(make_time(b.hour, 0, 0), 'HH24:MI') as t, row_number() over (order by b.median_views_per_hour desc, b.hour) as n
+    from public.best_slots b where b.user_id = p_user and b.platform = p_platform
+  ),
+  merged as (
+    select t, 0 as pass, n from best
+    union all
+    select t, 1, n from defaults where t not in (select t from best)
   )
+  select array_agg(t order by pass, n) from (
+    select t, pass, n from merged order by pass, n limit greatest(1, (select count(*) from defaults))
+  ) m
 $$;
 
 
@@ -11312,6 +11364,16 @@ CREATE FUNCTION public.slice_transcript(p_body jsonb, p_in numeric, p_out numeri
     where kept.n > 0
   ) parts;
 $$;
+
+
+--
+-- Name: slot_platform_of(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.slot_platform_of(p_label text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$ select replace(public.platform_profile_id(p_label), '_caption', '') $$;
 
 
 --
@@ -14366,10 +14428,10 @@ CREATE TABLE public.post_metrics (
     user_id uuid NOT NULL,
     item_id uuid NOT NULL,
     url text NOT NULL,
-    views bigint DEFAULT 0 NOT NULL,
-    likes bigint DEFAULT 0 NOT NULL,
-    replies bigint DEFAULT 0 NOT NULL,
-    reposts bigint DEFAULT 0 NOT NULL,
+    views bigint,
+    likes bigint,
+    replies bigint,
+    reposts bigint,
     measured_at timestamp with time zone DEFAULT now() NOT NULL,
     source text DEFAULT 'public'::text NOT NULL,
     impressions bigint,

@@ -5,7 +5,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(12);
+select plan(13);
 
 select ok(not has_function_privilege('authenticated', 'public.cmo_save_reply_outcome(uuid,uuid,text,integer,integer)', 'execute'), 'only the job stores a check');
 select ok(has_function_privilege('authenticated', 'public.opportunity_reply_url(uuid,text)', 'execute'), 'a founder pastes their reply''s link');
@@ -37,6 +37,12 @@ select is((select outcome_votes || ':' || outcome_replies || ':' || outcome_stat
   '12:4:found', 'its numbers');
 select is((select body from public.cmo_memories where user_id = 'e2360000-0000-4000-8000-00000000000a' order by created_at desc limit 1),
   'A reply in r/SaaS that only helped got 12 votes and 4 replies three days later.', 'memory learns it, without the thread''s words');
+
+-- Review fix 7: a reply count not reported stays null.
+select public.cmo_save_reply_outcome('e2360000-0000-4000-8000-00000000000a',
+  (select id from public.cmo_draft_outcomes where item_id = 'e2361000-0000-4000-8000-00000000000b'), 'found', 3, null);
+select is((select outcome_votes || ':' || coalesce(outcome_replies::text, 'null') from public.cmo_draft_outcomes
+  where item_id = 'e2361000-0000-4000-8000-00000000000b'), '3:null', 'no reply count is not zero replies');
 
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"e2360000-0000-4000-8000-00000000000a","role":"authenticated"}';

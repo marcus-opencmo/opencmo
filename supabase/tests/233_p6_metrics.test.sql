@@ -5,7 +5,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(14);
+select plan(17);
 
 select ok(not has_function_privilege('authenticated', 'public.cmo_save_account_metrics(uuid,jsonb)', 'execute'), 'only the job saves account days');
 select ok(not has_function_privilege('authenticated', 'public.cmo_zernio_posts(uuid,timestamptz)', 'execute'), 'only the job lists Zernio posts');
@@ -69,6 +69,31 @@ select is(public.cmo_save_account_metrics('e2330000-0000-4000-8000-00000000000a'
 select is((select followers || ':' || impressions from public.account_metrics where user_id = 'e2330000-0000-4000-8000-00000000000a'), '310:950',
   'replaces the day and keeps the followers it did not report');
 select is((select count(*)::int from public.account_metrics where user_id = 'e2330000-0000-4000-8000-00000000000a'), 1, 'one row per account and day');
+
+-- Review fix 12: a count Zernio leaves out stays null too.
+select is(public.cmo_save_metrics('e2330000-0000-4000-8000-00000000000a', '[
+  {"item_id":"e2332000-0000-4000-8000-00000000000a","source":"zernio","impressions":300}]'::jsonb), 1, 'impressions only');
+select is((select coalesce(views::text, 'null') || ':' || coalesce(likes::text, 'null') || ':' || impressions from public.post_metrics
+  where item_id = 'e2332000-0000-4000-8000-00000000000a' and impressions is not null), 'null:null:300', 'no views is not zero views');
+
+-- Review fix 13: a post older than the newest 200 Zernio slots can still be saved.
+insert into public.content_items (id, user_id, department, platform, day, idea, status, body)
+select ('e2332000-0000-4000-8000-' || lpad((1000 + g)::text, 12, '0'))::uuid, 'e2330000-0000-4000-8000-00000000000a', 'post', 'x',
+  current_date, 'Later ' || g, 'published', jsonb_build_object('text', 'Later ' || g)
+from generate_series(1, 200) g;
+insert into public.deliverables (id, user_id, order_id, kind, ref_kind, ref_id, status)
+select ('e2333000-0000-4000-8000-' || lpad((1000 + g)::text, 12, '0'))::uuid, 'e2330000-0000-4000-8000-00000000000a',
+  'e2331000-0000-4000-8000-00000000000a', 'post', 'content_item', ('e2332000-0000-4000-8000-' || lpad((1000 + g)::text, 12, '0'))::uuid, 'decided'
+from generate_series(1, 200) g;
+-- Deciding them proposed slots; the test sets its own.
+delete from public.schedule_slots where user_id = 'e2330000-0000-4000-8000-00000000000a'
+  and id not in ('e2334000-0000-4000-8000-00000000000a', 'e2334000-0000-4000-8000-00000000000b');
+insert into public.schedule_slots (user_id, deliverable_id, platform, mode, publish_at, window_ends_at, status, external_id)
+select 'e2330000-0000-4000-8000-00000000000a', ('e2333000-0000-4000-8000-' || lpad((1000 + g)::text, 12, '0'))::uuid, 'x', 'publish',
+  now() - make_interval(mins => g), now() - make_interval(mins => g) + interval '15 minutes', 'published', 'zl-' || g
+from generate_series(1, 200) g;
+select is(public.cmo_save_metrics('e2330000-0000-4000-8000-00000000000a', '[
+  {"item_id":"e2332000-0000-4000-8000-00000000000a","source":"zernio","views":130}]'::jsonb), 1, 'the 201st newest slot''s post is still the founder''s');
 
 select * from finish();
 rollback;

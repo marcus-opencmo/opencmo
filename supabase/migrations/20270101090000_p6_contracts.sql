@@ -90,7 +90,13 @@ create index account_metrics_user_idx on public.account_metrics (user_id, day de
 alter table public.post_metrics
   add column source text not null default 'public' check (source in ('public', 'zernio')),
   add column impressions bigint check (impressions >= 0),
-  add column engagements bigint check (engagements >= 0);
+  add column engagements bigint check (engagements >= 0),
+  -- Null is "not reported", never zero: Zernio leaves out what a platform does not give (views on LinkedIn, say), and
+  -- a stored 0 would show as 0 impressions and pull the medians down.
+  alter column views drop not null, alter column views drop default,
+  alter column likes drop not null, alter column likes drop default,
+  alter column replies drop not null, alter column replies drop default,
+  alter column reposts drop not null, alter column reposts drop default;
 
 -- The founder's own best hours per platform (A2), in their local time: median views per hour since posting, over
 -- published posts with metrics. Only written once a platform has enough posts; until then the defaults apply.

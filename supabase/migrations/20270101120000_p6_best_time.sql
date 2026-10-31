@@ -1,9 +1,9 @@
 -- 20270101120000: P6 A2 (P2), the founder's own best hours (schedule-publish.md §5, §9).
 --
 -- Once a platform has ~10 published posts with numbers, `best_slots` holds the local hours (profiles.timezone) whose
--- posts got the most views (median), and `schedule_pick_time` tries those hours instead of the default slots of
--- schedule-defaults.json. Only the candidate times change: the lead time, the gap, the daily cap and the
--- short-vs-its-long-video rule are checked exactly as before, and a time the founder picked on a card is never
+-- posts got the most views per hour since posting (median), and `schedule_pick_time` tries those hours instead of
+-- the default slots of schedule-defaults.json (topped up with the defaults when fewer hours are trusted). Only the
+-- candidate times change: the lead time, the gap, the daily cap and the short-vs-its-long-video rule are checked exactly as before, and a time the founder picked on a card is never
 -- replaced (moving a slot does not call the picker).
 
 begin;
@@ -15,34 +15,67 @@ language sql immutable set search_path = public
 as $$ select '{"minPosts": 10, "minPostsPerHour": 2, "windowDays": 90, "settleHours": 24}'::jsonb $$;
 revoke all on function public.best_time_rules() from public, anon, authenticated;
 
--- One row per published post with numbers: its platform, local posting hour and newest view count (impressions when
--- the platform reports no views). The posting time is the post's own, else the slot that published it.
+-- The platform a schedule slot names for a calendar item's label: `platform_profile_id` names the caption profiles
+-- (`tiktok_caption`, `instagram_caption`), slots and best hours the platform.
+create or replace function public.slot_platform_of(p_label text) returns text
+language sql immutable set search_path = public
+as $$ select replace(public.platform_profile_id(p_label), '_caption', '') $$;
+revoke all on function public.slot_platform_of(text) from public, anon, authenticated;
+
+-- The founder's published calendar items since `p_since`: posts marked published, and video caption items whose clip
+-- a slot published on that platform (a slot publishes the clip, not its caption item, so the caption keeps its
+-- `approved` status). The posting time is the item's own, else the newest slot that published it.
+create or replace function public.published_items(p_user uuid, p_since timestamptz)
+returns table (item_id uuid, platform text, idea text, final_text text, published_at timestamptz)
+language sql stable security definer set search_path = public
+as $$
+  select p.id, p.platform, p.idea, p.final_text, p.at
+  from (
+    select i.id, i.platform, i.idea, i.final_text, i.status, coalesce(i.published_at, (
+        select max(coalesce(s.published_at, s.publish_at)) from public.schedule_slots s
+        join public.deliverables d on d.id = s.deliverable_id
+        where s.user_id = p_user and s.status = 'published'
+          and ((d.ref_kind = 'content_item' and d.ref_id = i.id)
+            or (d.ref_kind = 'clip' and d.ref_id = i.clip_id and s.platform = public.slot_platform_of(i.platform)))
+      )) as at
+    from public.content_items i
+    where i.user_id = p_user and (i.status = 'published' or (i.department = 'video' and i.clip_id is not null))
+  ) p
+  where p.at is not null and p.at >= p_since
+$$;
+revoke all on function public.published_items(uuid, timestamptz) from public, anon, authenticated;
+
+-- The same for the signed-in founder (Analytics, the Dashboard's results), newest first.
+create or replace function public.my_published_items(p_since timestamptz)
+returns table (item_id uuid, platform text, idea text, final_text text, published_at timestamptz)
+language sql stable security definer set search_path = public
+as $$
+  select * from public.published_items(public.require_user(), p_since) order by published_at desc limit 500
+$$;
+revoke all on function public.my_published_items(timestamptz) from public, anon, authenticated;
+grant execute on function public.my_published_items(timestamptz) to authenticated;
+
+-- One row per published post with numbers: its platform, local posting hour and newest reading as views per hour
+-- since posting (impressions when the platform reports no views), so an old post's longer life does not count as
+-- a better hour.
 create or replace function public.best_time_posts(p_user uuid)
-returns table (item_id uuid, platform text, hour smallint, views bigint)
+returns table (item_id uuid, platform text, hour smallint, views_per_hour double precision)
 language sql stable security definer set search_path = public
 as $$
   with r as (select public.best_time_rules() as j),
   latest as (
-    select distinct on (m.item_id) m.item_id, greatest(m.views, coalesce(m.impressions, 0)) as views
+    select distinct on (m.item_id) m.item_id, greatest(m.views, m.impressions) as views, m.measured_at
     from public.post_metrics m
     where m.user_id = p_user
     order by m.item_id, m.measured_at desc
-  ),
-  posts as (
-    select i.id, public.platform_profile_id(i.platform) as platform, l.views,
-      coalesce(i.published_at, (
-        select max(s.publish_at) from public.schedule_slots s join public.deliverables d on d.id = s.deliverable_id
-        where s.user_id = p_user and s.status = 'published'
-          and ((d.ref_kind = 'content_item' and d.ref_id = i.id)
-            or (d.ref_kind = 'clip' and d.ref_id = i.clip_id and s.platform = public.platform_profile_id(i.platform)))
-      )) as published_at
-    from latest l join public.content_items i on i.id = l.item_id and i.user_id = p_user
   )
-  select p.id, p.platform, extract(hour from p.published_at at time zone public.schedule_timezone(p_user))::smallint, p.views
-  from posts p, r
-  where p.published_at is not null
-    and p.platform in ('x', 'threads', 'linkedin', 'tiktok', 'youtube', 'instagram')
-    and p.published_at >= now() - make_interval(days => (r.j->>'windowDays')::integer)
+  select p.item_id, public.slot_platform_of(p.platform),
+    extract(hour from p.published_at at time zone public.schedule_timezone(p_user))::smallint,
+    l.views / greatest(1.0, extract(epoch from l.measured_at - p.published_at) / 3600.0)
+  from r, public.published_items(p_user, now() - make_interval(days => (r.j->>'windowDays')::integer)) p
+  join latest l on l.item_id = p.item_id
+  where l.views is not null
+    and public.slot_platform_of(p.platform) in ('x', 'threads', 'linkedin', 'tiktok', 'youtube', 'instagram')
     and p.published_at <= now() - make_interval(hours => (r.j->>'settleHours')::integer)
 $$;
 revoke all on function public.best_time_posts(uuid) from public, anon, authenticated;
@@ -58,7 +91,7 @@ declare
 begin
   delete from public.best_slots where user_id = p_user;
   insert into public.best_slots (user_id, platform, hour, median_views_per_hour, posts, computed_at)
-  select p_user, b.platform, b.hour, percentile_cont(0.5) within group (order by b.views), count(*), now()
+  select p_user, b.platform, b.hour, percentile_cont(0.5) within group (order by b.views_per_hour), count(*), now()
   from public.best_time_posts(p_user) b
   where b.platform in (
     select platform from public.best_time_posts(p_user) group by platform having count(*) >= (v_rules->>'minPosts')::integer)
@@ -71,18 +104,26 @@ $$;
 revoke all on function public.best_slots_refresh(uuid) from public, anon, authenticated;
 grant execute on function public.best_slots_refresh(uuid) to service_role;
 
--- The candidate local times for a platform: the founder's best hours, best first, as many as the defaults offer;
--- the defaults when there are none.
+-- The candidate local times for a platform, as many as the defaults offer: the founder's best hours, best first, then
+-- the default times not already in, so a founder with one trusted hour still gets as many slots a day as before.
 create or replace function public.schedule_candidate_times(p_user uuid, p_platform text)
 returns text[] language sql stable security definer set search_path = public
 as $$
-  select coalesce(
-    (select array_agg(to_char(make_time(b.hour, 0, 0), 'HH24:MI') order by b.median_views_per_hour desc, b.hour)
-     from (select * from public.best_slots where user_id = p_user and platform = p_platform
-           order by median_views_per_hour desc, hour
-           limit greatest(1, jsonb_array_length(public.schedule_rules()->'platforms'->p_platform->'times'))) b),
-    (select array_agg(t) from jsonb_array_elements_text(public.schedule_rules()->'platforms'->p_platform->'times') t)
+  with defaults as (
+    select t, n from jsonb_array_elements_text(public.schedule_rules()->'platforms'->p_platform->'times') with ordinality d(t, n)
+  ),
+  best as (
+    select to_char(make_time(b.hour, 0, 0), 'HH24:MI') as t, row_number() over (order by b.median_views_per_hour desc, b.hour) as n
+    from public.best_slots b where b.user_id = p_user and b.platform = p_platform
+  ),
+  merged as (
+    select t, 0 as pass, n from best
+    union all
+    select t, 1, n from defaults where t not in (select t from best)
   )
+  select array_agg(t order by pass, n) from (
+    select t, pass, n from merged order by pass, n limit greatest(1, (select count(*) from defaults))
+  ) m
 $$;
 revoke all on function public.schedule_candidate_times(uuid, text) from public, anon, authenticated;
 

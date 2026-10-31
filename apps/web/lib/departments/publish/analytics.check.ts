@@ -178,6 +178,14 @@ async function main() {
     assert.equal(xr.followers, 6);
     assert.match(xr.best ?? "", /^Post a · 4(\.\d)?×$/);
     assert.equal(results.rows.find((r) => r.where.platform === "threads")!.series.at(-1), null);
+
+    // A post Zernio gave no reach number for (no views, no impressions): a dash, and out of the median.
+    const unreported: PostIn = { ...post("n", 0, 1), views: null, impressions: null, engagements: null, likes: null, replies: null, reposts: null };
+    const withGap = buildAnalytics({ range: 7, now, accounts, days, posts: [...posts, unreported], publishedInRange: 9 });
+    AnalyticsScreenSchema.parse(withGap);
+    assert.equal(withGap.byAccount.find((a) => a.where.platform === "x")!.medianImpressions, x.medianImpressions, "not counted as zero");
+    const gapRow = withGap.posts.find((p) => p.id === "n");
+    assert.ok(!gapRow || (gapRow.impressions === null && gapRow.engagementRate === null && gapRow.vsMedian === null), "shown as a dash");
   }
 
   // A4: the brain's measures; an empty week is dashes, not zeros.

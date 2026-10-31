@@ -29,12 +29,13 @@ export type PostIn = {
   title: string;
   platform: string;
   publishedAt: string;
-  views: number;
+  /** Null: not reported (Zernio leaves out what a platform does not give), never zero. */
+  views: number | null;
   impressions: number | null;
   engagements: number | null;
-  likes: number;
-  replies: number;
-  reposts: number;
+  likes: number | null;
+  replies: number | null;
+  reposts: number | null;
   url: string | null;
 };
 
@@ -61,9 +62,12 @@ export function rangeDays(now: Date, days: number): string[] {
   return Array.from({ length: days }, (_, i) => dayOf(end - (days - 1 - i) * DAY_MS));
 }
 
-const reach = (p: PostIn) => p.impressions ?? p.views;
-const engaged = (p: PostIn) => p.engagements ?? p.likes + p.replies + p.reposts;
-const rate = (eng: number, impressions: number) => (impressions > 0 ? round1((eng / impressions) * 100) : null);
+/** Null when the post has no reach number at all: it is left out of medians and sums, and shows a dash. */
+const reach = (p: PostIn): number | null => p.impressions ?? p.views;
+const engaged = (p: PostIn): number | null => p.engagements ?? sumOrNull([p.likes, p.replies, p.reposts]);
+const rate = (eng: number | null, impressions: number | null) => (eng !== null && impressions !== null && impressions > 0 ? round1((eng / impressions) * 100) : null);
+const reachOf = (ps: PostIn[]): number[] => ps.map(reach).filter((v): v is number => v !== null);
+const byReach = (x: PostIn, y: PostIn) => (reach(y) ?? -1) - (reach(x) ?? -1);
 
 /** Connected or broken accounts as the screens show them; a disconnected account keeps its history but no row. */
 export function analyticsAccounts(accounts: AccountIn[], days: AccountDayIn[]): Account[] {
@@ -126,8 +130,8 @@ export function buildAnalytics({ range, now, accounts, days, posts, publishedInR
   const prevPosts = posts.filter((p) => p.publishedAt.slice(0, 10) >= prevFrom && p.publishedAt.slice(0, 10) < from);
 
   // Account days measure everything an account did; without them (public reading only) the posts are all there is.
-  const impressionsOf = (rows: AccountDayIn[], ps: PostIn[]) => (rows.some((d) => d.impressions !== null) ? sumOrNull(rows.map((d) => d.impressions)) : ps.length ? ps.reduce((n, p) => n + reach(p), 0) : null);
-  const engagementsOf = (rows: AccountDayIn[], ps: PostIn[]) => (rows.some((d) => d.engagements !== null) ? sumOrNull(rows.map((d) => d.engagements)) : ps.length ? ps.reduce((n, p) => n + engaged(p), 0) : null);
+  const impressionsOf = (rows: AccountDayIn[], ps: PostIn[]) => (rows.some((d) => d.impressions !== null) ? sumOrNull(rows.map((d) => d.impressions)) : sumOrNull(ps.map(reach)));
+  const engagementsOf = (rows: AccountDayIn[], ps: PostIn[]) => (rows.some((d) => d.engagements !== null) ? sumOrNull(rows.map((d) => d.engagements)) : sumOrNull(ps.map(engaged)));
   const impressions = impressionsOf(cur, curPosts);
   const engagements = engagementsOf(cur, curPosts);
   const prevImpressions = impressionsOf(prev, prevPosts);
@@ -167,19 +171,19 @@ export function buildAnalytics({ range, now, accounts, days, posts, publishedInR
   });
 
   const medianByPlatform = new Map<string, number | null>();
-  for (const p of PLATFORMS) medianByPlatform.set(p, median(curPosts.filter((x) => x.platform === p).map(reach)));
+  for (const p of PLATFORMS) medianByPlatform.set(p, median(reachOf(curPosts.filter((x) => x.platform === p))));
 
   const byAccount: AnalyticsScreen["byAccount"] = live.map((a) => {
     const mine = curPosts.filter((p) => p.platform === a.platform);
-    const top = [...mine].sort((x, y) => reach(y) - reach(x))[0];
-    const impr = mine.reduce((n, p) => n + reach(p), 0);
+    const top = [...mine].sort(byReach)[0];
+    const impr = sumOrNull(mine.map(reach));
     return {
       where: { platform: a.platform as Platform, handle: a.handle.slice(0, 80) },
       followers: followersAt(days, a.id, current.at(-1)!),
       change: followerChange(days, a.id, from, current.at(-1)!),
       posts: mine.length,
-      medianImpressions: mine.length ? Math.round(median(mine.map(reach))!) : null,
-      engagementRate: mine.length ? rate(mine.reduce((n, p) => n + engaged(p), 0), impr) : null,
+      medianImpressions: reachOf(mine).length ? Math.round(median(reachOf(mine))!) : null,
+      engagementRate: mine.length ? rate(sumOrNull(mine.map(engaged)), impr) : null,
       worksBest: !mine.length ? null : mine.length < MIN_POSTS_TO_JUDGE || !top ? "Not enough posts yet" : `“${top.title}”`.slice(0, 120),
       noDataSince: noDataSince(a, days, now),
     };
@@ -187,9 +191,10 @@ export function buildAnalytics({ range, now, accounts, days, posts, publishedInR
 
   const scored = curPosts.map((p) => {
     const m = medianByPlatform.get(p.platform) ?? null;
-    return { p, vs: m && m > 0 ? round1(reach(p) / m) : null };
+    const r = reach(p);
+    return { p, vs: m && m > 0 && r !== null ? round1(r / m) : null };
   });
-  const ranked = [...scored].sort((a, b) => (b.vs ?? 0) - (a.vs ?? 0) || reach(b.p) - reach(a.p));
+  const ranked = [...scored].sort((a, b) => (b.vs ?? 0) - (a.vs ?? 0) || byReach(a.p, b.p));
   // Best three, then the worst two that are not already shown.
   const picked = ranked.length <= 5 ? ranked : [...ranked.slice(0, 3), ...ranked.slice(-2)];
   const postRows: AnalyticsScreen["posts"] = picked.flatMap(({ p, vs }) =>
@@ -220,15 +225,16 @@ export function buildResults({ now, accounts, days, posts }: Omit<AnalyticsInput
       const mine = days.filter((d) => d.social_account_id === a.id);
       const series = week.map((day) => mine.find((d) => d.day === day)?.impressions ?? null);
       const myPosts = posts.filter((p) => p.platform === a.platform && p.publishedAt.slice(0, 10) >= from);
-      const m = median(myPosts.map(reach));
-      const top = [...myPosts].sort((x, y) => reach(y) - reach(x))[0];
-      const impressions = series.some((v) => v !== null) ? sumOrNull(series) : myPosts.length ? myPosts.reduce((n, p) => n + reach(p), 0) : null;
+      const m = median(reachOf(myPosts));
+      const top = [...myPosts].sort(byReach)[0];
+      const topReach = top ? reach(top) : null;
+      const impressions = series.some((v) => v !== null) ? sumOrNull(series) : sumOrNull(myPosts.map(reach));
       return {
         where: { platform: a.platform as Platform, handle: a.handle.slice(0, 80) },
         impressions,
         series,
         followers: followerChange(days, a.id, from, week.at(-1)!),
-        best: top ? `${top.title.slice(0, 90)}${m && m > 0 && myPosts.length >= MIN_POSTS_TO_JUDGE ? ` · ${round1(reach(top) / m)}×` : ""}` : null,
+        best: top ? `${top.title.slice(0, 90)}${m && m > 0 && myPosts.length >= MIN_POSTS_TO_JUDGE && topReach !== null ? ` · ${round1(topReach / m)}×` : ""}` : null,
         noDataSince: noDataSince(a, days, now),
       };
     });

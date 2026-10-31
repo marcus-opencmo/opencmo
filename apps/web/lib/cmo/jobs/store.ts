@@ -109,7 +109,7 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       ]);
       // Several measurements per post: keep the highest per post, then add them up.
       const best = new Map<string, number>();
-      for (const row of (measured ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+      for (const row of (measured ?? []) as { item_id: string; views: number | null }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
       return { posts, replies, views: [...best.values()].reduce((a, b) => a + b, 0) };
     },
     async proposeGoal(userId, runId, week, goal) {

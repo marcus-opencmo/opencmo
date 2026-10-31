@@ -80,10 +80,11 @@ export type NicheVideoInsight = {
 export type MetricRow = {
   item_id: string;
   url: string;
-  views: number;
-  likes: number;
-  replies: number;
-  reposts: number;
+  /** Null: not reported (stored as null, never zero). The public reading always has all four. */
+  views: number | null;
+  likes: number | null;
+  replies: number | null;
+  reposts: number | null;
   source?: "public" | "zernio";
   impressions?: number | null;
   engagements?: number | null;

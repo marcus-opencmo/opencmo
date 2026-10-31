@@ -858,8 +858,8 @@ async function research({ supabase }: LoadContext): Promise<Partial<ResearchScre
     results: async () => {
       const metrics = must(await supabase.from("post_metrics").select("item_id, views, replies, measured_at").order("measured_at", { ascending: false }).limit(100), "post_metrics") as {
         item_id: string;
-        views: number;
-        replies: number;
+        views: number | null;
+        replies: number | null;
       }[];
       const latestPerItem = [...new Map(metrics.map((m) => [m.item_id, m])).values()].slice(0, 10);
       if (!latestPerItem.length) return [];
@@ -870,7 +870,7 @@ async function research({ supabase }: LoadContext): Promise<Partial<ResearchScre
       }[];
       return latestPerItem.map((m) => {
         const item = items.find((i) => i.id === m.item_id);
-        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "X post").slice(0, 200), platform: "x" as const, views: Number(m.views), replies: Number(m.replies) };
+        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "X post").slice(0, 200), platform: "x" as const, views: orNull(m.views), replies: orNull(m.replies) };
       });
     },
   });
@@ -1218,8 +1218,13 @@ async function sales({ supabase }: LoadContext): Promise<Partial<SalesScreen>> {
 
 /**
  * What Analytics and the Dashboard's results read (P6 A1): accounts, their days and the newest reading of each post
- * published in twice the range (the second half is the comparison), all under the founder's RLS session.
+ * published in twice the range (the second half is the comparison), all under the founder's RLS session. Published
+ * posts come from `my_published_items`: a video's caption item counts once a slot published its clip, though the
+ * caption itself stays `approved` (the slot publishes the clip, not the caption).
  */
+/** A stored count as a number, or null when it was not reported (bigint columns can arrive as strings). */
+const orNull = (v: number | string | null): number | null => (v === null ? null : Number(v));
+
 async function measured(supabase: SupabaseClient, range: number, now: Date): Promise<{ accounts: AccountIn[]; days: AccountDayIn[]; posts: PostIn[]; published: number }> {
   const since = new Date(now.getTime() - 2 * range * 86_400_000);
   const sinceDay = since.toISOString().slice(0, 10);
@@ -1231,15 +1236,11 @@ async function measured(supabase: SupabaseClient, range: number, now: Date): Pro
       .gte("day", sinceDay)
       .order("day")
       .limit(5000),
-    supabase
-      .from("content_items")
-      .select("id, platform, idea, final_text, published_at")
-      .eq("status", "published")
-      .gte("published_at", since.toISOString())
-      .order("published_at", { ascending: false })
-      .limit(500),
+    supabase.rpc("my_published_items", { p_since: since.toISOString() }),
   ]);
-  const itemRows = must(items, "content_items") as { id: string; platform: string; idea: string; final_text: string | null; published_at: string }[];
+  const itemRows = (must(items, "my_published_items") as { item_id: string; platform: string; idea: string; final_text: string | null; published_at: string }[]).map(
+    ({ item_id, ...rest }) => ({ id: item_id, ...rest }),
+  );
   const metricRows = itemRows.length
     ? (must(
         await supabase
@@ -1249,25 +1250,26 @@ async function measured(supabase: SupabaseClient, range: number, now: Date): Pro
           .order("measured_at", { ascending: false })
           .limit(5000),
         "post_metrics",
-      ) as { item_id: string; url: string; views: number; likes: number; replies: number; reposts: number; impressions: number | null; engagements: number | null }[])
+      ) as { item_id: string; url: string; views: number | null; likes: number | null; replies: number | null; reposts: number | null; impressions: number | null; engagements: number | null }[])
     : [];
   const newest = new Map<string, (typeof metricRows)[number]>();
   for (const m of metricRows) if (!newest.has(m.item_id)) newest.set(m.item_id, m);
   const posts: PostIn[] = itemRows.flatMap((i) => {
     const m = newest.get(i.id);
-    const platform = profileIdOf(i.platform) ?? "x";
+    // "tiktok_caption" → tiktok: a caption item is measured on its platform.
+    const platform = screenPlatform(i.platform, "x");
     return m
       ? [{
           id: i.id,
           title: (i.final_text ?? i.idea).split("\n")[0]!.slice(0, 200),
           platform,
           publishedAt: new Date(i.published_at).toISOString(),
-          views: Number(m.views),
-          impressions: m.impressions === null ? null : Number(m.impressions),
-          engagements: m.engagements === null ? null : Number(m.engagements),
-          likes: Number(m.likes),
-          replies: Number(m.replies),
-          reposts: Number(m.reposts),
+          views: orNull(m.views),
+          impressions: orNull(m.impressions),
+          engagements: orNull(m.engagements),
+          likes: orNull(m.likes),
+          replies: orNull(m.replies),
+          reposts: orNull(m.reposts),
           url: m.url || null,
         }]
       : [];

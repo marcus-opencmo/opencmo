@@ -11,9 +11,10 @@ as $$ select case when p is null then null else greatest(0, p) end $$;
 revoke all on function public.nonneg(bigint) from public, anon, authenticated;
 grant execute on function public.nonneg(bigint) to service_role;
 
--- The posts Zernio can measure (service role): published slots of the founder with Zernio's id for the post, and the
--- calendar item the numbers belong to (the post itself, or a video's caption item for that platform).
-create or replace function public.cmo_zernio_posts(p_user uuid, p_since timestamptz)
+-- The posts Zernio can measure: published slots of the founder with Zernio's id for the post, and the calendar item
+-- the numbers belong to (the post itself, or a video's caption item for that platform). All of them, newest first;
+-- `cmo_save_metrics` checks an item against every one, the job reads the newest 200 (`cmo_zernio_posts`).
+create or replace function public.cmo_zernio_posts_all(p_user uuid, p_since timestamptz)
 returns table (item_id uuid, external_id text, external_url text, platform text, social_account_id uuid, zernio_account_id text,
   published_at timestamptz)
 language sql stable security definer set search_path = public
@@ -31,14 +32,24 @@ as $$
   ) cap on true
   where s.user_id = p_user and s.status = 'published' and s.mode = 'publish' and s.external_id is not null
     and s.publish_at >= p_since
-  order by s.publish_at desc
-  limit 200;
+  order by s.publish_at desc;
+$$;
+revoke all on function public.cmo_zernio_posts_all(uuid, timestamptz) from public, anon, authenticated;
+
+-- The job's read (service role): the newest 200.
+create or replace function public.cmo_zernio_posts(p_user uuid, p_since timestamptz)
+returns table (item_id uuid, external_id text, external_url text, platform text, social_account_id uuid, zernio_account_id text,
+  published_at timestamptz)
+language sql stable security definer set search_path = public
+as $$
+  select * from public.cmo_zernio_posts_all(p_user, p_since) limit 200;
 $$;
 revoke all on function public.cmo_zernio_posts(uuid, timestamptz) from public, anon, authenticated;
 grant execute on function public.cmo_zernio_posts(uuid, timestamptz) to service_role;
 
 -- As in 20261029090000, plus `source`, `impressions` and `engagements`. A Zernio row needs a published slot of the
--- founder for the item; a public row a published item, as before. A row with no number at all is not stored.
+-- founder for the item; a public row a published item, as before. A row with no number at all is not stored, and a
+-- number left out stays null ("not reported"), never 0.
 create or replace function public.cmo_save_metrics(p_user uuid, p_rows jsonb)
 returns integer language plpgsql security definer set search_path = public
 as $$
@@ -47,9 +58,14 @@ declare
   v_count integer := 0;
   v_source text;
   v_item uuid;
+  v_zernio uuid[];
 begin
   if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 200 then
     raise exception 'These numbers are not valid.' using errcode = '22023';
+  end if;
+  -- Once per save, not per row.
+  if exists (select 1 from jsonb_array_elements(p_rows) r where r->>'source' = 'zernio') then
+    v_zernio := array(select z.item_id from public.cmo_zernio_posts_all(p_user, '-infinity') z where z.item_id is not null);
   end if;
   for v_row in select * from jsonb_array_elements(p_rows) loop
     v_source := coalesce(v_row->>'source', 'public');
@@ -60,14 +76,14 @@ begin
     -- Only the founder's own published posts: the job never writes numbers onto someone else's.
     if (v_source = 'public' and exists (select 1 from public.content_items i
           where i.id = v_item and i.user_id = p_user and i.status = 'published'))
-       or (v_source = 'zernio' and exists (select 1 from public.cmo_zernio_posts(p_user, '-infinity') z where z.item_id = v_item)) then
+       or (v_source = 'zernio' and v_item = any(v_zernio)) then
       if coalesce(v_row->>'views', v_row->>'impressions', v_row->>'likes', v_row->>'replies', v_row->>'reposts', v_row->>'engagements') is null then
         continue;
       end if;
       insert into public.post_metrics (user_id, item_id, url, views, likes, replies, reposts, source, impressions, engagements)
       values (p_user, v_item, left(coalesce(v_row->>'url', ''), 500),
-        greatest(0, coalesce((v_row->>'views')::bigint, 0)), greatest(0, coalesce((v_row->>'likes')::bigint, 0)),
-        greatest(0, coalesce((v_row->>'replies')::bigint, 0)), greatest(0, coalesce((v_row->>'reposts')::bigint, 0)),
+        public.nonneg((v_row->>'views')::bigint), public.nonneg((v_row->>'likes')::bigint),
+        public.nonneg((v_row->>'replies')::bigint), public.nonneg((v_row->>'reposts')::bigint),
         v_source, public.nonneg((v_row->>'impressions')::bigint), public.nonneg((v_row->>'engagements')::bigint));
       v_count := v_count + 1;
     end if;
