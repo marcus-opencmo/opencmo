@@ -276,4 +276,15 @@ check("cards: an X thread reaches the post card, and an HN reply says where it i
   ApprovalCardSchema.parse(hn);
   assert.equal(hn.body.platform, "hn");
   assert.equal(hn.body.community, "Hacker News");
+
+  // 270 code points with 15 emoji is 285 UTF-16 units: within X's 280, as SQL counts it. zod 4's `max` counts code
+  // points too; this pins that, so a zod change that counted UTF-16 units would not silently drop thread cards.
+  const emoji = "🚀".repeat(15) + "x".repeat(255);
+  assert.equal([...emoji].length, 270);
+  const long = [emoji, ...thread.slice(1)];
+  const withEmoji = approvalToCard(row("post", { kind: "post", platform: "X", day: "2026-10-29", idea: "Idea", text: thread[0], alternates: [], rationale: "", thread: long }));
+  assert.ok(withEmoji && withEmoji.body.kind === "post", "a thread post with emoji still makes its card");
+  ApprovalCardSchema.parse(withEmoji);
+  void ScheduleSnapshotSchema.parse({ ...SCHEDULE_SNAPSHOT, thread: long });
+  assert.equal(ScheduleSnapshotSchema.safeParse({ ...SCHEDULE_SNAPSHOT, thread: ["x".repeat(281), ...thread.slice(1)] }).success, false, "281 is too long");
 });
