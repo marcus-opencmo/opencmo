@@ -6,7 +6,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(26);
+select plan(40);
 
 select ok(exists (select 1 from pg_constraint where conname = 'tasks_kind_check' and pg_get_constraintdef(oid) like '%look_check%'),
   'tasks take look_check');
@@ -122,6 +122,58 @@ select ok(not public.studio_look_sendback_unchanged((select check_id from c)), '
 reset role;
 select is((select snapshot->'look'->>'note' from public.approvals where ref_id = 'e2313000-0000-4000-8000-000000000002' and status = 'waiting'),
   'Look check: a frozen shot at 0:02.', 'the card carries the round-0 note');
+
+-- Review fix 1: a newer render of the same ref while its check runs takes the check's place; the same render again
+-- changes nothing.
+insert into public.studio_steps (id, user_id, clip_id, tool, kind, input, card, price_credits, status)
+select ('e2313000-0000-4000-8000-00000000000' || k)::uuid, 'e2310000-0000-4000-8000-00000000000a', (select id from s where n = 3),
+  'build_slideshow', 'slideshow', '{}', '{"title":"Launch","aspect":"9:16","slides":[{"text":"Cut by words","still_path":null,"seconds":3}],"mp4_path":null,"png_set_path":null}',
+  0, 'running'
+from generate_series(4, 6) k;
+create function pg_temp.begin_check(p_step uuid, p_key text) returns boolean language sql as $f$
+  select public.look_check_begin('e2310000-0000-4000-8000-00000000000a', 'studio_step', p_step, null, p_key,
+    jsonb_build_array(jsonb_build_object('path', 'e2310000-0000-4000-8000-00000000000a/x/' || p_key || '.mp4', 'clip_id', (select id from s where n = 3))))
+$f$;
+select ok(pg_temp.begin_check('e2313000-0000-4000-8000-000000000004', 'h1'), 'a check starts for H1');
+select ok(pg_temp.begin_check('e2313000-0000-4000-8000-000000000004', 'h1'), 'the same render again: still checked');
+select is((select count(*)::int from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000004'), 1, 'by the one check');
+create temp table old_check as select id, task_id from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000004';
+select ok(pg_temp.begin_check('e2313000-0000-4000-8000-000000000004', 'h2'), 'a render of a newer edit is checked');
+select is((select status from public.look_checks where id = (select id from old_check)), 'superseded', 'the H1 check steps aside');
+select is((select status from public.tasks where id = (select task_id from old_check)), 'cancelled', 'and its queued task is cancelled');
+select is((select doc_key || '/' || round from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000004' and status = 'checking'),
+  'h2/0', 'the new check is for H2, at the same round');
+update public.tasks set status = 'done', output = '{"pass":true,"round":0,"note":"","files":[]}'
+where id = (select task_id from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000004' and status = 'checking');
+select is((select status from public.studio_steps where id = 'e2313000-0000-4000-8000-000000000004'), 'waiting', 'and its pass reaches the founder');
+
+-- Review fix 6: an error while raising the card keeps the settled status; the sweep raises the card later.
+create function public.test_fail_step() returns trigger language plpgsql as $f$
+begin
+  if current_setting('test.fail_step', true) = 'on' then raise exception 'boom'; end if;
+  return new;
+end;
+$f$;
+create trigger test_fail_step before update on public.studio_steps for each row execute function public.test_fail_step();
+select ok(pg_temp.begin_check('e2313000-0000-4000-8000-000000000005', 'h5'), 'a check for step 5');
+set local test.fail_step = 'on';
+update public.tasks set status = 'done', output = '{"pass":true,"round":0,"note":"","files":[]}'
+where id = (select task_id from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000005');
+set local test.fail_step = 'off';
+select is((select status || '/' || (raised_at is null) from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000005'),
+  'passed/true', 'the raise failed, the check still settled');
+update public.look_checks set settled_at = now() - interval '10 minutes' where ref_id = 'e2313000-0000-4000-8000-000000000005';
+
+-- A check left `checking` after its task went away is settled as an error by the sweep, and its card raised.
+select ok(pg_temp.begin_check('e2313000-0000-4000-8000-000000000006', 'h6'), 'a check for step 6');
+delete from public.tasks where id = (select task_id from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000006');
+update public.look_checks set created_at = now() - interval '10 minutes' where ref_id = 'e2313000-0000-4000-8000-000000000006';
+set local role service_role;
+select is((select count(*)::int from public.studio_look_sendbacks_claim(10)), 0, 'the sweep hands out nothing');
+reset role;
+select is((select status from public.studio_steps where id = 'e2313000-0000-4000-8000-000000000005'), 'waiting', 'the failed raise is retried');
+select is((select status || '/' || (raised_at is not null) from public.look_checks where ref_id = 'e2313000-0000-4000-8000-000000000006'),
+  'error/true', 'the stuck check settles as an error and raises its card');
 
 select * from finish();
 rollback;

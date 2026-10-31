@@ -83,6 +83,13 @@ def test_no_sound_and_silence_fail(tmp_path):
     assert _answers(silent)["sound_present"]["pass"] is False
 
 
+def test_a_silent_slideshow_passes(tmp_path):
+    # Slides with no music picked have no audio track on purpose; the note would be noise on every such card.
+    mute = _check(_mp4(tmp_path / "mute.mp4", MOVING, audio=None), tmp_path, slideshow=True)
+    assert _answers(mute)["sound_present"]["pass"] is None
+    assert mute["pass"] is True
+
+
 def test_judge_failure_names_the_frame_time(tmp_path, monkeypatch):
     monkeypatch.setenv(look.look_judge.FAKE_ENV, "fail")
     result = _check(_mp4(tmp_path / "ok.mp4", MOVING), tmp_path)

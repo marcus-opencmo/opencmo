@@ -127,7 +127,9 @@ def check_file(path: Path, workdir: Path, entry: dict[str, str], frames: int, *,
         answers["no_frozen_frames"] = (
             {"pass": False, "why": f"The picture freezes for {frozen[1]:.1f} s", "at": round(frozen[0], 2)} if frozen else {"pass": True, "why": ""}
         )
-    if not has_audio:
+    if slideshow:
+        answers["sound_present"] = None  # a slideshow may be silent on purpose (no music picked)
+    elif not has_audio:
         answers["sound_present"] = {"pass": False, "why": "The video has no sound"}
     elif loudest is not None and loudest <= SILENT_DB:
         answers["sound_present"] = {"pass": False, "why": "The sound track is silent"}

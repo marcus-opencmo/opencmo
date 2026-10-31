@@ -24,15 +24,21 @@ create table public.look_checks (
   round smallint not null check (round in (0, 1)),
   doc_key text not null check (char_length(doc_key) <= 100),
   task_id uuid references public.tasks(id) on delete set null,
-  -- checking → passed | failed (round 1, the card shows the note) | sent_back (round 0) → claimed | error (no note).
-  status text not null default 'checking' check (status in ('checking', 'passed', 'failed', 'sent_back', 'claimed', 'error')),
+  -- checking → passed | failed (round 1, the card shows the note) | sent_back (round 0) → claimed | error (no note);
+  -- checking → superseded when a newer render of the same order starts its own check at the same round.
+  status text not null default 'checking'
+    check (status in ('checking', 'passed', 'failed', 'sent_back', 'claimed', 'error', 'superseded')),
   result jsonb check (result is null or (jsonb_typeof(result) = 'object' and octet_length(result::text) <= 65536)),
   created_at timestamptz not null default now(),
   settled_at timestamptz,
-  claimed_at timestamptz
+  claimed_at timestamptz,
+  -- Set once `look_check_raise` ran for a settled check; a settled check without it is raised again by the sweep in
+  -- `studio_look_sendbacks_claim`, so an error while raising never loses the card.
+  raised_at timestamptz
 );
 -- Rounds count per order: a squad's redo may make a new step or batch, and its check is still round 1.
-create unique index look_checks_one_round on public.look_checks (ref_kind, coalesce(order_id, ref_id), round);
+create unique index look_checks_one_round on public.look_checks (ref_kind, coalesce(order_id, ref_id), round)
+  where status <> 'superseded';
 create index look_checks_task_idx on public.look_checks (task_id);
 create index look_checks_sent_back_idx on public.look_checks (created_at) where status in ('sent_back', 'claimed');
 
@@ -59,12 +65,20 @@ begin
     return false;
   end if;
   select * into v_prior from public.look_checks
-  where ref_kind = p_ref_kind and coalesce(order_id, ref_id) = coalesce(p_order, p_ref_id)
+  where ref_kind = p_ref_kind and coalesce(order_id, ref_id) = coalesce(p_order, p_ref_id) and status <> 'superseded'
   order by round desc limit 1 for update;
   if not found then
     v_round := 0;
   elsif v_prior.status = 'checking' then
-    return true;
+    if v_prior.ref_id = p_ref_id and v_prior.doc_key = p_doc_key then
+      return true;  -- the same render, already being checked
+    end if;
+    -- A newer render (an edit made during the check): the old check could only raise a card for a render that is no
+    -- longer current, so this one takes its place at the same round. A running task that finishes later finds no
+    -- `checking` row and changes nothing.
+    update public.look_checks set status = 'superseded', settled_at = now() where id = v_prior.id;
+    update public.tasks set status = 'cancelled' where id = v_prior.task_id and status = 'queued';
+    v_round := v_prior.round;
   elsif v_prior.round = 0 and v_prior.status in ('sent_back', 'claimed') then
     v_round := 1;
   else
@@ -112,9 +126,25 @@ begin
         perform public.work_order_wait_founder(p_check.order_id, 'Your slideshow is rendered');
       end if;
   end case;
+  update public.look_checks set raised_at = now() where id = p_check.id;
 end;
 $$;
 revoke all on function public.look_check_raise(public.look_checks) from public, anon, authenticated;
+
+-- `look_check_raise` in its own subtransaction: an error rolls back only the raise, logs it and returns false, so the
+-- check's settled status stays and the sweep in `studio_look_sendbacks_claim` tries again.
+create or replace function public.look_check_raise_safe(p_check public.look_checks)
+returns boolean language plpgsql volatile security definer set search_path = public
+as $$
+begin
+  perform public.look_check_raise(p_check);
+  return true;
+exception when others then
+  raise warning 'look check % could not raise its card: %', p_check.id, sqlerrm;
+  return false;
+end;
+$$;
+revoke all on function public.look_check_raise_safe(public.look_checks) from public, anon, authenticated;
 
 -- A `look_check` task finished: pass → card; round 0 failed → a send-back, no card; round 1 failed → card with note;
 -- the task failed → card without a note.
@@ -132,21 +162,18 @@ begin
   if not found then
     return new;
   end if;
-  begin
-    v_pass := case when new.status = 'done' and jsonb_typeof(new.output->'pass') = 'boolean' then (new.output->>'pass')::boolean end;
-    update public.look_checks
-    set status = case when v_pass is null then 'error' when v_pass then 'passed' when round = 0 then 'sent_back' else 'failed' end,
-        result = case when new.status = 'done' and jsonb_typeof(new.output) = 'object' and octet_length(new.output::text) <= 65536
-                      then new.output end,
-        settled_at = now()
-    where id = v_check.id
-    returning * into v_check;
-    if v_check.status <> 'sent_back' then
-      perform public.look_check_raise(v_check);
-    end if;
-  exception when others then
-    raise warning 'look check rule failed for task %: %', new.id, sqlerrm;
-  end;
+  -- The status settles outside the raise's subtransaction: a failed raise must not leave the check `checking`.
+  v_pass := case when new.status = 'done' and jsonb_typeof(new.output->'pass') = 'boolean' then (new.output->>'pass')::boolean end;
+  update public.look_checks
+  set status = case when v_pass is null then 'error' when v_pass then 'passed' when round = 0 then 'sent_back' else 'failed' end,
+      result = case when new.status = 'done' and jsonb_typeof(new.output) = 'object' and octet_length(new.output::text) <= 65536
+                    then new.output end,
+      settled_at = now()
+  where id = v_check.id
+  returning * into v_check;
+  if v_check.status <> 'sent_back' then
+    perform public.look_check_raise_safe(v_check);
+  end if;
   return new;
 end;
 $$;
@@ -156,6 +183,8 @@ create trigger tasks_look_check_settle after update of status on public.tasks
 
 -- The squads' side (B1, service role): send-backs to redo, oldest first. A send-back claimed an hour ago whose redo
 -- never came back is given up on: its card is raised with the round-0 note, so the founder is never left waiting.
+-- It also sweeps up checks whose card was never raised: a raise that failed (settled, `raised_at` null) is tried
+-- again, and a check left `checking` after its task ended or went away settles as `error` and raises its card.
 create or replace function public.studio_look_sendbacks_claim(p_limit integer)
 returns table (check_id uuid, ref_kind text, ref_id uuid, user_id uuid, order_id uuid, look jsonb)
 language plpgsql volatile security definer set search_path = public
@@ -167,11 +196,32 @@ begin
     select c.* from public.look_checks c
     where c.status = 'claimed' and c.claimed_at < now() - interval '1 hour'
       and not exists (select 1 from public.look_checks r where r.ref_kind = c.ref_kind
-                      and coalesce(r.order_id, r.ref_id) = coalesce(c.order_id, c.ref_id) and r.round = 1)
+                      and coalesce(r.order_id, r.ref_id) = coalesce(c.order_id, c.ref_id) and r.round = 1
+                      and r.status <> 'superseded')
     for update skip locked
   loop
-    update public.look_checks set status = 'failed' where id = v_stale.id returning * into v_stale;
-    perform public.look_check_raise(v_stale);
+    update public.look_checks set status = 'failed', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  -- Five minutes of grace, so a settle still in flight is never raced.
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status = 'checking' and c.created_at < now() - interval '5 minutes'
+      and (c.task_id is null or exists (select 1 from public.tasks t where t.id = c.task_id
+                                        and t.status in ('done', 'failed', 'cancelled')))
+    order by c.created_at limit 50
+    for update skip locked
+  loop
+    update public.look_checks set status = 'error', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status in ('passed', 'failed', 'error') and c.raised_at is null and c.settled_at < now() - interval '5 minutes'
+    order by c.settled_at limit 50
+    for update skip locked
+  loop
+    perform public.look_check_raise_safe(v_stale);
   end loop;
   return query
   with picked as (

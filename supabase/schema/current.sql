@@ -6636,8 +6636,8 @@ begin
       left join public.clips c on c.id = t.clip_id
      where t.job_id = p_job_id or c.job_id = p_job_id
     union
-    -- Browser upload tồn tại trước khi worker có output manifest; payload là
-    -- tham chiếu bền vững duy nhất trong khe đó.
+    -- A browser upload exists before the worker writes its output manifest; until then the payload is the
+    -- only lasting reference to it.
     select coalesce(t.payload->>'bucket', 'exports'), t.payload->>'object'
       from public.tasks t
       left join public.clips c on c.id = t.clip_id
@@ -7234,12 +7234,20 @@ begin
     return false;
   end if;
   select * into v_prior from public.look_checks
-  where ref_kind = p_ref_kind and coalesce(order_id, ref_id) = coalesce(p_order, p_ref_id)
+  where ref_kind = p_ref_kind and coalesce(order_id, ref_id) = coalesce(p_order, p_ref_id) and status <> 'superseded'
   order by round desc limit 1 for update;
   if not found then
     v_round := 0;
   elsif v_prior.status = 'checking' then
-    return true;
+    if v_prior.ref_id = p_ref_id and v_prior.doc_key = p_doc_key then
+      return true;  -- the same render, already being checked
+    end if;
+    -- A newer render (an edit made during the check): the old check could only raise a card for a render that is no
+    -- longer current, so this one takes its place at the same round. A running task that finishes later finds no
+    -- `checking` row and changes nothing.
+    update public.look_checks set status = 'superseded', settled_at = now() where id = v_prior.id;
+    update public.tasks set status = 'cancelled' where id = v_prior.task_id and status = 'queued';
+    v_round := v_prior.round;
   elsif v_prior.round = 0 and v_prior.status in ('sent_back', 'claimed') then
     v_round := 1;
   else
@@ -7276,11 +7284,12 @@ CREATE TABLE public.look_checks (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     settled_at timestamp with time zone,
     claimed_at timestamp with time zone,
+    raised_at timestamp with time zone,
     CONSTRAINT look_checks_doc_key_check CHECK ((char_length(doc_key) <= 100)),
     CONSTRAINT look_checks_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['editor_project'::text, 'short_batch'::text, 'studio_step'::text]))),
     CONSTRAINT look_checks_result_check CHECK (((result IS NULL) OR ((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 65536)))),
     CONSTRAINT look_checks_round_check CHECK ((round = ANY (ARRAY[0, 1]))),
-    CONSTRAINT look_checks_status_check CHECK ((status = ANY (ARRAY['checking'::text, 'passed'::text, 'failed'::text, 'sent_back'::text, 'claimed'::text, 'error'::text])))
+    CONSTRAINT look_checks_status_check CHECK ((status = ANY (ARRAY['checking'::text, 'passed'::text, 'failed'::text, 'sent_back'::text, 'claimed'::text, 'error'::text, 'superseded'::text])))
 );
 
 
@@ -7317,6 +7326,25 @@ begin
         perform public.work_order_wait_founder(p_check.order_id, 'Your slideshow is rendered');
       end if;
   end case;
+  update public.look_checks set raised_at = now() where id = p_check.id;
+end;
+$$;
+
+
+--
+-- Name: look_check_raise_safe(public.look_checks); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.look_check_raise_safe(p_check public.look_checks) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  perform public.look_check_raise(p_check);
+  return true;
+exception when others then
+  raise warning 'look check % could not raise its card: %', p_check.id, sqlerrm;
+  return false;
 end;
 $$;
 
@@ -11616,11 +11644,32 @@ begin
     select c.* from public.look_checks c
     where c.status = 'claimed' and c.claimed_at < now() - interval '1 hour'
       and not exists (select 1 from public.look_checks r where r.ref_kind = c.ref_kind
-                      and coalesce(r.order_id, r.ref_id) = coalesce(c.order_id, c.ref_id) and r.round = 1)
+                      and coalesce(r.order_id, r.ref_id) = coalesce(c.order_id, c.ref_id) and r.round = 1
+                      and r.status <> 'superseded')
     for update skip locked
   loop
-    update public.look_checks set status = 'failed' where id = v_stale.id returning * into v_stale;
-    perform public.look_check_raise(v_stale);
+    update public.look_checks set status = 'failed', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  -- Five minutes of grace, so a settle still in flight is never raced.
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status = 'checking' and c.created_at < now() - interval '5 minutes'
+      and (c.task_id is null or exists (select 1 from public.tasks t where t.id = c.task_id
+                                        and t.status in ('done', 'failed', 'cancelled')))
+    order by c.created_at limit 50
+    for update skip locked
+  loop
+    update public.look_checks set status = 'error', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status in ('passed', 'failed', 'error') and c.raised_at is null and c.settled_at < now() - interval '5 minutes'
+    order by c.settled_at limit 50
+    for update skip locked
+  loop
+    perform public.look_check_raise_safe(v_stale);
   end loop;
   return query
   with picked as (
@@ -12513,21 +12562,18 @@ begin
   if not found then
     return new;
   end if;
-  begin
-    v_pass := case when new.status = 'done' and jsonb_typeof(new.output->'pass') = 'boolean' then (new.output->>'pass')::boolean end;
-    update public.look_checks
-    set status = case when v_pass is null then 'error' when v_pass then 'passed' when round = 0 then 'sent_back' else 'failed' end,
-        result = case when new.status = 'done' and jsonb_typeof(new.output) = 'object' and octet_length(new.output::text) <= 65536
-                      then new.output end,
-        settled_at = now()
-    where id = v_check.id
-    returning * into v_check;
-    if v_check.status <> 'sent_back' then
-      perform public.look_check_raise(v_check);
-    end if;
-  exception when others then
-    raise warning 'look check rule failed for task %: %', new.id, sqlerrm;
-  end;
+  -- The status settles outside the raise's subtransaction: a failed raise must not leave the check `checking`.
+  v_pass := case when new.status = 'done' and jsonb_typeof(new.output->'pass') = 'boolean' then (new.output->>'pass')::boolean end;
+  update public.look_checks
+  set status = case when v_pass is null then 'error' when v_pass then 'passed' when round = 0 then 'sent_back' else 'failed' end,
+      result = case when new.status = 'done' and jsonb_typeof(new.output) = 'object' and octet_length(new.output::text) <= 65536
+                    then new.output end,
+      settled_at = now()
+  where id = v_check.id
+  returning * into v_check;
+  if v_check.status <> 'sent_back' then
+    perform public.look_check_raise_safe(v_check);
+  end if;
   return new;
 end;
 $$;
@@ -15828,7 +15874,7 @@ CREATE INDEX jobs_user_keyset_idx ON public.jobs USING btree (user_id, created_a
 -- Name: look_checks_one_round; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX look_checks_one_round ON public.look_checks USING btree (ref_kind, COALESCE(order_id, ref_id), round);
+CREATE UNIQUE INDEX look_checks_one_round ON public.look_checks USING btree (ref_kind, COALESCE(order_id, ref_id), round) WHERE (status <> 'superseded'::text);
 
 
 --
