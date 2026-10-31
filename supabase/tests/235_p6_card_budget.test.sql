@@ -6,7 +6,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(13);
+select plan(17);
 
 select ok(not has_function_privilege('authenticated', 'public.approval_release_held(integer)', 'execute'), 'only the cron releases held cards');
 select ok(not has_function_privilege('authenticated', 'public.card_budget_take(uuid,boolean)', 'execute'), 'the budget is internal');
@@ -54,6 +54,18 @@ select is(public.approval_release_held(), 0, 'no room today: they try tomorrow')
 update public.approvals set held_until = now() - interval '1 minute' where user_id = 'e2350000-0000-4000-8000-00000000000a' and status = 'held';
 update public.card_budget set raised = 9 where user_id = 'e2350000-0000-4000-8000-00000000000a';
 select is(public.approval_release_held(), 1, 'one place left: the oldest comes back');
+
+select ok((select released_at is not null and held_until is null from public.approvals
+  where ref_id = 'e2352000-0000-4000-8000-000000000011' and status = 'waiting'), 'the released card says when it entered the queue');
+
+-- Review fix 2: a held card closes with its row, so it never comes back for a deleted or decided post.
+select is((select status from public.approvals where ref_id = 'e2352000-0000-4000-8000-000000000012' and status in ('waiting', 'held')), 'held',
+  'post 12 is still held');
+delete from public.content_items where id = 'e2352000-0000-4000-8000-000000000012';
+select is((select count(*)::int from public.approvals where ref_id = 'e2352000-0000-4000-8000-000000000012' and status in ('waiting', 'held')), 0,
+  'deleting its post closes the held card');
+select is((select status from public.approvals where ref_id = 'e2352000-0000-4000-8000-000000000012' order by created_at desc limit 1), 'cancelled',
+  'as cancelled');
 
 select * from finish();
 rollback;

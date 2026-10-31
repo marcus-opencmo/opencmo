@@ -6,7 +6,9 @@
 -- Held cards are released oldest first, within the day's budget, by `approval_release_held` (the hourly cron).
 --
 -- Also from the M1 review: `held` joins the one-live-card index and the supersede, so a held card whose content
--- changes is replaced instead of lingering next to a new waiting card.
+-- changes is replaced instead of lingering next to a new waiting card. From the P6 review: `approval_close` and the
+-- work-order rule treat a held card as live too, so a held card whose row is deleted or decided elsewhere closes
+-- instead of coming back the next day; and a released card carries `released_at`, so the push rule sees it as new.
 
 begin;
 
@@ -18,6 +20,24 @@ revoke all on function public.card_budget_rules() from public, anon, authenticat
 drop index public.approvals_one_waiting;
 create unique index approvals_one_waiting on public.approvals (ref_kind, ref_id) where status in ('waiting', 'held');
 create index approvals_held_idx on public.approvals (held_until) where status = 'held';
+
+-- When a held card entered the queue; `push_due` counts it as new from then.
+alter table public.approvals add column released_at timestamptz;
+
+-- As in 20261227100000, but a held card is live too: it closes with its row.
+create or replace function public.approval_close(p_ref_kind text, p_ref_id uuid, p_status text)
+returns void language plpgsql volatile security definer set search_path = public
+as $$
+begin
+  update public.approvals
+  set status = p_status,
+      decided_at = now(),
+      decided_via = case when p_status in ('approved', 'edited', 'skipped')
+        then coalesce(nullif(current_setting('opencmo.decided_via', true), ''), 'app') end
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held');
+end;
+$$;
+revoke all on function public.approval_close(text, uuid, text) from public, anon, authenticated;
 
 -- The start of the founder's next local day.
 create or replace function public.card_budget_next_day(p_user uuid) returns timestamptz
@@ -141,7 +161,7 @@ begin
     for update skip locked
   loop
     if public.card_budget_take(v_card.user_id, false) then
-      update public.approvals set status = 'waiting', held_until = null where id = v_card.id;
+      update public.approvals set status = 'waiting', held_until = null, released_at = now() where id = v_card.id;
       v_n := v_n + 1;
     else
       -- `card_budget_take` counted it as held again on today's row; it tries tomorrow.
@@ -153,5 +173,68 @@ end;
 $$;
 revoke all on function public.approval_release_held(integer) from public, anon, authenticated;
 grant execute on function public.approval_release_held(integer) to service_role;
+
+-- As in 20261227110000, but a card that ends while held follows its order too (a held card is live: P6 A4).
+-- A decided card decides its deliverable; an order whose deliverables are all decided is done.
+create or replace function public.work_orders_follow_approval() returns trigger
+language plpgsql security definer set search_path = public
+as $$
+declare
+  v_order public.work_orders;
+  v_ref_kind text := case new.ref_kind when 'content_item' then 'content_item' when 'opportunity' then 'opportunity' end;
+begin
+  if old.status not in ('waiting', 'held') or new.status in ('waiting', 'held') or v_ref_kind is null then
+    return new;
+  end if;
+  -- A cancelled card is not a decision. `approval_raise` cancels the old card before it inserts the new one, so a
+  -- row still in review is getting a fresh card: its deliverable keeps waiting. A row that left review without the
+  -- founder (deleted, or back to drafting) sends its order back: cancelled when the row is gone, else queued.
+  if new.status = 'cancelled' then
+    begin
+      if (v_ref_kind = 'content_item' and exists (select 1 from public.content_items where id = new.ref_id and status = 'in_review'))
+         or (v_ref_kind = 'opportunity' and exists (select 1 from public.opportunities where id = new.ref_id and status = 'in_review')) then
+        return new;
+      end if;
+      update public.deliverables set status = 'ready' where ref_kind = v_ref_kind and ref_id = new.ref_id;
+      for v_order in
+        select o.* from public.work_orders o join public.deliverables d on d.order_id = o.id
+        where d.ref_kind = v_ref_kind and d.ref_id = new.ref_id and o.status = 'waiting_founder'
+      loop
+        if not exists (select 1 from public.deliverables where order_id = v_order.id and status = 'waiting_founder') then
+          if (v_ref_kind = 'content_item' and not exists (select 1 from public.content_items where id = new.ref_id))
+             or (v_ref_kind = 'opportunity' and not exists (select 1 from public.opportunities where id = new.ref_id)) then
+            perform public.work_order_move(v_order.id, 'cancelled', 'The draft of “' || v_order.title || '” was deleted');
+          else
+            update public.work_orders set run_id = null where id = v_order.id;
+            perform public.work_order_move(v_order.id, 'queued', '“' || v_order.title || '” went back to drafting');
+          end if;
+        end if;
+      end loop;
+    exception when others then
+      raise warning 'work orders did not follow card %: %', new.id, sqlerrm;
+    end;
+    return new;
+  end if;
+  begin
+    update public.deliverables set status = 'decided' where ref_kind = v_ref_kind and ref_id = new.ref_id;
+    for v_order in
+      select o.* from public.work_orders o join public.deliverables d on d.order_id = o.id
+      where d.ref_kind = v_ref_kind and d.ref_id = new.ref_id and o.status = 'waiting_founder'
+    loop
+      if not exists (select 1 from public.deliverables where order_id = v_order.id and status = 'waiting_founder') then
+        perform public.work_order_move(v_order.id, 'done', case new.status
+          when 'approved' then 'You approved “' || v_order.title || '”'
+          when 'edited' then 'You edited and approved “' || v_order.title || '”'
+          when 'skipped' then 'You skipped “' || v_order.title || '”'
+          else 'Finished “' || v_order.title || '”' end);
+      end if;
+    end loop;
+  exception when others then
+    raise warning 'work orders did not follow card %: %', new.id, sqlerrm;
+  end;
+  return new;
+end;
+$$;
+revoke all on function public.work_orders_follow_approval() from public, anon, authenticated;
 
 commit;

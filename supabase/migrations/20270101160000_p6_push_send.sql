@@ -8,8 +8,9 @@ begin;
 
 alter table public.push_subscriptions add column last_pushed_at timestamptz;
 
--- Browsers to push (service role): push on for the founder, a card waiting that was raised after this browser's last
--- push (or after it subscribed), and an endpoint still on the allowed push services.
+-- Browsers to push (service role): push on for the founder, a card waiting that was raised (or released from the
+-- daily budget, `released_at`) after this browser's last push (or after it subscribed), and an endpoint still on
+-- the allowed push services.
 create or replace function public.push_due(p_limit integer)
 returns table (subscription_id uuid, user_id uuid, endpoint text, waiting integer)
 language sql stable security definer set search_path = public
@@ -20,7 +21,7 @@ as $$
   where public.push_endpoint_allowed(s.endpoint)
     and not exists (select 1 from public.notify_settings n where n.user_id = s.user_id and not n.push)
     and exists (select 1 from public.approvals a where a.user_id = s.user_id and a.status = 'waiting'
-                and a.created_at > coalesce(s.last_pushed_at, s.created_at))
+                and coalesce(a.released_at, a.created_at) > coalesce(s.last_pushed_at, s.created_at))
   order by s.user_id
   limit greatest(1, least(coalesce(p_limit, 200), 1000));
 $$;

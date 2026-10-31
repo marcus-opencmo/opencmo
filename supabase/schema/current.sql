@@ -1520,7 +1520,7 @@ begin
       decided_at = now(),
       decided_via = case when p_status in ('approved', 'edited', 'skipped')
         then coalesce(nullif(current_setting('opencmo.decided_via', true), ''), 'app') end
-  where ref_kind = p_ref_kind and ref_id = p_ref_id and status = 'waiting';
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held');
 end;
 $$;
 
@@ -1548,6 +1548,7 @@ CREATE TABLE public.approvals (
     decided_via text,
     reason text,
     held_until timestamp with time zone,
+    released_at timestamp with time zone,
     CONSTRAINT approvals_account_check CHECK ((char_length(account) <= 100)),
     CONSTRAINT approvals_content_hash_check CHECK ((content_hash ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT approvals_decided_via_check CHECK ((decided_via = ANY (ARRAY['app'::text, 'email'::text, 'push'::text, 'mcp'::text]))),
@@ -1957,7 +1958,7 @@ begin
     for update skip locked
   loop
     if public.card_budget_take(v_card.user_id, false) then
-      update public.approvals set status = 'waiting', held_until = null where id = v_card.id;
+      update public.approvals set status = 'waiting', held_until = null, released_at = now() where id = v_card.id;
       v_n := v_n + 1;
     else
       -- `card_budget_take` counted it as held again on today's row; it tries tomorrow.
@@ -8492,7 +8493,7 @@ CREATE FUNCTION public.push_due(p_limit integer) RETURNS TABLE(subscription_id u
   where public.push_endpoint_allowed(s.endpoint)
     and not exists (select 1 from public.notify_settings n where n.user_id = s.user_id and not n.push)
     and exists (select 1 from public.approvals a where a.user_id = s.user_id and a.status = 'waiting'
-                and a.created_at > coalesce(s.last_pushed_at, s.created_at))
+                and coalesce(a.released_at, a.created_at) > coalesce(s.last_pushed_at, s.created_at))
   order by s.user_id
   limit greatest(1, least(coalesce(p_limit, 200), 1000));
 $$;
@@ -13461,7 +13462,7 @@ declare
   v_order public.work_orders;
   v_ref_kind text := case new.ref_kind when 'content_item' then 'content_item' when 'opportunity' then 'opportunity' end;
 begin
-  if old.status <> 'waiting' or new.status = 'waiting' or v_ref_kind is null then
+  if old.status not in ('waiting', 'held') or new.status in ('waiting', 'held') or v_ref_kind is null then
     return new;
   end if;
   -- A cancelled card is not a decision. `approval_raise` cancels the old card before it inserts the new one, so a
