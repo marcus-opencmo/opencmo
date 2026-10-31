@@ -5,7 +5,7 @@ import { localClock } from "@/lib/cmo/digest";
 import { readAll } from "@/lib/cmo/jobs/progress-run";
 import { emailSender } from "@/lib/notify/email";
 import { pushNewCards, vapidFromEnv } from "@/lib/notify/push";
-import { sendDigestEmail, sendExpiringEmails } from "@/lib/notify/send";
+import { digestDue, sendDigestEmail, sendExpiringEmails } from "@/lib/notify/send";
 import { SITE_URL } from "@/lib/site";
 import { createAdminClient } from "@/lib/supabase/admin";
 
@@ -13,11 +13,13 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * Releases held cards whose day has come, then sends the morning digest to founders whose local hour is their
- * `digest_hour`, one email for each schedule card about to expire, and one push per browser for new cards. Called once an hour; `email_log_claim` makes
- * a second call in the same hour send nothing. With no sender it only counts: the digest is on the Dashboard anyway.
+ * Releases held cards whose day has come, then sends the morning digest to founders at their `digest_hour` (or up to
+ * two hours after, when today's has not gone out: a failed send is retried), one email for each schedule card about to
+ * expire, and one push per browser for new cards. Called once an hour; `email_log_claim` makes a second call send
+ * nothing twice. With no sender it only counts: the digest is on the Dashboard anyway.
  */
 export async function GET(request: NextRequest) {
+  const started = Date.now();
   if (!cronAuthorized(request.headers.get("authorization"), "cmo-digest")) {
     return NextResponse.json({ error: "Forbidden." }, { status: 401 });
   }
@@ -41,7 +43,7 @@ export async function GET(request: NextRequest) {
   let sent = 0;
   for (const profile of profiles) {
     const clock = localClock(now, profile.timezone);
-    if (clock.hour !== profile.digest_hour || !profile.email) continue;
+    if (!digestDue(clock.hour, profile.digest_hour) || !profile.email) continue;
     due += 1;
     if (!send) continue;
     try {
@@ -64,7 +66,8 @@ export async function GET(request: NextRequest) {
   const vapid = vapidFromEnv();
   if (vapid) {
     try {
-      pushed = await pushNewCards(admin, vapid);
+      // A batch can take one push timeout (10 s) past the deadline; the admin client gives up at maxDuration - 10 s.
+      pushed = await pushNewCards(admin, vapid, fetch, { deadline: started + (maxDuration - 25) * 1000 });
     } catch (err) {
       console.warn("[cron] cmo-digest: pushes not sent", err instanceof Error ? err.message : err);
     }

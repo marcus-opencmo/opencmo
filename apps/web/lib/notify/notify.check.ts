@@ -7,7 +7,8 @@
  */
 import assert from "node:assert/strict";
 
-import { emailFooter, emailSender, expiringEmail, SUPPORT_EMAIL, unsubscribeUrl } from "./email";
+import { emailFooter, emailSender, expiringEmail, SUPPORT_EMAIL, unsubscribeUrl, type EmailSender } from "./email";
+import { digestDue, sendExpiringEmails } from "./send";
 
 async function main() {
   // Selection.
@@ -53,7 +54,42 @@ async function main() {
   const footer = emailFooter(url);
   assert.ok(footer.text.includes(url) && footer.html.includes("Stop these emails"));
 
-  console.log("notify: sender selection, Resend request, the expiring email and the footer");
+  // The digest goes out at its hour, or up to two hours later when today's has not (a failed send is retried then).
+  assert.ok(digestDue(8, 8) && digestDue(9, 8) && digestDue(10, 8) && !digestDue(11, 8) && !digestDue(7, 8));
+  assert.ok(digestDue(1, 23), "past midnight too");
+  assert.ok(!digestDue(8, null), "no digest hour, no digest");
+
+  // A failure after the claim (here while building the email) records the claim as failed, so it never stays
+  // `claimed` and blocks that card's email for good.
+  const calls: [string, Record<string, unknown>][] = [];
+  const table = (rows: unknown[]) => {
+    const q: Record<string, unknown> = {};
+    for (const m of ["select", "eq", "gte", "lte", "order", "limit", "in"]) q[m] = () => q;
+    q.then = (resolve: (v: unknown) => void) => resolve({ data: rows, error: null });
+    return q;
+  };
+  const broken = Object.defineProperty({}, "text", { get: () => { throw new Error("bad snapshot"); } });
+  const admin = {
+    from: (name: string) =>
+      name === "approvals"
+        ? table([{ id: "c-1", user_id: "u-1", kind: "schedule", snapshot: broken, expires_at: "2026-11-02T09:00:00Z" }])
+        : table([{ id: "u-1", email: "f@example.com", timezone: "UTC" }]),
+    rpc: async (name: string, args: Record<string, unknown>) => {
+      calls.push([name, args]);
+      if (name === "notify_settings_for") return { data: { unsubscribe_token: "tok" }, error: null };
+      if (name === "email_log_claim") return { data: [{ log_id: "log-1", approval_ids: ["c-1"] }], error: null };
+      return { data: null, error: null };
+    },
+  };
+  let sends = 0;
+  const never: EmailSender = { name: "local", send: async () => ((sends += 1), { id: "x" }) };
+  assert.equal(await sendExpiringEmails(admin as never, never, { appUrl: "https://opencmo.io", now: new Date("2026-11-02T08:00:00Z") }), 0);
+  const done = calls.find(([n]) => n === "email_log_done");
+  assert.ok(done && done[1].p_log === "log-1" && done[1].p_error === "bad snapshot", "the claim is recorded as failed");
+  assert.equal(sends, 0);
+  assert.ok(calls.findIndex(([n]) => n === "notify_settings_for") < calls.findIndex(([n]) => n === "email_log_claim"), "the token is read before the claim");
+
+  console.log("notify: sender selection, Resend request, the expiring email, the footer, the digest hour and failed claims");
 }
 
 main().catch((e) => {

@@ -7,7 +7,7 @@
 import assert from "node:assert/strict";
 import { createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 
-import { PUSH_HOSTS, pushNewCards, sendPush, vapidAuthorization, vapidFromEnv } from "./push";
+import { PUSH_BATCH, PUSH_HOSTS, pushNewCards, sendPush, vapidAuthorization, vapidFromEnv } from "./push";
 
 const b64url = (buf: Buffer) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const fromB64url = (s: string) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), "base64");
@@ -55,7 +55,25 @@ async function main() {
     },
   };
   assert.equal(await pushNewCards(admin as never, vapid, fake), 1);
-  assert.deepEqual(done, [["s1", 201], ["s2", 410]]);
+  assert.deepEqual(done.sort(), [["s1", 201], ["s2", 410]]);
+
+  // Many browsers go out in batches of ten at once; past the deadline no new batch starts (the rest stay due).
+  let inFlight = 0;
+  let most = 0;
+  const slow = (async () => {
+    inFlight += 1;
+    most = Math.max(most, inFlight);
+    await new Promise((r) => setTimeout(r, 5));
+    inFlight -= 1;
+    return new Response(null, { status: 201 });
+  }) as typeof fetch;
+  const many = (n: number) => ({
+    rpc: async (name: string) =>
+      name === "push_due" ? { data: Array.from({ length: n }, (_, i) => ({ subscription_id: `s${i}`, endpoint })), error: null } : { data: true, error: null },
+  });
+  assert.equal(await pushNewCards(many(25) as never, vapid, slow), 25);
+  assert.equal(most, PUSH_BATCH, "ten at a time");
+  assert.equal(await pushNewCards(many(25) as never, vapid, slow, { deadline: Date.now() - 1 }), 0, "past the deadline: none started");
 
   console.log("push: VAPID JWT, allowed push services, one push each and every answer recorded");
 }

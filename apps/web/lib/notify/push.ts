@@ -63,16 +63,30 @@ export async function sendPush(vapid: Vapid, endpoint: string, doFetch: typeof f
   }
 }
 
-/** The cron's push round: every browser with cards newer than its last push gets one. Returns pushes accepted. */
-export async function pushNewCards(admin: SupabaseClient, vapid: Vapid, doFetch: typeof fetch = fetch): Promise<number> {
+/** Pushes sent at once: one slow push service then costs one timeout per batch, not one per browser. */
+export const PUSH_BATCH = 10;
+
+/**
+ * The cron's push round: every browser with cards newer than its last push gets one. Returns pushes accepted. No new
+ * batch starts after `deadline` (ms since epoch), so the cron records what it sent before its own time runs out; the
+ * browsers left over are still due on the next run.
+ */
+export async function pushNewCards(admin: SupabaseClient, vapid: Vapid, doFetch: typeof fetch = fetch, opts: { deadline?: number } = {}): Promise<number> {
   const { data, error } = await admin.rpc("push_due", { p_limit: 500 });
   if (error) throw new Error(`push_due: ${error.message}`);
+  const rows = (data ?? []) as { subscription_id: string; endpoint: string }[];
   let sent = 0;
-  for (const row of (data ?? []) as { subscription_id: string; endpoint: string }[]) {
-    const status = await sendPush(vapid, row.endpoint, doFetch);
-    const done = await admin.rpc("push_done", { p_subscription: row.subscription_id, p_status: status });
-    if (done.error) console.warn("[notify] push_done", done.error.message);
-    if (status >= 200 && status < 300) sent += 1;
+  for (let i = 0; i < rows.length; i += PUSH_BATCH) {
+    if (opts.deadline !== undefined && Date.now() >= opts.deadline) break;
+    const statuses = await Promise.all(
+      rows.slice(i, i + PUSH_BATCH).map(async (row) => {
+        const status = await sendPush(vapid, row.endpoint, doFetch);
+        const done = await admin.rpc("push_done", { p_subscription: row.subscription_id, p_status: status });
+        if (done.error) console.warn("[notify] push_done", done.error.message);
+        return status;
+      }),
+    );
+    sent += statuses.filter((s) => s >= 200 && s < 300).length;
   }
   return sent;
 }

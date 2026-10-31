@@ -280,7 +280,8 @@ $$;
 revoke all on function public.email_log_claim(uuid, text, uuid[]) from public, anon, authenticated;
 grant execute on function public.email_log_claim(uuid, text, uuid[]) to service_role;
 
--- After sending (service role): Resend's id, or the error. A failed digest frees the day so the next run may retry.
+-- After sending (service role): Resend's id, or the error. A failed digest frees the day, so the next hourly run
+-- sends it (the cron sends a digest up to two hours after the digest hour while today's has not gone out).
 create or replace function public.email_log_done(p_log uuid, p_provider_id text, p_error text)
 returns void language plpgsql volatile security definer set search_path = public
 as $$

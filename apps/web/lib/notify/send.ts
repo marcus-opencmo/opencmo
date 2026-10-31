@@ -2,6 +2,10 @@
  * Sending the two emails (P6 C0) with the service role, from the hourly cron. Every send is claimed first in SQL
  * (`email_log_claim`: one digest a founder's local day, one expiring email per card, only cards that still wait,
  * nothing once unsubscribed) and recorded after (`email_log_done`), so a retry or a second cron run never sends twice.
+ *
+ * Whatever can fail runs before the claim (the unsubscribe token) or inside `sendClaimed` (building the email), so a
+ * claim is always recorded as sent or failed. A failed one frees its digest day for the next run. Only a process that
+ * dies between the provider's answer and `email_log_done` leaves a claim open, which errs toward never sending twice.
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -24,6 +28,14 @@ async function token(admin: SupabaseClient, userId: string): Promise<string> {
   return (data as { unsubscribe_token: string }).unsubscribe_token;
 }
 
+/** How many hours after a founder's digest hour the cron still sends a digest not yet sent today (a failed send). */
+export const DIGEST_CATCH_UP_HOURS = 3;
+
+/** Whether the cron sends the digest at this local hour: the digest hour, or up to two hours after it. */
+export function digestDue(localHour: number, digestHour: number | null): boolean {
+  return digestHour !== null && (localHour - digestHour + 24) % 24 < DIGEST_CATCH_UP_HOURS;
+}
+
 async function sendClaimed(admin: SupabaseClient, sender: EmailSender, c: Claim, send: () => Promise<{ id: string }>): Promise<boolean> {
   try {
     const { id } = await send();
@@ -39,22 +51,22 @@ async function sendClaimed(admin: SupabaseClient, sender: EmailSender, c: Claim,
 
 export type Founder = { id: string; email: string | null; timezone: string; digest_hour: number | null };
 
-/** The morning digest for one founder whose local hour is their digest hour; false when nothing was sent. */
+/** The morning digest for one founder whose digest is due (`digestDue`); false when nothing was sent. */
 export async function sendDigestEmail(admin: SupabaseClient, sender: EmailSender, founder: Founder, opts: { appUrl: string; now: Date }): Promise<boolean> {
   if (!founder.email) return false;
   const clock = localClock(opts.now, founder.timezone);
   const input = await loadDigestInput(admin, founder.id, { appUrl: opts.appUrl, dateLabel: clock.dateLabel, now: opts.now });
   if (!input.waiting.length) return false;
+  const url = unsubscribeUrl(opts.appUrl, await token(admin, founder.id));
   const c = await claim(admin, founder.id, "digest", input.waiting.map((w) => w.id));
   if (!c) return false;
-  // Only the cards the claim kept (still waiting, the founder's own).
-  const kept = new Set(c.approval_ids);
-  const digest = buildDigest({ ...input, waiting: input.waiting.filter((w) => kept.has(w.id)) });
-  const url = unsubscribeUrl(opts.appUrl, await token(admin, founder.id));
-  const footer = emailFooter(url);
-  return sendClaimed(admin, sender, c, () =>
-    sender.send({ to: founder.email!, subject: digest.subject, text: digest.text + footer.text, html: digest.html.replace(/<\/div>$/, `${footer.html}</div>`), unsubscribeUrl: url }),
-  );
+  return sendClaimed(admin, sender, c, async () => {
+    // Only the cards the claim kept (still waiting, the founder's own).
+    const kept = new Set(c.approval_ids);
+    const digest = buildDigest({ ...input, waiting: input.waiting.filter((w) => kept.has(w.id)) });
+    const footer = emailFooter(url);
+    return sender.send({ to: founder.email!, subject: digest.subject, text: digest.text + footer.text, html: digest.html.replace(/<\/div>$/, `${footer.html}</div>`), unsubscribeUrl: url });
+  });
 }
 
 /** Time-bound cards (schedule cards) expiring in the next two hours get one email each. */
@@ -76,24 +88,23 @@ export async function sendExpiringEmails(admin: SupabaseClient, sender: EmailSen
   if (fErr) throw new Error(`profiles: ${fErr.message}`);
   const byId = new Map(((founders ?? []) as { id: string; email: string | null; timezone: string }[]).map((f) => [f.id, f]));
   let sent = 0;
+  const tokens = new Map<string, string>();
   for (const card of cards) {
     const founder = byId.get(card.user_id);
     if (!founder?.email) continue;
     try {
+      if (!tokens.has(founder.id)) tokens.set(founder.id, await token(admin, founder.id));
+      const url = unsubscribeUrl(opts.appUrl, tokens.get(founder.id)!);
       const c = await claim(admin, founder.id, "expiring", [card.id]);
       if (!c) continue;
-      const s = card.snapshot;
-      const what = typeof s.text === "string" && s.text ? s.text : typeof s.title === "string" && s.title ? s.title : "A post waits for your time";
-      const where = typeof s.platform === "string" ? ` on ${String(s.platform).toUpperCase() === "X" ? "X" : s.platform}` : "";
-      const message = expiringEmail({
-        appUrl: opts.appUrl,
-        cardId: card.id,
-        title: `${what}${where}`,
-        expiresAt: card.expires_at,
-        timezone: founder.timezone,
-        unsubscribeUrl: unsubscribeUrl(opts.appUrl, await token(admin, founder.id)),
+      const ok = await sendClaimed(admin, sender, c, async () => {
+        const s = card.snapshot;
+        const what = typeof s.text === "string" && s.text ? s.text : typeof s.title === "string" && s.title ? s.title : "A post waits for your time";
+        const where = typeof s.platform === "string" ? ` on ${String(s.platform).toUpperCase() === "X" ? "X" : s.platform}` : "";
+        const message = expiringEmail({ appUrl: opts.appUrl, cardId: card.id, title: `${what}${where}`, expiresAt: card.expires_at, timezone: founder.timezone, unsubscribeUrl: url });
+        return sender.send({ to: founder.email!, ...message });
       });
-      if (await sendClaimed(admin, sender, c, () => sender.send({ to: founder.email!, ...message }))) sent += 1;
+      if (ok) sent += 1;
     } catch (err) {
       console.warn("[notify] expiring email", card.id, err instanceof Error ? err.message : err);
     }
