@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { api } from "@/components/clipping/api";
+import { useOptionalShellState } from "@/components/shell-v2/ShellState";
 import type { ScreenName, ScreenResponse } from "@/lib/screens/registry";
 
 export type ScreenState<N extends ScreenName> =
@@ -18,6 +19,8 @@ export function useScreen<N extends ScreenName>(name: N, query: Record<string, s
   const [state, setState] = useState<ScreenState<N>>({ status: "loading" });
   const [tick, setTick] = useState(0);
   const key = new URLSearchParams(query).toString();
+  // Work the chat starts or shows (a scan, a draft, `view.open`) reloads the screen in column 3, not only the Dashboard.
+  const work = useOptionalShellState()?.workVersion ?? 0;
 
   useEffect(() => {
     let alive = true;
@@ -30,7 +33,7 @@ export function useScreen<N extends ScreenName>(name: N, query: Record<string, s
     return () => {
       alive = false;
     };
-  }, [name, key, tick]);
+  }, [name, key, tick, work]);
 
   const reload = useCallback(() => setTick((n) => n + 1), []);
   return [state, reload];

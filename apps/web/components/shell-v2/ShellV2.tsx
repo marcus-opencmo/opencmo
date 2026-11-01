@@ -339,7 +339,7 @@ function V2Frame({
                 </button>
               </div>
               {/* Hidden, not unmounted, in the editor: the CMO chat keeps its draft for the way back. */}
-              <ChatPanel ws={chatSource} onToast={setMessage} onWorkStarted={() => setWorkVersion((n) => n + 1)} />
+              <ChatPanel ws={chatSource} onToast={setMessage} onWorkStarted={() => setWorkVersion((n) => n + 1)} drivesPanel />
               {inEditor ? <div className="v2-clip-slot" ref={setClipAssistantSlot} /> : null}
             </aside>
             <Sash

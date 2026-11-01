@@ -23,6 +23,7 @@ import { CMO_SKILLS } from "@/lib/cmo/skills/index.gen";
 import { SKILL_NAMES, skillText, type SkillName } from "@/lib/cmo/skills";
 
 import { RESEARCH_TOOL_SPECS, RESEARCH_TOOLS } from "./cmo-research";
+import { PANEL_SCREENS, PanelOpenSchema, type PanelOpen } from "./panel";
 import type { ToolOutcome, ToolSpec } from "./tools";
 
 const EMPTY = { type: "object", properties: {}, additionalProperties: false };
@@ -169,6 +170,22 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     },
     strict: true,
   },
+  // Column 3 of the shell (audit 2026-11-01). Last, so the cached prompt prefix stays the same.
+  {
+    name: "open_screen",
+    description:
+      "Open a screen in the panel next to the chat, so the founder sees what you are talking about: dashboard (cards waiting), schedule, sales, writer, studio, research, brain, analytics, library or settings. Tools that start work already open their screen; use this when the founder asks to see something, or to show what you just read.",
+    schema: {
+      type: "object",
+      properties: {
+        screen: { type: "string", enum: [...PANEL_SCREENS] },
+        ids: { type: "array", items: { type: "string" }, description: "Optional ids of the rows you mean (cards, runs, threads), at most 20." },
+      },
+      required: ["screen"],
+      additionalProperties: false,
+    },
+    strict: false,
+  },
 ];
 
 const WRITES = new Set(["create_task", "remember", "set_week_goal", "update_document"]);
@@ -205,6 +222,15 @@ const goalInput = z.object({
   metric: z.enum(["posts", "replies", "views"]),
   target: z.number().int().min(1).max(1_000_000),
 });
+
+/**
+ * `view.open`: the chat panel opens this screen in column 3 when the tool succeeds. Only work the founder asked for
+ * (a task, a calendar item) and `open_screen` set it: the model reads the calendar or Approvals for its own reasoning
+ * too, and the panel must not jump while the founder is looking at something else.
+ */
+const opens = (open: PanelOpen): { view: { open: PanelOpen } } => ({ view: { open } });
+/** Where each kind of work shows up once it is started or scheduled. */
+const SCREEN_OF_AGENT = { planner: "dashboard", x_writer: "writer", sales: "sales", research: "research", video: "schedule" } as const;
 
 const invalid = (message: string): ToolOutcome => ({ ok: false, content: JSON.stringify({ INVALID_INPUT: message }), summary: "Invalid request" });
 
@@ -286,14 +312,14 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
             p_reason: "Added by your CMO",
             p_body: { brief: task.brief },
           });
-          return { ok: true, content: JSON.stringify({ scheduled: true, item_id: item.id, day: item.day }), summary: task.agent === "video" ? "Added a video task to the calendar" : `Scheduled for ${item.day}` };
+          return { ok: true, content: JSON.stringify({ scheduled: true, item_id: item.id, day: item.day }), summary: task.agent === "video" ? "Added a video task to the calendar" : `Scheduled for ${item.day}`, ...opens({ screen: "schedule" }) };
         }
         const kind = JOB_OF[task.agent as keyof typeof JOB_OF];
         const input =
           kind === "post_draft" ? { idea: task.brief, brief: task.brief, ...(task.thread ? { thread: true } : {}) } : kind === "competitor_research" ? { brief: task.brief, handles: task.handles ?? [] } : { brief: task.brief };
         const run = await startCmoRun(supabase, kind, turn.brain === "claude" ? { ...input, brain: "claude" } : input);
         const label = { plan_week: "Planning the week", post_draft: task.thread ? "Writing an X thread" : "Drafting a post for X", sales_scan: "Scanning Reddit", competitor_research: "Researching competitors" }[kind];
-        return { ok: true, content: JSON.stringify({ started: true, run_id: run.id, status: run.status }), summary: label };
+        return { ok: true, content: JSON.stringify({ started: true, run_id: run.id, status: run.status }), summary: label, ...opens({ screen: SCREEN_OF_AGENT[task.agent], ids: [run.id] }) };
       } catch (error) {
         return { ok: false, content: JSON.stringify({ error: error instanceof Error ? error.message : "Could not start this task." }), summary: "Could not start" };
       }
@@ -360,6 +386,11 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         content: JSON.stringify({ proposed: true, week, note: "The founder approves or edits it on the goal card in Approvals." }),
         summary: "Proposed a weekly goal",
       };
+    }
+    case "open_screen": {
+      const parsed = PanelOpenSchema.pick({ screen: true, ids: true }).safeParse(input);
+      if (!parsed.success) return invalid(`screen must be one of: ${PANEL_SCREENS.join(", ")}; ids at most 20 ids from your tools.`);
+      return { ok: true, content: JSON.stringify({ opened: parsed.data.screen }), summary: `Opened ${parsed.data.screen}`, ...opens(parsed.data) };
     }
     default:
       return { ok: false, content: JSON.stringify({ error: `Unknown tool ${name}.` }), summary: "Unknown tool" };

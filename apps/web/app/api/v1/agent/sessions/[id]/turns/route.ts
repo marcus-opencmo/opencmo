@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { withApi } from "@/lib/api/handler";
+import { ScreenContextSchema } from "@/lib/agent/panel";
 import { startTurn } from "@/lib/agent/session";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ const body = z.object({
       frame: z.string().max(600_000).regex(/^[A-Za-z0-9+/=]+$/, "frame: base64 only").optional(),
       // Tên giọng (chữ, số, cách) — đi thẳng vào lời nhắn cho model.
       voice: z.string().trim().min(1).max(40).regex(/^[A-Za-z0-9 ._-]+$/, "voice: letters and numbers only").optional(),
+      // The CMO chat: the screen open in column 3, so "this one" has a referent.
+      screen: ScreenContextSchema.optional(),
     })
     .optional(),
 });

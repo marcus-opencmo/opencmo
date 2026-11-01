@@ -99,5 +99,5 @@ function toMcp(spec: ToolSpec): CmoMcpTool {
   };
 }
 
-// CMO_TOOL_SPECS already ends with the research tools.
-export const CMO_TOOLS: CmoMcpTool[] = CMO_TOOL_SPECS.map(toMcp);
+// CMO_TOOL_SPECS already holds the research tools. `open_screen` moves the in-app panel; an MCP client has none.
+export const CMO_TOOLS: CmoMcpTool[] = CMO_TOOL_SPECS.filter((spec) => spec.name !== "open_screen").map(toMcp);

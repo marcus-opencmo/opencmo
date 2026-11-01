@@ -9,6 +9,7 @@
  * demo; còn lại ô nhập tắt và nói rõ lý do.
  */
 
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, jsonBody } from "@/components/clipping/api";
@@ -16,6 +17,7 @@ import { readStream } from "@/components/clipping/agent-stream";
 import { ContinueInClaude } from "@/components/editor/assistant/ContinueInClaude";
 import { Markdown } from "@/components/editor/assistant/Markdown";
 import { Icon } from "@/components/icons";
+import { panelHref, PanelOpenSchema, screenOfPath, type ScreenContext } from "@/lib/agent/panel";
 import type { ChatMessage, Workspace } from "@/lib/cmo/workspace";
 
 import { ago } from "./time";
@@ -56,8 +58,29 @@ const CARD_TOOLS = new Set(["create_task", "set_week_goal", "update_document"]);
 /** What the chat reads of the workspace; the v2 Dashboard's ask sheet passes only this. */
 export type ChatSource = Pick<Workspace, "chat" | "chatTitle" | "demo"> & { live: Pick<Workspace["live"], "chat"> };
 
-export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onToast: (message: string) => void; onWorkStarted: () => void | Promise<void> }) {
+/**
+ * `drivesPanel`: the chat sits in the v2 shell, so a tool's `view.open` opens that screen in column 3 and each turn says
+ * which screen is open. Off elsewhere (the classic workspace, the Dashboard's ask sheet), where there is no panel.
+ */
+export function ChatPanel({
+  ws,
+  onToast,
+  onWorkStarted,
+  drivesPanel = false,
+}: {
+  ws: ChatSource;
+  onToast: (message: string) => void;
+  onWorkStarted: () => void | Promise<void>;
+  drivesPanel?: boolean;
+}) {
   const live = ws.live.chat;
+  const router = useRouter();
+  const pathname = usePathname();
+  // Read inside the stream callback, which outlives the render it was made in.
+  const pathRef = useRef(pathname);
+  pathRef.current = pathname;
+  // The rows the last `view.open` put on screen; sent back with the next turn while that screen is still open.
+  const shown = useRef<{ path: string; ids: string[] } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(ws.chat);
   const [title, setTitle] = useState(ws.chatTitle);
   const [session, setSession] = useState<SessionView | null>(null);
@@ -119,6 +142,19 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, working]);
 
+  /** Opens a tool's screen in column 3; true when the result named a screen, so that screen reloads. */
+  const openPanel = useCallback(
+    (open: unknown): boolean => {
+      const href = panelHref(open);
+      if (!href) return false;
+      const path = href.split("?")[0]!;
+      shown.current = { path, ids: PanelOpenSchema.parse(open).ids ?? [] };
+      if (pathRef.current !== path) router.push(href);
+      return true;
+    },
+    [router],
+  );
+
   const stream = useCallback(
     async (sessionId: string, path: string, body: unknown, prompt: string | null) => {
       setBusy(true);
@@ -142,7 +178,8 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
           if (event === "tool_start") setWorking(workingLabel(String(data.name)));
           if (event === "tool_result") {
             setWorking(null);
-            if (CARD_TOOLS.has(String(data.name)) && data.ok) void onWorkStarted();
+            const opened = data.ok && drivesPanel ? openPanel((data.view as { open?: unknown } | undefined)?.open) : false;
+            if (data.ok && (opened || CARD_TOOLS.has(String(data.name)))) void onWorkStarted();
           }
           if (event === "done") done = data as Done;
         });
@@ -159,8 +196,16 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
       if (done.status === "awaiting_continue" && done.reason === "budget") setExtend(done.extend ?? 10);
       if (done.status === "failed" && done.error) append(done.error);
     },
-    [onWorkStarted],
+    [onWorkStarted, drivesPanel, openPanel],
   );
+
+  /** The screen in column 3, and the rows a tool put there if it is still the same screen. */
+  function screenAttachment(): { attachments: { screen: ScreenContext } } | Record<string, never> {
+    const name = screenOfPath(pathname);
+    if (!name) return {};
+    const ids = shown.current?.path === pathname ? shown.current.ids : [];
+    return { attachments: { screen: { name, ...(ids.length ? { ids } : {}) } } };
+  }
 
   async function send(text: string) {
     const value = text.trim();
@@ -186,7 +231,7 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
       onToast(error instanceof ApiError ? error.message : "Your CMO is not available right now.");
       return;
     }
-    await stream(current.id, "turns", { prompt: value }, value);
+    await stream(current.id, "turns", { prompt: value, ...(drivesPanel ? screenAttachment() : {}) }, value);
   }
 
   async function newChat() {

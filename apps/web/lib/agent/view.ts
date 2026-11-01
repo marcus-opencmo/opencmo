@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@/lib/api/handler";
 
 import { formatFor } from "./model";
+import type { PanelOpen } from "./panel";
 
 export type PlanItem = { text: string; status: "pending" | "active" | "done" };
 
@@ -18,7 +19,7 @@ export type Action = {
   summary: string;
   /** Input đã rút gọn: dòng tool mở ra xem được, như panel chat của DS. */
   input?: unknown;
-  view?: { plan?: PlanItem[]; touched?: string[]; exports?: { frame: string; task_id: string }[] };
+  view?: { plan?: PlanItem[]; touched?: string[]; exports?: { frame: string; task_id: string }[]; open?: PanelOpen };
   /** Old project chats' `apply_to_clips` (removed with clipping): the clips that failed and the ops, shown read-only. */
   failed?: { clip_id: string; label: string; error?: string }[];
   ops?: unknown[];
