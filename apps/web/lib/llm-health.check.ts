@@ -9,7 +9,8 @@ import assert from "node:assert/strict";
 import Anthropic from "@anthropic-ai/sdk";
 import { ApiError } from "@google/genai";
 
-import { clearHealth, isDown, markDown, outage, withFailover } from "./llm-health";
+import { clearHealth, healthyFirst, isDown, markDown, outage, withFailover } from "./llm-health";
+import { OpenAiCompatError } from "./openai-compat";
 
 const anthropicError = (status: number, message: string) => Anthropic.APIError.generate(status, { type: "error", error: { type: "x", message } }, message, new Headers());
 
@@ -94,6 +95,21 @@ async function main(): Promise<void> {
   const keyed: Keyed[] = [{ provider: "anthropic", model: "claude-sonnet-5-5", ownKey: true }, { provider: "gemini", model: "gemini-pro-latest" }];
   assert.equal(await withFailover(keyed, async (agent) => { if (agent.provider === "anthropic") throw credit; return "ok"; }, (agent) => !agent.ownKey), "ok");
   assert.equal(isDown("anthropic", "claude-sonnet-5-5"), false);
+
+  // Review R6: Gemini's raw fetch failure fails over; a compat 404 is one model's, not the provider's.
+  assert.equal(outage(new TypeError("fetch failed")), "busy", "Gemini unreachable");
+  assert.equal(outage(new TypeError("x is not a function")), null, "a bug is not an outage");
+  assert.equal(outage(new OpenAiCompatError("The model `old-model` does not exist", 404)), "quota");
+  clearHealth();
+  markDown("openai", "quota", "old-model");
+  assert.equal(isDown("openai", "old-model"), true);
+  assert.equal(isDown("openai", "other-model"), false, "the provider's other models still run");
+  // An agent on its own key is never skipped because the shared key is out.
+  clearHealth();
+  markDown("anthropic", "account", "claude-sonnet-5-5");
+  const own: Keyed[] = [{ provider: "anthropic", model: "claude-sonnet-5-5", ownKey: true }, { provider: "gemini", model: "gemini-pro-latest" }];
+  assert.equal(healthyFirst(own, (agent) => !agent.ownKey)[0]!.provider, "anthropic", "its own key still goes first");
+  assert.equal(healthyFirst(own)[0]!.provider, "gemini", "shared candidates still skip a down provider");
 
   // One provider only: no failover, the error passes through.
   clearHealth();

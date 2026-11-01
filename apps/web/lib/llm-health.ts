@@ -44,10 +44,17 @@ export function outage(error: unknown): Outage | null {
     return error.status === 429 || error.status >= 500 ? "busy" : null;
   }
   if (error instanceof OpenAiCompatError) {
-    // 404: the model id is not on this endpoint, which only a configuration change fixes.
-    if (error.status === 401 || error.status === 402 || error.status === 403 || error.status === 404) return "account";
+    // 404: this model id is not on the endpoint. It says nothing about the key or the provider's other models, so it
+    // is remembered for this model only (quota-like), not as an account outage that would block all of them (review R6).
+    if (error.status === 404) return "quota";
+    if (error.status === 401 || error.status === 402 || error.status === 403) return "account";
     if (error.status === 429 && /per day|\(TPD\)|\(RPD\)|daily/i.test(error.message)) return "quota";
     return error.status === 0 || error.status === 429 || error.status >= 500 ? "busy" : null;
+  }
+  // @google/genai rethrows the raw fetch failure (DNS, refused, reset) instead of an ApiError: the provider could not be
+  // reached, so the call fails over like Anthropic's APIConnectionError (review R6).
+  if (error instanceof TypeError && /fetch failed|network|ECONNREFUSED|ENOTFOUND|ECONNRESET/i.test(`${error.message} ${String((error as { cause?: unknown }).cause ?? "")}`)) {
+    return "busy";
   }
   return null;
 }
@@ -78,9 +85,12 @@ export function clearHealth(): void {
 
 export type Candidate = { provider: LlmProvider; model: string };
 
-/** `candidates` in configured order, healthy ones first. All down: the configured order, to try anyway. */
-export function healthyFirst<A extends Candidate>(candidates: A[]): A[] {
-  const up = candidates.filter((candidate) => !isDown(candidate.provider, candidate.model));
+/**
+ * `candidates` in configured order, healthy ones first. All down: the configured order, to try anyway. A candidate on a
+ * key of its own (`shared` false) is never skipped: the shared key's outage says nothing about it (review R6).
+ */
+export function healthyFirst<A extends Candidate>(candidates: A[], shared: (candidate: A) => boolean = () => true): A[] {
+  const up = candidates.filter((candidate) => !shared(candidate) || !isDown(candidate.provider, candidate.model));
   return up.length ? up : candidates;
 }
 
@@ -97,7 +107,7 @@ export async function withFailover<A extends Candidate, T>(
   call: (candidate: A) => Promise<T>,
   shared: (candidate: A) => boolean = () => true,
 ): Promise<T> {
-  const order = healthyFirst(candidates);
+  const order = healthyFirst(candidates, shared);
   let first: unknown;
   for (const [index, candidate] of order.entries()) {
     try {

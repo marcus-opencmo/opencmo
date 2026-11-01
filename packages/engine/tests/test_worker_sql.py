@@ -229,7 +229,10 @@ def test_failed_upload_source_stays_live_within_retention(user):
 # thiếu một revoke ở đây là người dùng tự hoàn tiền được cho job của chính mình.
 WORKER_ONLY_RPCS = (
     "public.refund_job(uuid, text)",
-    "public.claim_next_job()",
+    # `claim_next_job()` (no lease) was dropped in review R6; the claim with a lease stays worker-only.
+    "public.claim_next_task(text[], int, int)",
+    "public.claim_task(uuid, int, int)",
+    "public.cmo_dispatch_count(int)",
     "public.claim_job_attempt(uuid, int)",
     "public.claim_next_job_attempt(int)",
     "public.heartbeat_job(uuid, uuid, int)",

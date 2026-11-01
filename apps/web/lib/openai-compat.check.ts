@@ -65,7 +65,8 @@ async function main() {
     // Outages move on; the request's own problems do not.
     const cases: [Reply, string | null][] = [
       [{ status: 401, body: { error: { message: "Invalid API Key" } } }, "account"],
-      [{ status: 404, body: { error: { message: "The model `x` does not exist" } } }, "account"],
+      // Review R6: one missing model id is that model's problem (quota-like), not the provider's key.
+      [{ status: 404, body: { error: { message: "The model `x` does not exist" } } }, "quota"],
       [{ status: 429, body: { error: { message: "Rate limit reached on tokens per minute (TPM)" } } }, "busy"],
       [{ status: 429, body: { error: { message: "Rate limit reached on tokens per day (TPD)" } } }, "quota"],
       [{ status: 503, body: { error: { message: "over capacity" } } }, "busy"],

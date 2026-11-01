@@ -15,23 +15,23 @@ class TasksMixin(_Http):
     # 20260914093000_web_rpc_worker.sql): claim sinh attempt mới, heartbeat gia
     # hạn, complete/fail chỉ ghi cho attempt hiện hành và replay được.
 
-    def claim_next_task(self, kinds: list[str]) -> Task | None:
-        """Nhận task `queued` cũ nhất trong các `kinds`. KHÔNG retry: timeout có
-        thể đã claim; lease hết hạn sẽ trả task đó về hàng đợi."""
-        resp = self._rpc(
-            "claim_next_task",
-            {"p_kinds": kinds, "p_lease_seconds": LEASE_SECONDS},
-            idempotent=False,
-        )
+    def claim_next_task(self, kinds: list[str], max_running: int | None = None) -> Task | None:
+        """Takes the next `queued` task of `kinds`: the user with the fewest running tasks first, then kind order and
+        age. With `max_running`, nothing while that many tasks already run (the worker's container cap). No retry: a
+        timeout may have claimed; an expired lease puts the task back in the queue."""
+        params: dict[str, object] = {"p_kinds": kinds, "p_lease_seconds": LEASE_SECONDS}
+        if max_running is not None:
+            params["p_max_running"] = max_running
+        resp = self._rpc("claim_next_task", params, idempotent=False)
         return _first_task(resp.json())
 
-    def claim_task(self, task_id: str) -> Task | None:
-        """Chiếm đúng một task đã có id (đường 'submit' web đánh thức worker)."""
-        resp = self._rpc(
-            "claim_task",
-            {"p_task_id": task_id, "p_lease_seconds": LEASE_SECONDS},
-            idempotent=False,
-        )
+    def claim_task(self, task_id: str, max_running: int | None = None) -> Task | None:
+        """Claims one task by id (the web's 'submit' path). With `max_running`, nothing while that many tasks run:
+        the task stays queued and the sweep takes it when a container frees up."""
+        params: dict[str, object] = {"p_task_id": task_id, "p_lease_seconds": LEASE_SECONDS}
+        if max_running is not None:
+            params["p_max_running"] = max_running
+        resp = self._rpc("claim_task", params, idempotent=False)
         return _first_task(resp.json())
 
     def heartbeat_task(self, task_id: str, attempt_id: str | None) -> bool:
