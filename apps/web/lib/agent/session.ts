@@ -10,7 +10,7 @@ import { clipContext } from "@/lib/api/clips";
 import { notFound, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 
 import { resumeTurn, runTurn, type Answer, type Turn } from "./loop";
-import { agentChatProvider, kindOf, providerForModel } from "./model";
+import { agentChatProvider, availableModels, kindOf, providerForModel } from "./model";
 import type { Provider } from "./providers/types";
 import { loadCatalog } from "@/lib/generate/models";
 
@@ -34,7 +34,8 @@ export async function loadSession(supabase: SupabaseClient, id: string | undefin
   const family = kindOf(session.model);
   const provider =
     session.scope === "cmo" ? (family === "fake" ? agentChatProvider("cmo") : agentChatProvider("cmo", family)) : providerForModel(session.model);
-  if (!provider && kindOf(session.model) === "gemini") throw new ApiError(409, "This chat used a model that is no longer available. Start a new chat.");
+  // The chat's model is gone but another one runs (a bumped ANTHROPIC_MODEL, a removed Gemini): a new chat works now.
+  if (!provider && availableModels().length) throw new ApiError(409, "This chat used a model that is no longer available. Start a new chat.");
   if (!provider) throw new ApiError(503, "The assistant is not available yet.");
   return { session, provider };
 }

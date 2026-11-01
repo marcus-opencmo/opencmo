@@ -196,7 +196,10 @@ function V2Frame({
     setPanelHidden(false);
     setChatOpen(true);
     // After the drawer (if any) is shown: a hidden textarea cannot take focus.
-    requestAnimationFrame(() => chatColumn.current?.querySelector<HTMLTextAreaElement>("textarea")?.focus());
+    // The visible one: in the editor the CMO chat's textarea is hidden and the clip Assistant's is below it.
+    requestAnimationFrame(() =>
+      [...(chatColumn.current?.querySelectorAll<HTMLTextAreaElement>("textarea") ?? [])].find((area) => area.offsetParent !== null)?.focus(),
+    );
   }, []);
   const [workVersion, setWorkVersion] = useState(0);
   const [clipAssistantSlot, setClipAssistantSlot] = useState<HTMLElement | null>(null);
@@ -331,6 +334,7 @@ function V2Frame({
               onLive={(rail) => applyColumns({ ...columns, rail })}
               onCommit={(rail) => choose({ rail })}
               onReset={() => choose({ rail: RAIL.base })}
+              disabled={columns.railCollapsed}
             />
             <aside className="v2-chatcol" id="v2-chat" aria-label={inEditor ? "Assistant" : "Your CMO"} data-clip={inEditor ? "" : undefined} ref={chatColumn}>
               <div className="v2-chatcol-head">

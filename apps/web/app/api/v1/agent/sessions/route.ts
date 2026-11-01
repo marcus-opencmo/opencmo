@@ -75,7 +75,8 @@ export const GET = withApi({}, async ({ supabase, request }) => {
   }
   if (sessionId !== null && !UUID.test(sessionId)) throw new ApiError(422, "session_id: Invalid");
 
-  const model = pickModel(params.get("model"));
+  // A CMO chat is opened on the `cmo` agent's model (POST below), not the editor Assistant's: look it up the same way.
+  const model = cmo ? (agentChatProvider("cmo")?.model ?? null) : pickModel(params.get("model"));
   let query = supabase.from("agent_sessions").select("id, clip_id, job_id, model, lock_until");
   query = cmo ? query.eq("scope", "cmo") : query.eq("clip_id", clipId!);
   if (sessionId) query = query.eq("id", sessionId);

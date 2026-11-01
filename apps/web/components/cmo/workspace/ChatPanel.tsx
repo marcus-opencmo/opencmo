@@ -24,7 +24,7 @@ import { ago } from "./time";
 
 const SUGGESTIONS = ["Plan my week", "Draft a post for X about what we shipped", "What should I post today?", "Who is my ideal customer?"];
 
-type TurnView = { number: number; prompt: string; status: string; error: string | null; reply: string; actions: { name: string; ok: boolean; summary: string }[] };
+type TurnView = { number: number; prompt: string; status: string; pause_reason?: string | null; error: string | null; reply: string; actions: { name: string; ok: boolean; summary: string }[] };
 type SessionView = { id: string; turns: TurnView[] };
 type PastSession = { id: string; title: string; created_at: string };
 type Loaded = { available: boolean; session: SessionView | null; sessions: PastSession[] };
@@ -37,7 +37,11 @@ function toMessages(session: SessionView | null): ChatMessage[] {
     {
       id: `${turn.number}-c`,
       role: "cmo" as const,
-      text: turn.reply || (turn.status === "failed" ? (turn.error ?? "Something went wrong. Please try again.") : turn.actions.map((a) => a.summary).join(". ")),
+      // A turn that failed after some text keeps both, as it showed live.
+      text:
+        turn.status === "failed" && turn.reply && turn.error
+          ? `${turn.reply}\n\n${turn.error}`
+          : turn.reply || (turn.status === "failed" ? (turn.error ?? "Something went wrong. Please try again.") : turn.actions.map((a) => a.summary).join(". ")),
     },
   ]);
 }
@@ -45,6 +49,14 @@ function toMessages(session: SessionView | null): ChatMessage[] {
 /** Nhãn "đang làm" theo tool CMO đang gọi (research đọc mạng xã hội, create_task giao việc). */
 function workingLabel(tool: string): string {
   if (tool === "create_task") return "Handing it to an agent…";
+  if (tool === "read_site") return "Reading the website…";
+  if (tool === "search_hackernews") return "Reading Hacker News…";
+  if (tool === "read_skill") return "Reading a playbook…";
+  if (tool === "get_run_result") return "Checking on the team…";
+  if (tool === "update_document") return "Updating your document…";
+  if (tool === "remember") return "Saving to memory…";
+  if (tool === "set_week_goal") return "Proposing a goal…";
+  if (tool === "open_screen") return "Opening it on the right…";
   if (/reddit|subreddit/.test(tool)) return "Reading Reddit…";
   if (tool === "x_profile" || tool === "find_outliers") return "Reading X…";
   if (tool === "search_videos" || tool === "get_transcript") return "Watching videos…";
@@ -91,6 +103,8 @@ export function ChatPanel({
   const [rated, setRated] = useState<Record<string, "up" | "down">>({});
   const [past, setPast] = useState<PastSession[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // A session whose last turn paused on time or steps before a reload: continued once the stream is ready.
+  const [resume, setResume] = useState<string | null>(null);
   // Lần tải đầu: khung chờ thay cho lời chào, để lời chào không nháy rồi bị thay bằng cuộc chat cũ.
   const [loading, setLoading] = useState(live);
   const listRef = useRef<HTMLOListElement>(null);
@@ -103,7 +117,11 @@ export function ChatPanel({
     setMessages(toMessages(loaded.session));
     setTitle(loaded.session?.turns[0]?.prompt.slice(0, 60) ?? null);
     setPast(loaded.sessions ?? []);
-    setExtend(null);
+    // A pause outlives a reload: 'budget' needs the founder's Continue, 'time' and 'steps' go on by themselves.
+    const last = loaded.session?.turns.at(-1);
+    const paused = last?.status === "awaiting_continue" ? last.pause_reason : null;
+    setExtend(paused === "budget" ? 10 : null);
+    if (loaded.session && (paused === "time" || paused === "steps")) setResume(loaded.session.id);
   }, []);
 
   useEffect(() => {
@@ -163,7 +181,11 @@ export function ChatPanel({
       if (prompt !== null) {
         setMessages((m) => [...m, { id: `${Date.now()}-u`, role: "user", text: prompt }, { id: replyId, role: "cmo", text: "" }]);
       } else {
-        setMessages((m) => [...m, { id: replyId, role: "cmo", text: "" }]);
+        // A continuation writes into the bubble it continues, so an empty one is not left saying "Thinking…".
+        setMessages((m) => {
+          const last = m.at(-1);
+          return last?.role === "cmo" ? [...m.slice(0, -1), { ...last, id: replyId }] : [...m, { id: replyId, role: "cmo", text: "" }];
+        });
       }
       const append = (more: string) => setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, text: msg.text + more } : msg)));
       let done: Done = {};
@@ -189,12 +211,12 @@ export function ChatPanel({
         setWorking(null);
         setBusy(false);
       }
-      if (done.status === "awaiting_continue" && done.reason === "time") {
+      if (done.status === "awaiting_continue" && (done.reason === "time" || done.reason === "steps")) {
         await stream(sessionId, "continue", {}, null);
         return;
       }
       if (done.status === "awaiting_continue" && done.reason === "budget") setExtend(done.extend ?? 10);
-      if (done.status === "failed" && done.error) append(done.error);
+      if (done.status === "failed" && done.error) append(`\n\n${done.error}`);
     },
     [onWorkStarted, drivesPanel, openPanel],
   );
@@ -206,6 +228,12 @@ export function ChatPanel({
     const ids = shown.current?.path === pathname ? shown.current.ids : [];
     return { attachments: { screen: { name, ...(ids.length ? { ids } : {}) } } };
   }
+
+  useEffect(() => {
+    if (!resume || busy) return;
+    setResume(null);
+    void stream(resume, "continue", {}, null);
+  }, [resume, busy, stream]);
 
   async function send(text: string) {
     const value = text.trim();

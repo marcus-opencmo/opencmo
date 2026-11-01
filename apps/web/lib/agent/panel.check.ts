@@ -54,6 +54,17 @@ async function main() {
   assert.ok(!wrong.ok && wrong.content.includes("INVALID_INPUT"));
   assert.equal(wrong.view, undefined);
 
+  // A refused write is a tool error the model can explain, never an exception that ends the turn (review R1).
+  const refusing = { rpc: async () => ({ data: null, error: { message: "This week's goal is already approved. Edit it on the goal card.", code: "P0001" } }) } as unknown as SupabaseClient;
+  const goal = await runCmoTool(refusing, "set_week_goal", { week: "this", goal: "Post five times", metric: "posts", target: 5 });
+  assert.ok(!goal.ok, "refused, not thrown");
+  assert.match(goal.content, /already approved/);
+  // Inherited keys are not fields: no TypeError from `in`.
+  for (const key of ["constructor", "__proto__", "toString"]) {
+    const outcome = await runCmoTool(noDb, "update_document", { kind: "product", fields_json: `{"${key}":"x"}` });
+    assert.ok(!outcome.ok && outcome.content.includes("INVALID_INPUT"), key);
+  }
+
   console.log("panel.check ok");
 }
 
