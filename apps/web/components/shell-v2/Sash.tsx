@@ -18,6 +18,7 @@ export function Sash({
   onLive,
   onCommit,
   onReset,
+  disabled = false,
 }: {
   label: string;
   controls: string;
@@ -27,6 +28,8 @@ export function Sash({
   onLive: (value: number) => void;
   onCommit: (value: number) => void;
   onReset: () => void;
+  /** Kept in the grid but inert: a collapsed rail has no width to set. */
+  disabled?: boolean;
 }) {
   const drag = useRef<{ x: number; from: number; last: number } | null>(null);
   const clamp = (next: number) => Math.round(Math.min(max, Math.max(min, next)));
@@ -68,6 +71,7 @@ export function Sash({
     onCommit(clamp(next));
   };
 
+  if (disabled) return <div className="v2-sash" aria-hidden="true" data-disabled="" />;
   return (
     <div
       className="v2-sash"

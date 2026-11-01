@@ -135,7 +135,7 @@ function build(row: ApprovalRow): Built | null {
       const target = typeof s.target === "number" ? s.target : 1;
       return {
         title: clip(str(s.goal), 300),
-        summary: `This week's goal: ${target} ${metric}. Approving it lets the plan aim at it.`,
+        summary: `Goal for the week of ${str(s.week)}: ${target} ${metric}. Approving it lets the plan aim at it.`,
         meta: `Week of ${str(s.week)}`,
         body: { kind: "goal", goalId: row.ref_id, week: str(s.week), goal: clip(str(s.goal), 200), metric, target, plan: [], budgetCredits: null },
       };
@@ -274,7 +274,8 @@ function build(row: ApprovalRow): Built | null {
           kind: "schedule",
           slotId: v.slot_id,
           what: clip(what, 200),
-          where: { platform: v.platform, handle: v.handle ?? "" },
+          // Handles are up to 100 characters; the card's contract allows 80, and one bad card would empty the queue.
+          where: { platform: v.platform, handle: clip(v.handle ?? "", 80) },
           accountId: v.account_id,
           avatarUrl: null,
           mode: v.mode,

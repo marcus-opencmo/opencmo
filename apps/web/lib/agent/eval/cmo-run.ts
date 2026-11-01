@@ -50,6 +50,11 @@ export function recordingClient(tables: Record<string, Row[]>): { client: Supaba
         rows = rows.filter((row) => !(column in row) || row[column] === value);
         return query;
       },
+      // Paged reads (`history`, the session view): one page holds every fixture row.
+      range: (from: number, to: number) => {
+        rows = rows.slice(from, to + 1);
+        return query;
+      },
       maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
       single: async () => ({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result()).then(resolve, reject),

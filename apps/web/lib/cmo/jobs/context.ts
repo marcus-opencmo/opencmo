@@ -63,9 +63,10 @@ export async function recall(store: CmoStore, userId: string, limit: number, top
  */
 export function insightBlock(insight: CompetitorInsight | null): string {
   if (!insight || Date.now() - new Date(insight.measured_at).getTime() > 21 * 86_400_000) return "";
-  const hooks = insight.hooks.map((h) => `- ${h.pattern} (${h.lift}x, e.g. "${h.example}") ${h.url}`).join("\n");
-  const ideas = insight.ideas.map((i) => `- ${i.idea} (from ${i.inspired_by})`).join("\n");
-  return `<what_works_now source="competitor research ${insight.measured_at.slice(0, 10)}">\nHooks:\n${hooks}\nFormats: ${insight.formats.join("; ")}\nIdeas:\n${ideas}\n</what_works_now>`;
+  // Competitors' posts are outside text: escaped so a post cannot close the tag and speak as the founder.
+  const hooks = insight.hooks.map((h) => `- ${escapeForTag(h.pattern)} (${h.lift}x, e.g. "${escapeForTag(h.example)}") ${escapeForTag(h.url)}`).join("\n");
+  const ideas = insight.ideas.map((i) => `- ${escapeForTag(i.idea)} (from ${escapeForTag(i.inspired_by)})`).join("\n");
+  return `<what_works_now source="competitor research ${insight.measured_at.slice(0, 10)}">\nHooks:\n${hooks}\nFormats: ${escapeForTag(insight.formats.join("; "))}\nIdeas:\n${ideas}\n</what_works_now>`;
 }
 
 /**

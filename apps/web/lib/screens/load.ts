@@ -168,7 +168,9 @@ function orderRows(orders: OrderDb[], cards: Map<string, string>, rootId: string
 async function weekGoal(supabase: SupabaseClient, week = mondayOf()): Promise<string | null> {
   const r = await supabase.from("cmo_goals").select("goal").eq("week", week).eq("status", "approved").maybeSingle();
   if (r.error) throw new Error(`cmo_goals: ${r.error.message}`);
-  return (r.data as { goal: string } | null)?.goal ?? null;
+  // Goals saved before the 200-character cap would fail the week strip's contract and blank it.
+  const goal = (r.data as { goal: string } | null)?.goal;
+  return goal ? clip(goal, 200) : null;
 }
 
 const OPEN: ReadonlySet<string> = new Set(["queued", "running", "waiting_founder", "waiting_order", "deferred"]);
@@ -186,7 +188,8 @@ async function dashboard({ supabase, userId }: LoadContext): Promise<Partial<Das
       const open = orders.filter((o) => o.status !== "cancelled");
       const today = now.toISOString().slice(0, 10);
       const drafts = must(
-        await supabase.from("content_items").select("body").eq("department", "post").gte("updated_at", `${today}T00:00:00Z`).in("status", ["in_review", "approved", "published"]),
+        // Drafted today: approving or publishing an older draft is not new writing.
+        await supabase.from("content_items").select("body").eq("department", "post").gte("created_at", `${today}T00:00:00Z`).in("status", ["in_review", "approved", "published"]),
         "content_items",
       ) as { body: { text?: string } }[];
       const words = drafts.reduce((n, d) => n + (typeof d.body.text === "string" ? d.body.text.split(/\s+/).filter(Boolean).length : 0), 0);
@@ -258,7 +261,7 @@ async function dashboard({ supabase, userId }: LoadContext): Promise<Partial<Das
         .map((r) => ({
           id: r.id,
           at: new Date(r.published_at ?? r.decided_at ?? now).toISOString(),
-          where: { platform: "x" as const, handle: "your account" },
+          where: { platform: screenPlatform(r.platform, "x"), handle: "your account" },
           text: (r.final_text ?? r.idea).slice(0, 300),
           // Assisted posting (W3): an approved X post waits for the founder to post it on X.
           status: r.status === "published" ? ("posted" as const) : ("scheduled" as const),
@@ -427,7 +430,7 @@ async function brain({ supabase, userId }: LoadContext): Promise<Partial<BrainSc
             : `${mine.filter((k) => k.status === "done").length} of ${mine.length} orders done.`;
         return {
           week: r.week,
-          goal: g?.goal ?? null,
+          goal: g?.goal ? clip(g.goal, 200) : null,
           result,
           done: mine.filter((k) => k.status === "done").length,
           total: mine.length,
@@ -863,14 +866,16 @@ async function research({ supabase }: LoadContext): Promise<Partial<ResearchScre
       }[];
       const latestPerItem = [...new Map(metrics.map((m) => [m.item_id, m])).values()].slice(0, 10);
       if (!latestPerItem.length) return [];
-      const items = must(await supabase.from("content_items").select("id, idea, final_text").in("id", latestPerItem.map((m) => m.item_id)), "content_items") as {
+      const items = must(await supabase.from("content_items").select("id, idea, final_text, platform").in("id", latestPerItem.map((m) => m.item_id)), "content_items") as {
         id: string;
         idea: string;
         final_text: string | null;
+        platform: string | null;
       }[];
       return latestPerItem.map((m) => {
         const item = items.find((i) => i.id === m.item_id);
-        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "X post").slice(0, 200), platform: "x" as const, views: orNull(m.views), replies: orNull(m.replies) };
+        // P6 measures Threads, LinkedIn and video posts too, not only X.
+        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "Your post").slice(0, 200), platform: screenPlatform(item?.platform, "x"), views: orNull(m.views), replies: orNull(m.replies) };
       });
     },
   });

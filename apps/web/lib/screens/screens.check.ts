@@ -241,11 +241,6 @@ check("a snapshot never holds a signed URL", () => {
   for (const snapshot of STUDIO_SNAPSHOTS) assert.doesNotMatch(JSON.stringify(snapshot), /https?:\/\//, snapshot.kind);
 });
 
-if (failures.length) {
-  console.error(`screens.check: ${failures.length} failed\n  ${failures.join("\n  ")}`);
-  process.exit(1);
-}
-console.log(`screens.check: ${SCREEN_NAMES.length} screens, ${ALL_KINDS.length + STATE_CARDS.length} cards ok`);
 
 check("cards: a look check's note reaches the video card (P6 S4), and only when the snapshot has one", () => {
   const video = (look?: Record<string, unknown>) =>
@@ -288,3 +283,17 @@ check("cards: an X thread reaches the post card, and an HN reply says where it i
   void ScheduleSnapshotSchema.parse({ ...SCHEDULE_SNAPSHOT, thread: long });
   assert.equal(ScheduleSnapshotSchema.safeParse({ ...SCHEDULE_SNAPSHOT, thread: ["x".repeat(281), ...thread.slice(1)] }).success, false, "281 is too long");
 });
+
+check("cards: a 100-character handle still makes a valid schedule card (the queue must not empty)", () => {
+  const card = approvalToCard(row("schedule", { ...SCHEDULE_SNAPSHOT, handle: "h".repeat(100) }, { department: "schedule", ref_kind: "schedule_slot" }));
+  assert.ok(card && card.body.kind === "schedule");
+  ApprovalCardSchema.parse(card);
+  assert.equal(card.body.where.handle.length, 80);
+});
+
+// Last: a check registered after this gate could never fail the script.
+if (failures.length) {
+  console.error(`screens.check: ${failures.length} failed\n  ${failures.join("\n  ")}`);
+  process.exit(1);
+}
+console.log(`screens.check: ${SCREEN_NAMES.length} screens, ${ALL_KINDS.length + STATE_CARDS.length} cards ok`);
