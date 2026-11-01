@@ -56,7 +56,8 @@ async function main() {
 
   // The digest goes out at its hour, or up to two hours later when today's has not (a failed send is retried then).
   assert.ok(digestDue(8, 8) && digestDue(9, 8) && digestDue(10, 8) && !digestDue(11, 8) && !digestDue(7, 8));
-  assert.ok(digestDue(1, 23), "past midnight too");
+  assert.ok(digestDue(23, 23) && !digestDue(0, 23) && !digestDue(1, 23), "the catch-up stops at midnight (the claim is per local date)");
+  assert.ok(digestDue(22, 22) && digestDue(23, 22) && !digestDue(0, 22));
   assert.ok(!digestDue(8, null), "no digest hour, no digest");
 
   // A failure after the claim (here while building the email) records the claim as failed, so it never stays

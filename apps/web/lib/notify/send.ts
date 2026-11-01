@@ -33,7 +33,9 @@ export const DIGEST_CATCH_UP_HOURS = 3;
 
 /** Whether the cron sends the digest at this local hour: the digest hour, or up to two hours after it. */
 export function digestDue(localHour: number, digestHour: number | null): boolean {
-  return digestHour !== null && (localHour - digestHour + 24) % 24 < DIGEST_CATCH_UP_HOURS;
+  // The catch-up stops at local midnight: the claim is keyed on the local date, so a 23:00 digest caught up at 00:05
+  // counted as the next day's, sent twice and then moved to midnight for good.
+  return digestHour !== null && localHour >= digestHour && localHour - digestHour < DIGEST_CATCH_UP_HOURS;
 }
 
 async function sendClaimed(admin: SupabaseClient, sender: EmailSender, c: Claim, send: () => Promise<{ id: string }>): Promise<boolean> {
@@ -70,7 +72,11 @@ export async function sendDigestEmail(admin: SupabaseClient, sender: EmailSender
 }
 
 /** Time-bound cards (schedule cards) expiring in the next two hours get one email each. */
-export async function sendExpiringEmails(admin: SupabaseClient, sender: EmailSender, opts: { appUrl: string; now: Date }): Promise<number> {
+/**
+ * `deadline` (ms since epoch): no new card is claimed after it, so a slow provider cannot run the cron past its limit
+ * with a claim left open (an open claim reads as sent, and that card would never get its email).
+ */
+export async function sendExpiringEmails(admin: SupabaseClient, sender: EmailSender, opts: { appUrl: string; now: Date; deadline?: number }): Promise<number> {
   const from = new Date(opts.now.getTime() + 15 * 60_000).toISOString();
   const to = new Date(opts.now.getTime() + 2 * 3_600_000).toISOString();
   const { data, error } = await admin
@@ -90,6 +96,7 @@ export async function sendExpiringEmails(admin: SupabaseClient, sender: EmailSen
   let sent = 0;
   const tokens = new Map<string, string>();
   for (const card of cards) {
+    if (opts.deadline !== undefined && Date.now() >= opts.deadline) break;
     const founder = byId.get(card.user_id);
     if (!founder?.email) continue;
     try {
@@ -99,7 +106,8 @@ export async function sendExpiringEmails(admin: SupabaseClient, sender: EmailSen
       if (!c) continue;
       const ok = await sendClaimed(admin, sender, c, async () => {
         const s = card.snapshot;
-        const what = typeof s.text === "string" && s.text ? s.text : typeof s.title === "string" && s.title ? s.title : "A post waits for your time";
+        // One line: the post's own newlines would land in the Subject header.
+        const what = (typeof s.text === "string" && s.text ? s.text : typeof s.title === "string" && s.title ? s.title : "A post waits for your time").replace(/\s+/g, " ").trim();
         const where = typeof s.platform === "string" ? ` on ${String(s.platform).toUpperCase() === "X" ? "X" : s.platform}` : "";
         const message = expiringEmail({ appUrl: opts.appUrl, cardId: card.id, title: `${what}${where}`, expiresAt: card.expires_at, timezone: founder.timezone, unsubscribeUrl: url });
         return sender.send({ to: founder.email!, ...message });

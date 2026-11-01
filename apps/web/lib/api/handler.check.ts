@@ -130,6 +130,27 @@ async function main(): Promise<void> {
     assert.equal(res.status, 413);
   });
 
+  // Review R4: a real streamed body is cut at the cap, and a route can raise its own cap.
+  const streamed = (text: string) => {
+    const bytes = new TextEncoder().encode(text);
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (let at = 0; at < bytes.length; at += 64 * 1024) controller.enqueue(bytes.subarray(at, at + 64 * 1024));
+        controller.close();
+      },
+    });
+    return { method: "POST", headers: new Headers({ host: "app.opencmo.io" }), body, text: async () => text } as unknown as Parameters<typeof handleApi>[2];
+  };
+  await check("a streamed body over the cap is refused while it is read", async () => {
+    const big = JSON.stringify({ big: "x".repeat(MAX_BODY_BYTES) });
+    assert.equal((await handleApi({ body: z.object({ big: z.string() }) }, ok, streamed(big), fakeClient())).status, 413);
+  });
+  await check("maxBodyBytes lets a route take a larger body", async () => {
+    const big = JSON.stringify({ big: "x".repeat(MAX_BODY_BYTES) });
+    const res = await handleApi({ body: z.object({ big: z.string() }), maxBodyBytes: 1024 * 1024 }, ok, streamed(big), fakeClient());
+    assert.equal(res.status, 200);
+  });
+
   await check("body không phải JSON thành 422, không phải 500", async () => {
     const bad = request("POST");
     bad.text = async () => "{oops";

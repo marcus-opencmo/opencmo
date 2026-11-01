@@ -10,7 +10,7 @@
 
 import { countHashtags } from "../platforms";
 
-import { normalizeNumber } from "./context";
+import { numberTokens } from "./context";
 
 export const X_LIMIT = 280;
 
@@ -39,11 +39,10 @@ export function factIssues(text: string, rules: CheckRules): string[] {
     const w = word.toLowerCase();
     if (w.length >= 3 && lower.includes(w)) issues.push(`It uses "${word}", which your strategy says to avoid.`);
   }
-  for (const raw of text.match(/\d[\d,.]*%?/g) ?? []) {
-    const isPercent = raw.endsWith("%");
-    const n = normalizeNumber(raw.replace(/%$/, ""));
-    if (!isPercent && Number(n) < 10) continue;
-    if (/^(19|20)\d\d$/.test(n)) continue;
+  // "2,000 users" is not the year 2000, and "5k users" is not 5: both are counts the documents must hold.
+  for (const { raw, n, percent, plain } of numberTokens(text)) {
+    if (!percent && Number(n) < 10) continue;
+    if (plain && /^(19|20)\d\d$/.test(n)) continue;
     if (!rules.known.has(n)) issues.push(`It says ${raw}, a number that is not in your documents.`);
   }
   return issues;

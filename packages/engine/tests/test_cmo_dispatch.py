@@ -17,10 +17,28 @@ def test_web_config_needs_url_and_secret():
     ) == ("https://x.app", "s")
 
 
-def test_count_dispatchable_uses_claim_rule():
+def test_count_dispatchable_reads_the_sql_count():
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["body"] = request.content
+        return httpx.Response(200, json=3)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        count = cmo_dispatch.count_dispatchable("https://db.example/", "key", client=client)
+
+    assert count == 3
+    assert seen["path"] == "/rest/v1/rpc/cmo_dispatch_count"
+    assert b'"p_limit"' in seen["body"]
+
+
+def test_count_dispatchable_falls_back_before_the_migration():
     seen: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/rpc/cmo_dispatch_count"):
+            return httpx.Response(404, json={"message": "not found"})
         seen["path"] = request.url.path
         seen["or"] = request.url.params["or"]
         seen["limit"] = request.url.params["limit"]

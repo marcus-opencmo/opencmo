@@ -12,6 +12,7 @@ import { z } from "zod";
 import { skillText } from "../skills";
 import { xTopPosts } from "../social/research";
 import { outliers, ScBudget, SocialReadError, type Outlier } from "../social/scrapecreators";
+import { escapeAttribute, escapeForTag } from "../untrusted";
 import { documentsBlock } from "./context";
 import { LlmError } from "./llm";
 import type { JobContext, JobOutput } from "./runner";
@@ -59,11 +60,20 @@ export function groundInsight(out: z.infer<typeof InsightSchema>, read: Outlier[
       .slice(0, 6)
       .map((h) => {
         const post = byUrl.get(h.url)!;
-        return { pattern: h.pattern.slice(0, 120), example: post.text.split("\n")[0]!.slice(0, 200), url: h.url, lift: post.lift, why: h.why.slice(0, 300) };
+        // The opening line only (the reader collapses newlines, so cut at the first sentence end): a hook to adapt, not
+        // a whole post to copy.
+        return { pattern: h.pattern.slice(0, 120), example: openingLine(post.text), url: h.url, lift: post.lift, why: h.why.slice(0, 300) };
       }),
     formats: out.formats.map((f) => f.slice(0, 120)).slice(0, 4),
     ideas: out.ideas.filter((i) => byUrl.has(i.inspired_by)).slice(0, 5).map((i) => ({ idea: i.idea.slice(0, 280), inspired_by: i.inspired_by })),
   };
+}
+
+/** A post's first line or first sentence, at most 200 characters. */
+export function openingLine(text: string): string {
+  const line = text.split("\n")[0]!.trim();
+  const sentence = /^(.{20,}?[.!?])(\s|$)/.exec(line)?.[1] ?? line;
+  return sentence.slice(0, 200);
 }
 
 export async function competitorResearch(ctx: JobContext): Promise<JobOutput> {
@@ -85,7 +95,8 @@ export async function competitorResearch(ctx: JobContext): Promise<JobOutput> {
         try {
           return outliers(await xTopPosts(handle, budget));
         } catch (error) {
-          // Một tài khoản riêng tư/sai tên không làm hỏng cả lượt.
+          // A private or misspelt account does not fail the run; a reader that is down for everyone does, with its reason.
+          if (error instanceof SocialReadError && (error.kind === "setup" || error.kind === "credits" || error.kind === "busy")) throw new LlmError(error.message);
           if (error instanceof SocialReadError) return null;
           throw error;
         }
@@ -101,7 +112,8 @@ export async function competitorResearch(ctx: JobContext): Promise<JobOutput> {
   if (!winners.length) throw new LlmError("No competitor posts stood out this week. Try adding more competitors.");
 
   const raw = await ctx.step("extract_patterns", "Finding hooks that work", async () => {
-    const posts = winners.map((p) => `<post url="${p.url}" lift="${p.lift}" label="${p.label}">${p.text}</post>`).join("\n");
+    // Competitors' posts are outside text: escaped so one cannot close <post> and speak as the founder.
+    const posts = winners.map((p) => `<post url="${escapeAttribute(p.url)}" lift="${p.lift}" label="${p.label}">${escapeForTag(p.text)}</post>`).join("\n");
     return ctx.think({
       title: "Find the hooks and formats that work in competitors' standout posts",
       fake: () => ({

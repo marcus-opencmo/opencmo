@@ -73,21 +73,30 @@ export async function readCapture(supabase: SupabaseClient, id: string): Promise
   return data as CaptureRow;
 }
 
-/** Signed links to a ready capture's files, signed with the user's own session (RLS of the bucket). */
-export async function captureUrls(row: CaptureRow): Promise<{ image_url: string; boxes_url: string } | null> {
+/** The caller's own client, in the type `signedObjectUrl` signs with. */
+type SignWith = NonNullable<Parameters<typeof signedObjectUrl>[2]>["client"];
+
+/**
+ * Signed links to a ready capture's files, signed with the caller's own client (RLS of the bucket). The client is
+ * required: without it signing falls back to the cookie session, which the MCP server does not have.
+ */
+export async function captureUrls(supabase: SupabaseClient, row: CaptureRow): Promise<{ image_url: string; boxes_url: string } | null> {
   if (row.status !== "ready" || !row.image_path || !row.boxes_path) return null;
+  const client = supabase as unknown as SignWith;
   const [image_url, boxes_url] = await Promise.all([
-    signedObjectUrl(CAPTURES_BUCKET, row.image_path),
-    signedObjectUrl(CAPTURES_BUCKET, row.boxes_path),
+    signedObjectUrl(CAPTURES_BUCKET, row.image_path, { client }),
+    signedObjectUrl(CAPTURES_BUCKET, row.boxes_path, { client }),
   ]);
   return { image_url, boxes_url };
 }
 
 /** The word boxes of a ready capture; null when they cannot be read or are not what the worker writes. */
-export async function readCaptureBoxes(row: CaptureRow): Promise<CaptureBoxes | null> {
+export async function readCaptureBoxes(supabase: SupabaseClient, row: CaptureRow): Promise<CaptureBoxes | null> {
   if (row.status !== "ready" || !row.boxes_path) return null;
   try {
-    const response = await fetch(await signedObjectUrl(CAPTURES_BUCKET, row.boxes_path), { signal: AbortSignal.timeout(10_000) });
+    // Signed with the caller's client: over MCP there is no cookie session, and every ready capture read as failed.
+    const client = supabase as unknown as SignWith;
+    const response = await fetch(await signedObjectUrl(CAPTURES_BUCKET, row.boxes_path, { client }), { signal: AbortSignal.timeout(10_000) });
     if (!response.ok) return null;
     const parsed = CaptureBoxesSchema.safeParse(await response.json());
     return parsed.success ? parsed.data : null;
@@ -106,7 +115,7 @@ export async function readProofCapture(supabase: SupabaseClient, id: string): Pr
   if (row.status !== "ready") {
     return { status: row.status, ...(row.error ? { error: row.error } : {}), url: row.url, width: row.width ?? 1280, height: row.height ?? 1, runs: [] };
   }
-  const boxes = await readCaptureBoxes(row);
+  const boxes = await readCaptureBoxes(supabase, row);
   if (!boxes) return { status: "failed", error: "The captured page could not be read. Capture it again.", url: row.url, width: 1280, height: 1, runs: [] };
   return { status: "ready", url: boxes.url, width: boxes.width, height: boxes.height, runs: boxes.runs };
 }

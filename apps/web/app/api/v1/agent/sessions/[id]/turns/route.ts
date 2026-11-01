@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { withApi } from "@/lib/api/handler";
+import { ScreenContextSchema } from "@/lib/agent/panel";
 import { startTurn } from "@/lib/agent/session";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +18,8 @@ const body = z.object({
       frame: z.string().max(600_000).regex(/^[A-Za-z0-9+/=]+$/, "frame: base64 only").optional(),
       // Tên giọng (chữ, số, cách) — đi thẳng vào lời nhắn cho model.
       voice: z.string().trim().min(1).max(40).regex(/^[A-Za-z0-9 ._-]+$/, "voice: letters and numbers only").optional(),
+      // The CMO chat: the screen open in column 3, so "this one" has a referent.
+      screen: ScreenContextSchema.optional(),
     })
     .optional(),
 });
@@ -37,6 +40,8 @@ const body = z.object({
  *   'time' or 'steps' → call the `continue` route at once; 'budget' → ask the user, then
  *   `continue` with `extend: true`.
  */
-export const POST = withApi({ body }, async ({ supabase, user, body, params }) =>
+// Checked before the scope is built: a refused turn must not first pay for the catalog, clip and document reads. The
+// body holds one frame (base64, up to 600 KB), over the default 256 KB cap.
+export const POST = withApi({ body, rateLimit: { bucket: "agent-turn", limit: 120, windowSeconds: 3600 }, maxBodyBytes: 1024 * 1024 }, async ({ supabase, user, body, params }) =>
   startTurn(supabase, user.id, params.id, body.prompt, body.attachments),
 );

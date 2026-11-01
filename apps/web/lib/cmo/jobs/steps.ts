@@ -13,6 +13,7 @@ import { DraftSchema, REVIEW_SYSTEM } from "./draft-post";
 import { PlanSchema } from "./plan-week";
 import { ReviewSchema } from "./review-week";
 import { PASS_SCORE, QueriesSchema, ReplySchema, RulesSchema, ScoreSchema } from "./sales-scan";
+import { ThreadDraftSchema } from "../writer/types";
 import { LessonSchema } from "./summarize-memory";
 import type { CmoJobKind } from "./types";
 
@@ -24,6 +25,8 @@ export const INBOX_STEPS = {
   plan_week: { kind: "plan_week", schema: PlanSchema, submit: "submit_plan" },
   review_week: { kind: "review_week", schema: ReviewSchema, submit: "submit_plan" },
   draft_post: { kind: "post_draft", schema: DraftSchema, submit: "submit_post_draft" },
+  // An X thread asked for over MCP (`create_task` with thread: true): without this step the item had no submit tool.
+  draft_thread: { kind: "post_draft", schema: ThreadDraftSchema, submit: "submit_post_draft" },
   make_queries: { kind: "sales_scan", schema: QueriesSchema, submit: "submit_sales_scan" },
   score_thread: { kind: "sales_scan", schema: ScoreSchema, submit: "submit_sales_scan" },
   check_rules: { kind: "sales_scan", schema: RulesSchema, submit: "submit_sales_scan" },

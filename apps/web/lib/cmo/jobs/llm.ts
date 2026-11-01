@@ -192,8 +192,8 @@ async function structuredAnthropic<S extends z.ZodType>(opts: StructuredOptions<
     }, opts.timeoutMs ? { timeout: opts.timeoutMs, maxRetries: 1 } : undefined);
   } catch (error) {
     if (outage(error)) throw error;
-    if (error instanceof Anthropic.APIError) console.error(`[cmo] ${opts.label} (${agent.id}/${agent.model}): lỗi API`, error.status, error.message);
-    else console.error(`[cmo] ${opts.label}: parse/khác`, error);
+    if (error instanceof Anthropic.APIError) console.error(`[cmo] ${opts.label} (${agent.id}/${agent.model}): API error`, error.status, error.message);
+    else console.error(`[cmo] ${opts.label}: parse or other error`, error);
     throw new LlmError(opts.failure);
   }
   await opts.onUsage?.({

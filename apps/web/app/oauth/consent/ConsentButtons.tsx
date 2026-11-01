@@ -11,6 +11,7 @@ import { useState } from "react";
 export function ConsentButtons({ authorizationId, denyOnly = false }: { authorizationId: string; denyOnly?: boolean }) {
   const [busy, setBusy] = useState<"approve" | "deny" | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [denied, setDenied] = useState(false);
 
   async function decide(decision: "approve" | "deny") {
     setBusy(decision);
@@ -21,13 +22,27 @@ export function ConsentButtons({ authorizationId, denyOnly = false }: { authoriz
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ authorization_id: authorizationId, decision }),
       });
-      const body = (await response.json().catch(() => ({}))) as { redirect_url?: string; detail?: string };
+      const body = (await response.json().catch(() => ({}))) as { redirect_url?: string | null; denied?: boolean; detail?: string };
+      // Denied an app we do not support: it is not sent back there, so the page says it is done.
+      if (response.ok && body.denied) {
+        setDenied(true);
+        setBusy(null);
+        return;
+      }
       if (!response.ok || !body.redirect_url) throw new Error(body.detail ?? "That did not go through. Please try again.");
       window.location.assign(body.redirect_url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That did not go through. Please try again.");
       setBusy(null);
     }
+  }
+
+  if (denied) {
+    return (
+      <p className="auth-fields" role="status" data-testid="oauth-denied">
+        Denied. Nothing was connected; you can close this page.
+      </p>
+    );
   }
 
   return (

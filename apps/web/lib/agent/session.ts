@@ -10,13 +10,14 @@ import { clipContext } from "@/lib/api/clips";
 import { notFound, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 
 import { resumeTurn, runTurn, type Answer, type Turn } from "./loop";
-import { agentChatProvider, kindOf, providerForModel } from "./model";
+import { agentChatProvider, availableModels, kindOf, providerForModel } from "./model";
 import type { Provider } from "./providers/types";
 import { loadCatalog } from "@/lib/generate/models";
 
 import { serviceLedger, type Ledger } from "./ledger";
 import { clipScope, cmoScope, type Scope } from "./scope";
 import { sseResponse } from "./sse";
+import { screenContextText, type ScreenContext } from "./panel";
 import { slashDirective } from "./slash";
 
 /** `scope` is the stored value: rows from the removed multi-clip project chat may still say "project". */
@@ -33,7 +34,8 @@ export async function loadSession(supabase: SupabaseClient, id: string | undefin
   const family = kindOf(session.model);
   const provider =
     session.scope === "cmo" ? (family === "fake" ? agentChatProvider("cmo") : agentChatProvider("cmo", family)) : providerForModel(session.model);
-  if (!provider && kindOf(session.model) === "gemini") throw new ApiError(409, "This chat used a model that is no longer available. Start a new chat.");
+  // The chat's model is gone but another one runs (a bumped ANTHROPIC_MODEL, a removed Gemini): a new chat works now.
+  if (!provider && availableModels().length) throw new ApiError(409, "This chat used a model that is no longer available. Start a new chat.");
   if (!provider) throw new ApiError(503, "The assistant is not available yet.");
   return { session, provider };
 }
@@ -57,7 +59,7 @@ export async function scopeFor(
  * Thứ người dùng đính kèm câu lệnh (như chip của composer DS): playhead, lớp
  * đang chọn, khung đang xem. Chúng đi vào tin nhắn như DỮ LIỆU sau câu lệnh.
  */
-export type Attachments = { playhead?: number; selection?: string[]; frame?: string; voice?: string };
+export type Attachments = { playhead?: number; selection?: string[]; frame?: string; voice?: string; screen?: ScreenContext };
 
 function attachmentText(attachments: Attachments | undefined): string {
   if (!attachments) return "";
@@ -67,7 +69,7 @@ function attachmentText(attachments: Attachments | undefined): string {
   if (attachments.frame) parts.push("the attached image is the frame the user is looking at");
   // Giọng người dùng chọn ở ô chat (đã nghe thử): dùng đúng giọng này, đừng hỏi lại.
   if (attachments.voice) parts.push(`voice picked by the user: "${attachments.voice}" (use it for any voiceover or voice change in this request)`);
-  return parts.length ? `<attached>${parts.join("; ")}</attached>` : "";
+  return (parts.length ? `<attached>${parts.join("; ")}</attached>` : "") + screenContextText(attachments.screen);
 }
 
 /** Starts a turn and streams it. `userId` is the user `withApi` verified; the ledger writes for them. */

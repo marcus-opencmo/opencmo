@@ -8,6 +8,7 @@
 import type { SupabaseClient } from "@/lib/api/handler";
 
 import { formatFor } from "./model";
+import type { PanelOpen } from "./panel";
 
 export type PlanItem = { text: string; status: "pending" | "active" | "done" };
 
@@ -18,7 +19,7 @@ export type Action = {
   summary: string;
   /** Input đã rút gọn: dòng tool mở ra xem được, như panel chat của DS. */
   input?: unknown;
-  view?: { plan?: PlanItem[]; touched?: string[]; exports?: { frame: string; task_id: string }[] };
+  view?: { plan?: PlanItem[]; touched?: string[]; exports?: { frame: string; task_id: string }[]; open?: PanelOpen };
   /** Old project chats' `apply_to_clips` (removed with clipping): the clips that failed and the ops, shown read-only. */
   failed?: { clip_id: string; label: string; error?: string }[];
   ops?: unknown[];
@@ -70,40 +71,60 @@ type TurnRow = {
   created_at: string;
 };
 
+const PAGE = 1000;
+
+/** Every row of a query, page by page (PostgREST's `max_rows` is 1000). */
+async function allRows(page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: unknown }>): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw error;
+    rows.push(...(data ?? []));
+    if ((data?.length ?? 0) < PAGE) return rows;
+  }
+}
+
 export async function sessionView(
   supabase: SupabaseClient,
   session: SessionRow,
 ): Promise<SessionView> {
-  const [{ data: turns }, { data: messages }, { data: tools }] = await Promise.all([
-    supabase
-      .from("agent_turns")
-      .select("id, number, prompt, status, pause_reason, error, checkpoint_id, undone_at, credits, created_at")
-      .eq("session_id", session.id)
-      .order("number", { ascending: true })
-      .limit(200),
-    supabase
-      .from("agent_messages")
-      .select("turn_id, content")
-      .eq("session_id", session.id)
-      .eq("role", "assistant")
-      .order("seq", { ascending: true }),
-    supabase
-      .from("agent_tool_calls")
-      .select("turn_id, tool_use_id, name, input, status, result, created_at, agent_turns!inner(session_id)")
-      .eq("agent_turns.session_id", session.id)
-      .order("created_at", { ascending: true }),
-  ]);
+  const { data: newest } = await supabase
+    .from("agent_turns")
+    .select("id, number, prompt, status, pause_reason, error, checkpoint_id, undone_at, credits, created_at")
+    .eq("session_id", session.id)
+    // The newest 200 turns (a CMO chat is reused for weeks), back in order below.
+    .order("number", { ascending: false })
+    .limit(200);
+  const turns = ((newest ?? []) as TurnRow[]).reverse();
+  const ids = turns.map((turn) => turn.id);
+  // Only the shown turns' rows, in pages: PostgREST stops at 1000 rows, oldest first, which hid the newest replies.
+  const [messages, tools] = ids.length
+    ? await Promise.all([
+        allRows((from, to) =>
+          supabase.from("agent_messages").select("turn_id, content").in("turn_id", ids).eq("role", "assistant").order("seq", { ascending: true }).range(from, to),
+        ),
+        allRows((from, to) =>
+          supabase
+            .from("agent_tool_calls")
+            .select("turn_id, tool_use_id, name, input, status, result, created_at")
+            .in("turn_id", ids)
+            .order("created_at", { ascending: true })
+            .order("tool_use_id", { ascending: true })
+            .range(from, to),
+        ),
+      ])
+    : [[], []];
 
   const format = formatFor(session.model);
   const replies = new Map<string, string[]>();
-  for (const row of (messages ?? []) as { turn_id: string; content: unknown[] }[]) {
+  for (const row of messages as { turn_id: string; content: unknown[] }[]) {
     const text = format.replyText(row.content);
     if (text) replies.set(row.turn_id, [...(replies.get(row.turn_id) ?? []), text]);
   }
   const actions = new Map<string, TurnView["actions"]>();
   const pending = new Map<string, TurnView["pending"]>();
   const plans = new Map<string, PlanItem[]>();
-  for (const row of (tools ?? []) as {
+  for (const row of tools as {
     turn_id: string;
     tool_use_id: string;
     name: string;
@@ -145,7 +166,7 @@ export async function sessionView(
   // Undo chỉ cho lượt ghi GẦN NHẤT chưa hoàn tác: checkpoint là bản trước lượt
   // đó, nên undo một lượt cũ hơn sẽ xoá luôn mọi lượt sau nó — không ai bấm
   // "Undo" ở một câu cũ mà mong thế.
-  const undoable = ((turns ?? []) as TurnRow[])
+  const undoable = turns
     .filter((turn) => turn.checkpoint_id && !turn.undone_at && turn.status !== "running" && !(WAITING as readonly string[]).includes(turn.status))
     .reduce((latest, turn) => Math.max(latest, turn.number), 0);
 
@@ -156,7 +177,7 @@ export async function sessionView(
     clip_id: session.clip_id,
     job_id: session.job_id,
     locked: Boolean(session.lock_until && new Date(session.lock_until).getTime() > Date.now()),
-    turns: ((turns ?? []) as TurnRow[]).map((turn) => ({
+    turns: turns.map((turn) => ({
       number: turn.number,
       prompt: turn.prompt,
       status: turn.status,

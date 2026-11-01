@@ -84,14 +84,22 @@ export type Answer = {
   answer?: { choices?: string[]; text?: string; skipped?: boolean };
 };
 
+/** PostgREST returns at most `max_rows` (1000) rows a request; a long chat must not lose its newest messages. */
+const HISTORY_PAGE = 1000;
+
 async function history(supabase: SupabaseClient, sessionId: string): Promise<StoredMessage[]> {
-  const { data, error } = await supabase
-    .from("agent_messages")
-    .select("role, content")
-    .eq("session_id", sessionId)
-    .order("seq", { ascending: true });
-  if (error) throw error;
-  return (data ?? []) as StoredMessage[];
+  const all: StoredMessage[] = [];
+  for (let from = 0; ; from += HISTORY_PAGE) {
+    const { data, error } = await supabase
+      .from("agent_messages")
+      .select("role, content")
+      .eq("session_id", sessionId)
+      .order("seq", { ascending: true })
+      .range(from, from + HISTORY_PAGE - 1);
+    if (error) throw error;
+    all.push(...((data ?? []) as StoredMessage[]));
+    if ((data?.length ?? 0) < HISTORY_PAGE) return all;
+  }
 }
 
 /** Stored results of tool calls an interrupted turn never answered (see `StepRequest.ran`). */
@@ -168,12 +176,6 @@ function watchStop(supabase: SupabaseClient, turnId: string) {
   return { signal: controller.signal, done: () => clearInterval(timer) };
 }
 
-/**
- * Credit đã tiêu của lượt, cùng công thức với SQL (`agent_credits`). Đọc lại từ
- * `agent_usage` ở ĐẦU mỗi bước: lượt nối tiếp sau tool tab/thẻ duyệt/câu hỏi là
- * một `runTurn` mới, nên một biến trong bộ nhớ không đủ — thiếu chốt này thì
- * một agent chụp khung ở mọi bước tiêu vượt phần giữ mà không ai được hỏi.
- */
 /** Shown when the model keeps sending a call that fails the same way. */
 export const REPEATED_FAILURE_MESSAGE = "The assistant kept repeating a step that fails, so it stopped. Try rephrasing the request.";
 
@@ -209,6 +211,12 @@ function failureStreak() {
   };
 }
 
+/**
+ * The turn's credits so far, by the same formula as SQL (`agent_credits`). Read again from `agent_usage` at the
+ * START of every step: a turn resumed after a tab tool, an approval card or a question is a new `runTurn`, so a
+ * variable in memory is not enough. Without this check, an agent that captures a frame at every step would spend past
+ * its hold without anyone being asked.
+ */
 async function spentCredits(supabase: SupabaseClient, turnId: string): Promise<number> {
   const { data } = await supabase.from("agent_usage").select("micro_usd").eq("turn_id", turnId);
   const micro = ((data ?? []) as { micro_usd: number | string }[]).reduce((sum, row) => sum + Number(row.micro_usd), 0);
@@ -377,7 +385,8 @@ export async function runTurn(env: TurnEnv): Promise<void> {
       let runaway = false;
       // Planning tools run their own model calls and record them: read the total again next step.
       if (result.toolCalls.some((call) => SLOW_PLANS.has(call.name))) spent = null;
-      if (!baseline && result.toolCalls.some((call) => scope.isWrite(call.name))) {
+      // The CMO state never holds a <check> block, so reading it (six queries) would only build an empty set.
+      if (!baseline && scope.kind !== "cmo" && result.toolCalls.some((call) => scope.isWrite(call.name))) {
         baseline = checkErrorKeys(await scope.state().catch(() => ""));
       }
       // Read-only calls next to each other start together; a read after a write still sees it.
@@ -519,7 +528,7 @@ export async function runTurn(env: TurnEnv): Promise<void> {
       emit("done", { status: "stopped", credits: null, error: null });
       return;
     }
-    console.error("[agent] lượt lỗi", err);
+    console.error("[agent] turn failed", err);
     // The provider itself could not answer: remember it, so the next chat starts on the other one.
     const kind = outage(err);
     if (kind && provider.kind !== "fake" && !provider.ownKey) markDown(provider.kind, kind, provider.model);
@@ -528,7 +537,7 @@ export async function runTurn(env: TurnEnv): Promise<void> {
     try {
       await finish(env, "failed", message);
     } catch (closeErr) {
-      console.error("[agent] không chốt được lượt", closeErr);
+      console.error("[agent] could not close the turn", closeErr);
       emit("done", { status: "failed", credits: null, error: message });
     }
   }
@@ -698,7 +707,7 @@ export async function resumeTurn(env: TurnEnv, answers: Answer[]): Promise<void>
       emit("done", { status: "stopped", credits: null, error: null });
       return;
     }
-    console.error("[agent] không nhận được câu trả lời cho tool đang chờ", err);
+    console.error("[agent] no answer reached the waiting tool", err);
     await finish(env, "failed", "The assistant could not continue this request.").catch(() => undefined);
     return;
   }

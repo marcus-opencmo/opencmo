@@ -10,6 +10,8 @@
 
 import { z } from "zod";
 
+import { escapeForTag } from "../untrusted";
+
 import type { JobContext, JobOutput } from "./runner";
 import { isoDay, MEMORY_TOPICS, type ItemRow, type MemoryEvent, type MemoryTopic } from "./types";
 
@@ -46,7 +48,7 @@ function fakeLessons(events: MemoryEvent[]): { topic: MemoryTopic; body: string 
 
 export async function summarizeMemory(ctx: JobContext): Promise<JobOutput> {
   const { store, run } = ctx;
-  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  const since = new Date(ctx.now.getTime() - 7 * 86_400_000).toISOString();
   const { events, decisions } = await ctx.step(
     "read_memory",
     "Reading this week's notes and decisions",
@@ -68,7 +70,7 @@ export async function summarizeMemory(ctx: JobContext): Promise<JobOutput> {
       fake: () => ({ lessons: fakeLessons(events) }) as z.infer<typeof LessonSchema>,
       agent: "checker",
       system: SYSTEM,
-      prompt: `<notes>\n${events.map((e) => `- [${e.topic}/${e.kind}] ${e.body}`).join("\n") || "(none)"}\n</notes>\n\n<decisions>\n${decisionsBlock(decisions)}\n</decisions>\n\nWrite the lessons for next week.`,
+      prompt: `<notes>\n${events.map((e) => `- [${e.topic}/${e.kind}] ${escapeForTag(e.body)}`).join("\n") || "(none)"}\n</notes>\n\n<decisions>\n${decisionsBlock(decisions)}\n</decisions>\n\nWrite the lessons for next week.`,
       schema: LessonSchema,
       maxTokens: 1500,
       label: "summarize_memory",
@@ -79,7 +81,7 @@ export async function summarizeMemory(ctx: JobContext): Promise<JobOutput> {
   const saved = await ctx.step(
     "write_lessons",
     "Saving the lessons",
-    () => store.saveLessons(run.user_id, run.id, mondayOf(), out.lessons),
+    () => store.saveLessons(run.user_id, run.id, mondayOf(ctx.now), out.lessons),
     (n) => `${n} lessons saved`,
   );
   return { lessons: saved };

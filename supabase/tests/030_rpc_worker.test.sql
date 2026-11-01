@@ -229,7 +229,7 @@ set local request.jwt.claims = '{"sub":"a0000000-0000-4000-8000-00000000000a"}';
 -- Supabase segfault backend khi bắt lỗi permission denied của HÀM
 -- (GitHub Actions run 34956743124). Cùng cách đã dùng ở 020 và 027.
 select is(
-  has_function_privilege('authenticated', 'public.claim_next_task(text[], int)', 'execute'),
+  has_function_privilege('authenticated', 'public.claim_next_task(text[], int, int)', 'execute'),
   false, 'authenticated không claim được task'
 );
 select is(
