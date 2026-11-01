@@ -41,12 +41,19 @@ export type JobContext = {
   /** Who thinks for this run. With `claude`, model calls go to the inbox and checker calls are skipped. */
   brain: Brain;
   /**
-   * Chạy một bước có tên tool + nhãn; `fn` trả về nhãn kết quả (hoặc giữ nhãn cũ).
+   * Runs one step named by tool and label; `done` turns its result into the finished label (or keeps the label).
    * `memo`: a key under which an inbox run keeps the result for its replays, so a step that reads
    * the outside world (a Reddit search) runs once and the answers given about what it found stay
    * valid. The result must be plain JSON.
    */
   step<T>(tool: string, label: string, fn: () => Promise<T>, done?: (value: T) => string, opts?: { memo?: string }): Promise<T>;
+  /**
+   * A read of the outside world or the database inside a step, kept for an inbox run's replays under `key` (plain JSON
+   * only), so the list the founder's Claude answered about is the list its answers are applied to.
+   */
+  once<T>(key: string, fn: () => Promise<T>): Promise<T>;
+  /** The run's clock: for an inbox run, the time of its first attempt, so a replay a day later is the same week. */
+  now: Date;
   /** One structured model call (`think.ts`). */
   think<S extends z.ZodType>(opts: ThinkOptions<S>): Promise<z.infer<S>>;
   /** Stands in for the Reddit search (evals, checks); production leaves it unset. */
@@ -56,6 +63,23 @@ export type JobContext = {
   /** Stands in for Zernio's analytics (checks); unset = picked from env like the publish adapter, null = none. */
   analytics?: PublishAnalytics | null;
 };
+
+const NOW_KEY = "__now";
+
+/** True for values that survive the JSON round trip of the inbox memo unchanged (no Set, Map, Date, undefined). */
+export function isPlainJson(value: unknown): boolean {
+  if (value === null || typeof value === "string" || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (Array.isArray(value)) return value.every(isPlainJson);
+  if (typeof value === "object" && Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.values(value as Record<string, unknown>).every((v) => v !== undefined && isPlainJson(v));
+  }
+  return false;
+}
+
+/** The inbox memo is capped at 1 MB in SQL: an automatic entry stays small, so the explicit ones always fit. */
+const MEMO_ENTRY_MAX = 100_000;
+const memoable = (value: unknown) => isPlainJson(value) && JSON.stringify(value).length <= MEMO_ENTRY_MAX;
 
 export type RunOptions = {
   searchReddit?: JobContext["searchReddit"];
@@ -113,6 +137,12 @@ export async function runOne(store: CmoStore, run: QueuedRun, opts: RunOptions =
     inbox = found;
   }
   const memo: Record<string, unknown> = { ...inbox.memo };
+  // Inbox replays re-run the job from the top while Claude's answers stay fixed (keyed by step label, indexed into the
+  // lists it was shown). Every finished step's plain-JSON result and the first attempt's clock are kept, so a replay
+  // rebuilds the same lists instead of re-reading a database and a clock that have moved on.
+  if (brain === "claude" && typeof memo[NOW_KEY] !== "string") memo[NOW_KEY] = new Date().toISOString();
+  const now = brain === "claude" ? new Date(memo[NOW_KEY] as string) : new Date();
+  let stepNumber = 0;
 
   const ctx: JobContext = {
     store,
@@ -122,10 +152,13 @@ export async function runOne(store: CmoStore, run: QueuedRun, opts: RunOptions =
       steps.push({ tool, label, status: "running" });
       const index = steps.length - 1;
       await write();
+      // Counted before the step runs, so the key is the same on every replay (steps run in the same order).
+      const auto = `step:${stepNumber++}:${tool}`;
       try {
-        const key = brain === "claude" ? opts?.memo : undefined;
+        const key = brain === "claude" ? (opts?.memo ?? auto) : undefined;
         const value = key && Object.hasOwn(memo, key) ? (memo[key] as Awaited<ReturnType<typeof fn>>) : await fn();
-        if (key) memo[key] = value;
+        // An explicit key is the job's promise that the value is plain JSON; an automatic one is checked.
+        if (key && (opts?.memo || memoable(value))) memo[key] = value;
         steps[index] = { tool, label: done ? done(value) : label, status: "done" };
         await write();
         return value;
@@ -139,6 +172,15 @@ export async function runOne(store: CmoStore, run: QueuedRun, opts: RunOptions =
         throw error;
       }
     },
+    async once(key, fn) {
+      if (brain !== "claude") return fn();
+      const at = `once:${key}`;
+      if (Object.hasOwn(memo, at)) return memo[at] as Awaited<ReturnType<typeof fn>>;
+      const value = await fn();
+      if (memoable(value)) memo[at] = value;
+      return value;
+    },
+    now,
     think: (opts) => think(opts, brain, inbox.answers),
     searchReddit: opts.searchReddit,
     searchHn: opts.searchHn,
@@ -175,7 +217,7 @@ export async function runOne(store: CmoStore, run: QueuedRun, opts: RunOptions =
       }
     }
     const message = error instanceof LlmError ? error.message : "Something went wrong. Try again in a minute.";
-    if (!(error instanceof LlmError)) console.error(`[cmo] ${run.kind} ${run.id} thất bại`, error);
+    if (!(error instanceof LlmError)) console.error(`[cmo] ${run.kind} ${run.id} failed`, error);
     await store.complete(run, false, null, message).catch((e) => console.error("[cmo] complete_cmo_run", e));
     await finish(false, message);
     return { ok: false, error: message };

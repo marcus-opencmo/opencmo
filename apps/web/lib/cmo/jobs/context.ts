@@ -16,7 +16,8 @@ export function documentsBlock(docs: Documents): string {
 
 export function memoriesBlock(memories: string[]): string {
   if (!memories.length) return "<memories>(none)</memories>";
-  return `<memories>\n${memories.map((m) => `- ${m}`).join("\n")}\n</memories>`;
+  // A memory can quote a stranger (SQL writes Reddit thread titles into them): escaped so it cannot close the block.
+  return `<memories>\n${memories.map((m) => `- ${escapeForTag(m)}`).join("\n")}\n</memories>`;
 }
 
 /** The goal the founder approved for this week; the plan should serve it. Empty when there is none. */
@@ -105,9 +106,27 @@ export function checkRules(docs: Documents): { avoid: string[]; known: Set<strin
 /** Mọi con số xuất hiện trong document — bài nháp chỉ được dùng số có ở đây. */
 export function knownNumbers(docs: Documents): Set<string> {
   const text = JSON.stringify(docs);
-  return new Set((text.match(/\d[\d,.]*/g) ?? []).map(normalizeNumber));
+  const known = new Set((text.match(/\d[\d,.]*/g) ?? []).map(normalizeNumber));
+  // "5k users" in a document makes "5,000 users" in a post a known number too.
+  for (const token of numberTokens(text)) known.add(token.n);
+  return known;
 }
 
 export function normalizeNumber(raw: string): string {
   return raw.replace(/[,.]+$/, "").replace(/,/g, "");
+}
+
+/**
+ * The numbers a text states, as checked against the documents: "2,000" → 2000, "5k" → 5000, "3M" → 3000000.
+ * `plain` is false when the number was written with a thousands comma or a suffix, which never makes it a year.
+ */
+export function numberTokens(text: string): { raw: string; n: string; percent: boolean; plain: boolean }[] {
+  return [...text.matchAll(/\d[\d,.]*(?:\s?([kKmM])(?![a-zA-Z]))?%?/g)].map((m) => {
+    const raw = m[0].trim();
+    const percent = raw.endsWith("%");
+    const suffix = m[1]?.toLowerCase();
+    const digits = normalizeNumber(raw.replace(/%$/, "").replace(/\s?[kKmM]$/, ""));
+    const n = suffix ? String(Math.round(Number(digits) * (suffix === "k" ? 1_000 : 1_000_000))) : digits;
+    return { raw, n, percent, plain: !suffix && !raw.includes(",") };
+  });
 }

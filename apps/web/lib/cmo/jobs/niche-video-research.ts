@@ -96,6 +96,8 @@ async function search(read: () => Promise<Outlier[]>): Promise<Outlier[]> {
   try {
     return await read();
   } catch (error) {
+    // Down for every platform (no key, no credits, rate limited): say so instead of "nothing stood out".
+    if (error instanceof SocialReadError && (error.kind === "setup" || error.kind === "credits" || error.kind === "busy")) throw new LlmError(error.message);
     if (error instanceof SocialReadError) return [];
     throw error;
   }

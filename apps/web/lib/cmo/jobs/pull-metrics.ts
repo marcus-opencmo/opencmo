@@ -160,7 +160,13 @@ export async function pullMetrics(ctx: JobContext): Promise<JobOutput> {
 
   const rows: MetricRow[] = matchPosts(published, posts).map(({ item, post }) => ({ item_id: item.id, url: post.url, views: post.views, likes: post.likes, replies: post.replies, reposts: post.reposts, source: "public" }));
   if (!rows.length && !published.some((i) => i.external_url) && !connected.accounts.length) {
-    throw new LlmError("Add your X handle to Product Information, or paste the post link when you mark it as posted, so I can read the numbers.");
+    // With the handle already set, the posts were simply not among its top posts: asking to add it again is wrong.
+    const hasHandle = typeof docs.product?.x_handle === "string" && docs.product.x_handle.trim() !== "";
+    throw new LlmError(
+      hasHandle
+        ? "Your posts were not among your X account's top posts, so I could not match them. Paste the post link when you mark it as posted."
+        : "Add your X handle to Product Information, or paste the post link when you mark it as posted, so I can read the numbers.",
+    );
   }
   const saved = await ctx.step("save_metrics", "Saving the numbers", () => store.saveMetrics(run.user_id, rows), (n) => `${n} posts measured`);
   const measured = Number(output.measured ?? 0) + saved;
