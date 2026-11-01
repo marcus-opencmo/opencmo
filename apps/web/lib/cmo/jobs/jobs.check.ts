@@ -16,7 +16,9 @@ import { goalBlock, knownNumbers, recall } from "./context";
 import { goalLine, nextGoalFallback } from "./review-week";
 import { pickDueItem } from "./draft-post";
 import { namedPlatforms, toPlanItems } from "./plan-week";
-import { drainCmoQueue } from "./runner";
+import { drainCmoQueue, isPlainJson } from "./runner";
+import { factIssues } from "./check-post";
+import { openingLine } from "./competitor-research";
 import { PASS_SCORE, quoteIn, reachScore, scoreThread, threadBlock, timingScore } from "./sales-scan";
 import { parseRedditSearch, type RedditThread } from "../social/reddit";
 import { memoryStore } from "./memory-store";
@@ -134,9 +136,11 @@ async function main() {
   const thread = parsed[0][0];
   assert.ok(quoteIn("i HATE   chasing", thread), "trích không phân biệt hoa thường/khoảng trắng");
   assert.ok(!quoteIn("I love chasing", thread), "câu bịa không tính");
-  const bogus = scoreThread(thread, { index: 0, exclude: false, pain: { score: 25, quote: "made up pain" }, fit: { score: 99, why: "fits" }, evidence: { score: 15, quote: "made up" } }, now);
-  assert.equal(bogus!.parts.find((p) => p.label === "Pain")!.score, 0, "pain không trích được thì 0");
-  assert.equal(bogus!.parts.find((p) => p.label === "Fit")!.score, 25, "fit bị kẹp ở 25");
+  // Review R2: no quote that holds, no card, whatever Fit, Timing and Reach add up to.
+  assert.equal(scoreThread(thread, { index: 0, exclude: false, pain: { score: 25, quote: "made up pain" }, fit: { score: 99, why: "fits" }, evidence: { score: 15, quote: "made up" } }, now), null, "no real quote: not scored");
+  const bogus = scoreThread(thread, { index: 0, exclude: false, pain: { score: 25, quote: "made up pain" }, fit: { score: 99, why: "fits" }, evidence: { score: 15, quote: "I hate chasing" } }, now);
+  assert.equal(bogus!.parts.find((p) => p.label === "Pain")!.score, 0, "a pain that is not quoted scores 0");
+  assert.equal(bogus!.parts.find((p) => p.label === "Fit")!.score, 25, "fit is capped at 25");
   assert.equal(scoreThread(thread, { index: 0, exclude: true, pain: { score: 25, quote: "" }, fit: { score: 25, why: "" }, evidence: { score: 15, quote: "" } }, now), null, "exclude thì bỏ");
 
   // A post cannot close its own <thread> block and open one that reads as ours (security fix 10).
@@ -180,11 +184,28 @@ async function main() {
   assert.equal(mem3.rules.get("freelance")?.verdict, "help_only", "the verdict is cached");
   // A mention draft still waiting counts: the second scan hands out none while the first one's waits.
   assert.ok(mem3.opps.filter((o) => o.rule === "mention_ok").length <= 1, "at most one product mention waits at a time (two scans here, none posted yet)");
+  // Review R2: thousands commas and k/M suffixes are counts, never years; a real year still passes.
+  const noNumbers = { avoid: [], known: new Set<string>() };
+  for (const made of ["Used by 2,000 freelancers", "1,950 founders joined", "5k users", "3M views"]) assert.equal(factIssues(made, noNumbers).length, 1, made);
+  assert.deepEqual(factIssues("We started in 2024 with 3 people", noNumbers), [], "a year and a small number");
+  assert.deepEqual(factIssues("5,000 users", { avoid: [], known: knownNumbers({ product: { proof: "5k users" } } as unknown as Documents) }), [], "5k in the documents covers 5,000");
+  // Inbox memo: only values that survive JSON unchanged are kept for replays.
+  assert.ok(isPlainJson({ a: [1, "x", null, { b: true }] }));
+  for (const value of [new Set([1]), new Map(), new Date(), { a: undefined }, Number.NaN]) assert.ok(!isPlainJson(value), String(value));
+  // A competitor's opening line, not the whole post.
+  assert.equal(openingLine("Stop chasing invoices by hand. Here is the 3-step system we use every Friday."), "Stop chasing invoices by hand.");
+
   // Code refuses what the model may still write.
   assert.deepEqual(replyProblems("Try example.io for this.", true, []), ["has a link"]);
   assert.deepEqual(replyProblems("I made Paylane for exactly this.", false, ["Paylane"]), ["names the product in a help-only reply"]);
   assert.deepEqual(replyProblems("Paylanes of reminders help.", false, ["Paylane"]), [], "part of another word is not the product");
-  assert.deepEqual(replyProblems(Array(121).fill("word").join(" "), true, []), ["is over 120 words"]);
+  assert.deepEqual(replyProblems(Array(120).fill("word").join(" "), true, []), ["is not under 120 words"], "120 is not under 120");
+  assert.deepEqual(replyProblems(Array(119).fill("word").join(" "), true, []), []);
+  // Review R2: short links are links; a domain-like product name is not.
+  for (const link of ["Grab it at bit.ly/invoice-tpl", "Join t.me/invoicers", "We chat on discord.gg/abc", "See youtu.be/xyz"]) {
+    assert.deepEqual(replyProblems(link, true, []), ["has a link"], link);
+  }
+  assert.deepEqual(replyProblems("I use Cal.com for this.", true, ["Cal.com"]), [], "the product's own name is not a link");
   // One mention already in the last ten replies: every draft is help only, and says why.
   const memM = memoryStore({ ...docs, strategy: { ...docs.strategy, pains: ["late invoice payments"] } });
   memM.mentions.used = 1;

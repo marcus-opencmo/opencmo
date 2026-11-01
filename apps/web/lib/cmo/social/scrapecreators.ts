@@ -17,7 +17,19 @@ import { cleanUntrusted } from "../untrusted";
 export const SC_BASE = "https://api.scrapecreators.com";
 const TIMEOUT_MS = 20_000;
 
-export class SocialReadError extends Error {}
+/**
+ * `kind` lets a job tell "this post or account is gone" (`not_found`) from a problem on our side (`setup`, `credits`,
+ * `busy`) or a passing one (`unavailable`), instead of reading the English message.
+ */
+export type SocialReadKind = "setup" | "credits" | "not_found" | "busy" | "unavailable";
+export class SocialReadError extends Error {
+  constructor(
+    message: string,
+    readonly kind: SocialReadKind = "unavailable",
+  ) {
+    super(message);
+  }
+}
 
 export function scFakeAllowed(): boolean {
   return process.env.OPENCMO_AGENT_FAKE === "1" && !isProduction();
@@ -63,7 +75,7 @@ export class ScBudget {
 /** Lời gọi thô. `budget` trừ trước khi gọi — lỗi mạng vẫn tính, vì ScrapeCreators có thể đã tính. */
 export async function scGet(path: string, params: Record<string, string>, budget?: ScBudget): Promise<unknown> {
   const key = scKey();
-  if (!key) throw new SocialReadError("Social research is not set up on this server yet.");
+  if (!key) throw new SocialReadError("Social research is not set up on this server yet.", "setup");
   budget?.take();
   const url = `${SC_BASE}${path}?${new URLSearchParams({ ...params, trim: "true" })}`;
   let response: Response;
@@ -73,20 +85,20 @@ export async function scGet(path: string, params: Record<string, string>, budget
     throw new SocialReadError("The social network did not answer in time. Try again in a minute.");
   }
   if (response.status === 401 || response.status === 403) {
-    console.error("[cmo] scrapecreators: khoá bị từ chối", path, response.status);
-    throw new SocialReadError("Social research is not set up on this server yet.");
+    console.error("[cmo] scrapecreators: key refused", path, response.status);
+    throw new SocialReadError("Social research is not set up on this server yet.", "setup");
   }
-  if (response.status === 402) throw new SocialReadError("Social research is paused (out of lookup credits). Try again later.");
-  if (response.status === 404) throw new SocialReadError("That account or post was not found, or it is private.");
-  if (response.status === 429) throw new SocialReadError("Too many lookups right now. Try again in a minute.");
+  if (response.status === 402) throw new SocialReadError("Social research is paused (out of lookup credits). Try again later.", "credits");
+  if (response.status === 404) throw new SocialReadError("That account or post was not found, or it is private.", "not_found");
+  if (response.status === 429) throw new SocialReadError("Too many lookups right now. Try again in a minute.", "busy");
   if (!response.ok) {
-    console.error("[cmo] scrapecreators: lỗi", path, response.status);
+    console.error("[cmo] scrapecreators: error", path, response.status);
     throw new SocialReadError("The social network did not answer. Try again in a minute.");
   }
   return response.json().catch(() => null);
 }
 
-// ----------------------------------------------------------------- đọc phòng thủ
+// ----------------------------------------------------------------- defensive parsing
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => Boolean(v) && typeof v === "object" && !Array.isArray(v);

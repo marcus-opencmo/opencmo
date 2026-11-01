@@ -16,6 +16,7 @@ import { HnBudget, HnReadError, searchHn, type HnThread } from "../social/hn";
 import { searchReddit, SocialReadError, type RedditThread } from "../social/reddit";
 import { cleanUntrusted, escapeAttribute, escapeForTag } from "../untrusted";
 import { voiceBlock } from "../writer/context";
+import { hasLink } from "./check-post";
 import { avoidList, documentsBlock, productNames, recall } from "./context";
 import { genModel, promptVersion } from "./edit-taxonomy";
 import { skillText } from "../skills";
@@ -108,8 +109,10 @@ export function allowedBySettings(thread: RedditThread, settings: SalesSettings)
 /** What code refuses in a reply, whatever the model wrote: links, length, and the product named where it may not be. */
 export function replyProblems(reply: string, mayMention: boolean, products: string[]): string[] {
   const problems: string[] = [];
-  if (/(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|io|app|co|net|org|dev|ai)\b)/i.test(reply)) problems.push("has a link");
-  if (reply.trim().split(/\s+/).length > REPLY_MAX_WORDS) problems.push(`is over ${REPLY_MAX_WORDS} words`);
+  // The posts' own link check: short links (bit.ly, t.me, discord.gg) are links, the product's own domain-like name is not.
+  if (hasLink(reply, products)) problems.push("has a link");
+  // "Under 120 words": 120 itself is too many.
+  if (reply.trim().split(/\s+/).length >= REPLY_MAX_WORDS) problems.push(`is not under ${REPLY_MAX_WORDS} words`);
   if (!mayMention && products.some((name) => name.length >= 3 && new RegExp(`(^|[^\\p{L}\\p{N}])${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^\\p{L}\\p{N}])`, "iu").test(reply))) {
     problems.push("names the product in a help-only reply");
   }
@@ -178,6 +181,8 @@ export function scoreThread(thread: RedditThread, s: Scored | undefined, now = D
   if (!s || s.exclude) return null;
   const painOk = quoteIn(s.pain.quote, thread);
   const evidenceOk = quoteIn(s.evidence.quote, thread);
+  // Scored with evidence: Fit, Timing and Reach alone reach 60, so a thread with no quote that holds is not a card.
+  if (!painOk && !evidenceOk) return null;
   const parts: ScorePart[] = [
     { label: "Pain", score: painOk ? clamp(s.pain.score, 25) : 0, max: 25, evidence: painOk ? `“${s.pain.quote.trim()}”` : "No clear pain in their words" },
     { label: "Fit", score: clamp(s.fit.score, 25), max: 25, evidence: s.fit.why.trim().slice(0, 200) },
@@ -327,7 +332,7 @@ export async function salesScan(ctx: JobContext): Promise<JobOutput> {
         ).scores;
     const byIndex = new Map(scores.map((s) => [s.index, s]));
     return scanned
-      .map((thread, i) => ({ thread, result: scoreThread(thread, byIndex.get(i)) }))
+      .map((thread, i) => ({ thread, result: scoreThread(thread, byIndex.get(i), ctx.now.getTime()) }))
       .filter((r): r is { thread: ScanThread; result: { score: number; parts: ScorePart[] } } => r.result !== null && r.result.score >= PASS_SCORE)
       .sort((a, b) => b.result.score - a.result.score)
       .slice(0, MAX_CARDS);
@@ -346,7 +351,7 @@ export async function salesScan(ctx: JobContext): Promise<JobOutput> {
     // Independent reads: four communities at a time, kept in order so the prompt is the same on a retry.
     const read = async (name: string) => {
       const cached = await store.subredditRule(name);
-      if (cached && Date.now() - new Date(cached.read_at).getTime() < RULES_FRESH_MS) return { name, cached };
+      if (cached && ctx.now.getTime() - new Date(cached.read_at).getTime() < RULES_FRESH_MS) return { name, cached };
       try {
         const details = await subredditDetails(name);
         return { name, rules: details.rules || details.description };
@@ -355,8 +360,12 @@ export async function salesScan(ctx: JobContext): Promise<JobOutput> {
         return { name, failed: true as const };
       }
     };
-    const results: Awaited<ReturnType<typeof read>>[] = [];
-    for (let at = 0; at < names.length; at += 4) results.push(...(await Promise.all(names.slice(at, at + 4).map(read))));
+    // Kept for inbox replays: the rules Claude classified by index must be the list its verdicts are applied to.
+    const results = await ctx.once("rules_read", async () => {
+      const all: Awaited<ReturnType<typeof read>>[] = [];
+      for (let at = 0; at < names.length; at += 4) all.push(...(await Promise.all(names.slice(at, at + 4).map(read))));
+      return all;
+    });
     for (const r of results) {
       if ("cached" in r && r.cached) out.set(r.name, { verdict: r.cached.verdict, summary: r.cached.summary });
       // Rules we could not read are never a reason to name the product.

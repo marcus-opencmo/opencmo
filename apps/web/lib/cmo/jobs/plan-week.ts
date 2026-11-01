@@ -125,7 +125,9 @@ export async function planWeek(ctx: JobContext): Promise<JobOutput> {
   const docs = await ctx.step("read_doc", "Read your strategy", () => store.documents(run.user_id), (d) =>
     d.strategy ? "Read your strategy and content plan" : "No strategy yet: planned from your product",
   );
-  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+  // Last week from its Monday 00:00 UTC, not "now minus 7 days": the weekly plan runs at nearly the same minute each
+  // Monday, so a few seconds of queue delay used to drop all of last week's decided items.
+  const since = `${isoDay(-7, new Date(`${mondayOf(ctx.now)}T00:00:00Z`))}T00:00:00.000Z`;
   const { recent, memories, insight, goal } = await ctx.step(
     "get_results",
     "Looked at last week",

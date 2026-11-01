@@ -186,7 +186,7 @@ export async function draftPost(ctx: JobContext): Promise<JobOutput> {
     return found;
   }, (found) => {
     const bad = found.filter((f) => f.length).length;
-    return bad ? `${bad} of 3 needed a fix` : "All 3 passed";
+    return bad ? `${bad} of ${found.length} needed a fix` : `All ${found.length} passed`;
   });
 
   if (problems.some((p) => p.length) && !fakeAllowed() && ctx.brain === "opencmo") {

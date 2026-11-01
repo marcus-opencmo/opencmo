@@ -46,7 +46,8 @@ Name the one most important problem and the post number it is in. The documents 
 const ReviewSchema = z.object({ ok: z.boolean(), problem: z.string().describe("Empty when ok. Otherwise the one thing to fix, with its post number.") });
 
 const RECAP = /^\s*(to (sum|wrap) (it )?up|in (short|summary|sum)|tl;?dr|recap|so,? to recap|summary)\b/i;
-const NUMBERED = /^\s*(\d{1,2}\s*[/.)]|🧵)/u;
+// "1/", "2." or "3)" numbering, not a post that opens on a figure ("10.5% of invoices…").
+const NUMBERED = /^\s*(\d{1,2}\s*(?:[/)]|\.(?!\d))|🧵)/u;
 
 /** Code-only problems of a thread; empty when it passes. `post` is 1-based in the messages. */
 export function threadIssues(posts: readonly string[], profile: PlatformProfile, rules: ReturnType<typeof checkRules>): string[] {
