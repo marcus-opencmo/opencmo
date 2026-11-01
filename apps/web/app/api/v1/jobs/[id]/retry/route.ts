@@ -1,6 +1,6 @@
 import { after } from "next/server";
 
-import { firstRow, rpcOrThrow, withApi } from "@/lib/api/handler";
+import { firstRow, notFound, rpcOrThrow, withApi } from "@/lib/api/handler";
 import { projectDetail } from "@/lib/api/projects";
 import { wakeWorker } from "@/lib/modal";
 import type { JobRow } from "@/lib/api/shapes";
@@ -17,6 +17,8 @@ export const dynamic = "force-dynamic";
 export const POST = withApi(
   {},
   async ({ supabase, params }) => {
+    // Not a job id is "not found", not a Postgres cast error.
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(params.id ?? ""))) throw notFound("Project not found.");
     const job = firstRow(
       await rpcOrThrow<JobRow | JobRow[]>(supabase, "retry_job", { p_job_id: params.id }),
     ) as JobRow | null;

@@ -105,7 +105,8 @@ const body = z.union([
 ]);
 
 /** Opens (or returns) this clip's session (`new` is "New chat"), or the CMO chat (`scope: "cmo"`). Project chat is gone with clipping. */
-export const POST = withApi({ body }, async ({ supabase, body }) => {
+// Clip chats had no cap at all (agent_new_session counts nothing); CMO chats keep their own 30 an hour in SQL.
+export const POST = withApi({ body, rateLimit: { bucket: "agent-session", limit: 60, windowSeconds: 3600 } }, async ({ supabase, body }) => {
   let session: SessionRow;
   if ("clip_id" in body) {
     const model = pickModel(body.model);

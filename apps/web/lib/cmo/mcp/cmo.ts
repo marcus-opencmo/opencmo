@@ -58,8 +58,8 @@ const MCP_NOTES: Record<string, string> = {
 };
 
 /** Which bucket of `cmo_read_hit` a read counts against, if any. */
-const capOf = (name: string): "mcp_social" | "mcp_site" | null =>
-  name === "read_site" ? "mcp_site" : RESEARCH_TOOLS.has(name) && name !== "research_credits" ? "mcp_social" : null;
+const capOf = (name: string): "mcp_social" | "mcp_site" | "research_credits" | null =>
+  name === "read_site" ? "mcp_site" : name === "research_credits" ? "research_credits" : RESEARCH_TOOLS.has(name) ? "mcp_social" : null;
 
 function annotations(name: string): McpAnnotations {
   const outside = RESEARCH_TOOLS.has(name) || name === "read_site";

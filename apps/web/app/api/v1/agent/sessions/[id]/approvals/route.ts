@@ -19,7 +19,7 @@ const body = z.object({
  * same Server-Sent Events as the `turns` route. A waiting tool with no decision counts as Cancel:
  * the Assistant never spends credits the user did not approve.
  */
-export const POST = withApi({ body }, async ({ supabase, user, body, params }) =>
+export const POST = withApi({ body, rateLimit: { bucket: "agent-continue", limit: 300, windowSeconds: 3600 } }, async ({ supabase, user, body, params }) =>
   continueTurn(
     supabase,
     user.id,
