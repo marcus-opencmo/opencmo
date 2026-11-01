@@ -66,12 +66,17 @@ const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"'
 
 /** HN story text is HTML (`<p>`, `<a>`, entities): plain text before anything reads it, then cleaned. */
 export function hnPlain(html: string, max: number): string {
-  const text = html
+  let text = html
     .replace(/<p>/gi, "\n")
-    .replace(/<[^>]*>/g, "")
     .replace(/&#x([0-9a-f]{1,6});/gi, (_, h: string) => safeChar(parseInt(h, 16)))
     .replace(/&#(\d{1,7});/g, (_, d: string) => safeChar(Number(d)))
     .replace(/&([a-z]+);/gi, (m, name: string) => ENTITIES[name.toLowerCase()] ?? m);
+  // Tags are stripped after the entities are decoded, until none is left: an encoded `&lt;script&gt;` or a split
+  // `<scr<b>ipt>` must not come out as a tag.
+  for (let previous = ""; previous !== text; ) {
+    previous = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
   return cleanUntrusted(text).replace(/[ \t]+/g, " ").replace(/\n{2,}/g, "\n").trim().slice(0, max);
 }
 
