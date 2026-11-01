@@ -43,7 +43,7 @@ select is(public.credit_held('cmo_run', (select id from p1)), 0, 'and its credit
 
 -- A translation still charged after 15 minutes was killed before its refund.
 insert into public.jobs (id, user_id, kind, source_url, title, status, duration_seconds)
-values ('e2401000-0000-4000-8000-00000000000a', 'e2400000-0000-4000-8000-00000000000a', 'clip', 'storage://sources/x.mp4', 'Demo', 'done', 60);
+values ('e2401000-0000-4000-8000-00000000000a', 'e2400000-0000-4000-8000-00000000000a', 'clip', 'https://example.com/v', 'Demo', 'done', 60);
 insert into public.clips (id, job_id, idx, hook, start_seconds, end_seconds, kind)
 values ('e2402000-0000-4000-8000-00000000000a', 'e2401000-0000-4000-8000-00000000000a', 0, 'Full', 0, 60, 'full');
 insert into public.caption_translations (id, user_id, clip_id, credits, created_at) values
