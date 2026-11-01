@@ -53,6 +53,17 @@ APP_NAME = "opencmo"
 # vòng lặp phía web, spam) không đẻ ra hàng trăm container trong một phút.
 SWEEP_BATCH = 10
 
+# `run_task` containers. Claims stop at this many running tasks (review R6): a task spawned past it waited in Modal's
+# queue while its 120 s database lease ran out, was claimed again and failed after three tries without ever running.
+RUN_TASK_MAX_CONTAINERS = 10
+
+
+def _token_ok(expected: str, given: str) -> bool:
+    """Constant-time token check on bytes: `hmac.compare_digest` on str raises for non-ASCII input (a 500, not 401)."""
+    import hmac
+
+    return bool(expected) and hmac.compare_digest(expected.encode("utf-8"), given.encode("utf-8"))
+
 NODE_VERSION = "22.22.2"
 WEB_ROOT = "/root/web"
 _ENGINE = Path(__file__).parent
@@ -283,13 +294,15 @@ def _record_call(store, job, call) -> None:
     timeout=1800,
     cpu=4,
     memory=4096,
-    # Cho container chết giữa chừng (OOM, preempt): chạy lại CÙNG attempt. Lỗi
-    # bắt được thì `process_job.process` đã chốt, lần chạy lại thấy job không còn running
-    # và thoát ngay.
+    # A container that dies midway (OOM, preemption) runs the SAME attempt again. A caught error was already settled by
+    # `process_job.process`, so the rerun sees the job no longer running and exits at once.
     retries=modal.Retries(max_retries=1, initial_delay=10.0),
+    # Uploads were unbounded at 4 CPU / 4 GiB each, sharing the workspace's container quota with the sweep, submit and
+    # MCP (review R6). The database already caps each user at 3 in progress.
+    max_containers=20,
 )
 def run_job(job_id: str, attempt_id: str) -> None:
-    """Đường vào chính. Chỉ nhận ID; mọi dữ liệu job đọc lại từ database."""
+    """The main entry point. It takes only ids; every job field is read again from the database."""
     from opencmo.worker.process_job import process
 
     store = _store()
@@ -309,7 +322,7 @@ def run_job(job_id: str, attempt_id: str) -> None:
     cpu=4,
     memory=4096,
     retries=modal.Retries(max_retries=1, initial_delay=10.0),
-    max_containers=10,
+    max_containers=RUN_TASK_MAX_CONTAINERS,
 )
 def run_task(task_id: str, attempt_id: str) -> None:
     """Chạy một task canonical; kind/payload luôn đọc lại từ database."""
@@ -409,13 +422,12 @@ class MotionPreview:
     # Same URL as the v1 function `motion_preview`, so MOTION_PREVIEW_URL does not change.
     @modal.fastapi_endpoint(method="POST", label=f"{APP_NAME}-motion-preview")
     def motion_preview(self, payload: dict) -> dict:
-        import hmac
 
         from fastapi import HTTPException
 
         expected = os.environ.get("MOTION_PREVIEW_TOKEN", "")
         given = str(payload.get("token") or "")
-        if not expected or not hmac.compare_digest(expected, given):
+        if not _token_ok(expected, given):
             raise HTTPException(status_code=401, detail="Invalid preview token.")
         job = payload.get("job")
         if not isinstance(job, dict):
@@ -443,7 +455,6 @@ def look(payload: dict) -> dict:
     the `opencmo` secret (same value as in `opencmo-mcp`). `opencmo.worker.look` runs in
     `tests/test_worker_look.py`, and once end to end against a local clip-export.
     """
-    import hmac
 
     from fastapi import HTTPException
 
@@ -451,7 +462,7 @@ def look(payload: dict) -> dict:
 
     expected = os.environ.get("OPENCMO_LOOK_TOKEN", "")
     given = str(payload.pop("token", "") or "")
-    if not expected or not hmac.compare_digest(expected, given):
+    if not _token_ok(expected, given):
         raise HTTPException(status_code=401, detail="Invalid look token.")
     store = _store()
     try:
@@ -477,7 +488,6 @@ def submit(payload: dict) -> dict:
     Chỉ dùng một trong `job_id`/`task_id` từ payload. Toàn bộ dữ liệu còn lại
     lấy từ hàng canonical mà RPC claim trả về.
     """
-    import hmac
 
     from fastapi import HTTPException
 
@@ -485,7 +495,7 @@ def submit(payload: dict) -> dict:
 
     expected = os.environ.get("OPENCMO_WORKER_TOKEN", "")
     given = str(payload.get("token") or "")
-    if not expected or not hmac.compare_digest(expected, given):
+    if not _token_ok(expected, given):
         raise HTTPException(status_code=401, detail="Invalid worker token.")
 
     job_id = str(payload.get("job_id") or "")
@@ -496,15 +506,15 @@ def submit(payload: dict) -> dict:
     store = _store()
     try:
         try:
-            item = store.claim_job(job_id) if job_id else store.claim_task(task_id)
+            item = store.claim_job(job_id) if job_id else store.claim_task(task_id, max_running=RUN_TASK_MAX_CONTAINERS)
         except TransientError as exc:
             # Không retry claim. Nếu nó đã commit, lease hết hạn trả job về
             # hàng đợi; nếu chưa, sweep phút sau nhặt.
-            log.warning("Submit %s: database lỗi tạm — để sweep xử lý", job_id or task_id)
+            log.warning("Submit %s: transient database error, left to the sweep", job_id or task_id)
             raise HTTPException(status_code=503, detail="The database is temporarily unavailable.") from exc
 
         if item is None:
-            log.info("Việc %s đã có worker nhận — bỏ qua", job_id or task_id)
+            log.info("Work %s is already claimed, or every task container is busy (the sweep takes it later)", job_id or task_id)
             return {"ok": True, "already_claimed": True}
 
         if job_id:
@@ -515,7 +525,7 @@ def submit(payload: dict) -> dict:
     finally:
         store.close()
 
-    log.info("Nhận %s %s attempt %s từ web", "job" if job_id else "task", item.id, item.attempt)
+    log.info("Took %s %s attempt %s from the web", "job" if job_id else "task", item.id, item.attempt)
     return {"ok": True, "call_id": call.object_id}
 
 
@@ -529,79 +539,82 @@ def wake(payload: dict) -> dict:
     the sweep claims through the same leases, and a spare run finds an empty queue.
     The token travels in the body for the same reason as in `submit`.
     """
-    import hmac
 
     from fastapi import HTTPException
 
     expected = os.environ.get("OPENCMO_WAKE_TOKEN", "")
     given = str(payload.get("token") or "")
-    if not expected or not hmac.compare_digest(expected, given):
+    if not _token_ok(expected, given):
         raise HTTPException(status_code=401, detail="Invalid wake token.")
     sweep.spawn()
     return {"ok": True}
 
 
-@app.function(secrets=[secret], schedule=modal.Period(minutes=1), timeout=60)
+# One sweep at a time: every `wake` spawns one, and a burst of wakes ran many at once, each dispatching up to
+# MAX_DISPATCH CMO calls (review R6). A queued wake sweep still runs, right after the current one.
+@app.function(secrets=[secret], schedule=modal.Period(minutes=1), timeout=60, max_containers=1)
 def sweep() -> None:
-    """Lưới an toàn: phục hồi lease rồi nhặt job/task còn kẹt ở queued.
+    """The safety net: recover expired leases, then take jobs and tasks still waiting in the queue.
 
-    Nhặt HẾT hàng đợi (tối đa SWEEP_BATCH) rồi giao cho `run_job` — không tự
-    chạy pipeline ở đây: hàm này timeout 60 giây, còn một job mất vài phút.
+    It takes the whole queue (at most SWEEP_BATCH, and never past RUN_TASK_MAX_CONTAINERS running tasks) and hands it
+    to `run_job` / `run_task`; it never runs a pipeline itself: this function times out at 60 seconds, a job takes
+    minutes.
 
-    Lỗi tạm của database chỉ ghi warning rồi thôi: cron chạy lại sau một phút,
-    và 504 lúc hàng đợi rỗng (13/09 11:00) không phải sự cố cần báo động.
+    Database errors only warn: the cron runs again in a minute, and a 504 on an empty queue (13/09 11:00) is not an
+    incident.
     """
     from opencmo.backends.retry import TransientError
     from opencmo.worker.kinds import task_kinds
 
     store = _store()
     try:
-        try:
-            outcome = store.reclaim_expired()
-            if outcome.get("requeued") or outcome.get("failed"):
-                log.warning("Reconciler: %s", outcome)
-        except TransientError:
-            log.warning("Reconciler lỗi tạm — phút sau chạy lại", exc_info=True)
-
-        try:
-            outcome = store.reclaim_expired_tasks()
-            if outcome.get("requeued") or outcome.get("failed"):
-                log.warning("Task reconciler: %s", outcome)
-        except TransientError:
-            log.warning("Task reconciler lỗi tạm — phút sau chạy lại", exc_info=True)
+        # Each phase on its own (review R6): one that fails, for any reason, must not stop the claims and the CMO
+        # dispatch after it. They only warn; the sweep runs again in a minute.
+        for name, phase in (
+            ("Job reconciler", store.reclaim_expired),
+            ("Task reconciler", store.reclaim_expired_tasks),
+        ):
+            try:
+                outcome = phase()
+                if outcome.get("requeued") or outcome.get("failed"):
+                    log.warning("%s: %s", name, outcome)
+            except Exception:
+                log.warning("%s failed; next sweep tries again", name, exc_info=True)
 
         try:
             reaped = store.reap_agent_turns()
             if reaped:
                 log.warning("Assistant turns closed by the sweep: %s", reaped)
-        except TransientError:
-            log.warning("Turn sweep: transient error, retrying next minute", exc_info=True)
+        except Exception:
+            log.warning("Turn sweep failed; next sweep tries again", exc_info=True)
 
+        jobs_left = True
         for _ in range(SWEEP_BATCH):
             try:
-                job = store.claim_next_job()
+                if jobs_left:
+                    job = store.claim_next_job()
+                    if job is not None:
+                        log.info("Sweep took job %s attempt %s", job.id, job.attempt)
+                        call = run_job.spawn(job.id, job.attempt_id)
+                        _record_call(store, job, call)
+                        continue
+                    # The job queue is empty for this sweep: stop asking (it cost one claim RPC per task).
+                    jobs_left = False
+                task = store.claim_next_task(list(task_kinds()), max_running=RUN_TASK_MAX_CONTAINERS)
+                if task is None:
+                    break
+                log.info("Sweep took task %s kind %s", task.id, task.kind)
+                run_task.spawn(task.id, task.attempt_id)
             except TransientError:
-                log.warning("Claim lỗi tạm — phút sau chạy lại", exc_info=True)
+                log.warning("Claim: transient error, retrying next minute", exc_info=True)
                 break
-            if job is not None:
-                log.info("Sweep nhặt job %s attempt %s", job.id, job.attempt)
-                call = run_job.spawn(job.id, job.attempt_id)
-                _record_call(store, job, call)
-                continue
-
-            try:
-                task = store.claim_next_task(list(task_kinds()))
-            except TransientError:
-                log.warning("Claim task lỗi tạm — phút sau chạy lại", exc_info=True)
+            except Exception:
+                log.warning("Claim failed; next sweep tries again", exc_info=True)
                 break
-            if task is None:
-                break
-            log.info("Sweep nhặt task %s kind %s", task.id, task.kind)
-            run_task.spawn(task.id, task.attempt_id)
     finally:
         store.close()
-
-    _dispatch_cmo()
+        # Always: the CMO and Schedule queues must not stop because a step above failed.
+        _dispatch_cmo()
 
 
 def _dispatch_cmo() -> None:
@@ -633,7 +646,9 @@ def _dispatch_cmo() -> None:
         log.warning("AI CMO dispatch failed; next sweep tries again", exc_info=True)
 
 
-@app.function(secrets=[secret], schedule=modal.Cron("5 0 * * *"), timeout=330)
+# Two retries: one failed call skipped every founder's loops for the day, and cmo_enqueue merges a retry into the run
+# already queued, so retrying is safe (review R6).
+@app.function(secrets=[secret], schedule=modal.Cron("5 0 * * *"), timeout=330, retries=modal.Retries(max_retries=2, initial_delay=60.0))
 def cmo_schedule() -> None:
     """Enqueue the AI CMO loops due today (00:05 UTC, right after the calendar's day starts).
 

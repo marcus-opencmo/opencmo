@@ -85,8 +85,18 @@ if _BUNDLE.exists() or not modal.is_local():
     @modal.web_server(port=MCP_PORT, startup_timeout=60, label=APP_NAME)
     def mcp_server() -> None:
         import subprocess
+        import threading
 
         env = {**os.environ, "PORT": str(MCP_PORT), "HOST": "0.0.0.0"}
-        subprocess.Popen(["node", "--enable-source-maps", f"{_ROOT}/server.cjs"], env=env)
+        child = subprocess.Popen(["node", "--enable-source-maps", f"{_ROOT}/server.cjs"], env=env)
+
+        # Node exits on an unhandled rejection; the warm container would then keep taking requests with nothing on
+        # the port. When the server dies, the container exits too, so Modal starts a fresh one (review R6).
+        def watch() -> None:
+            code = child.wait()
+            print(f"MCP server exited with code {code}; stopping the container", flush=True)
+            os._exit(1)
+
+        threading.Thread(target=watch, daemon=True).start()
 else:
     raise SystemExit("Build the MCP bundle first: npm run build --workspace @opencmo/mcp-server")
