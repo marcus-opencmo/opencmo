@@ -114,7 +114,14 @@ export async function GET(request: NextRequest) {
   if (purgeError) console.error("[cron] xoá hàng project thất bại", purgeError.code);
 
   const { error: limitsError } = await supabase.rpc("purge_stale_rate_limits");
-  if (limitsError) console.error("[cron] dọn rate_limits thất bại", limitsError.code);
+  if (limitsError) console.error("[cron] purging rate_limits failed", limitsError.code);
+
+  // Credits that nothing else gives back (review R5): runs parked by a pause over a week, and caption translations
+  // whose request died before its own refund.
+  const { error: parkedError } = await supabase.rpc("cmo_release_parked_runs", { p_days: 7 });
+  if (parkedError) console.error("[cron] releasing parked CMO runs failed", parkedError.code);
+  const { error: captionsError } = await supabase.rpc("refund_stale_caption_translations");
+  if (captionsError) console.error("[cron] refunding stale caption translations failed", captionsError.code);
 
   const orphans =
     (await sweepOrphans(supabase, SOURCES_BUCKET, deadline)) + (await sweepOrphans(supabase, "media", deadline));
