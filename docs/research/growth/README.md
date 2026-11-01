@@ -6,3 +6,4 @@ Mới nhất ở trên. Mỗi lượt thêm một dòng và kiểm danh sách n�
 
 | Ngày | Chủ đề | Báo cáo | Nguồn chính |
 |---|---|---|---|
+| 2026-10-31 | Sales đa nền tảng qua ScrapeCreators: bản đồ endpoint, thử thật, tìm email creator | [2026-10-31-scrapecreators-sales-finder.md](2026-10-31-scrapecreators-sales-finder.md) | docs.scrapecreators.com, thử thật 20 credit |

@@ -6,6 +6,7 @@ Newest first.
 
 | Date | Plan | Source | PR |
 |---|---|---|---|
+| 2026-10-31 | [Sales finder: leads on every platform, from a question](2026-10-31-sales-finder-spec.md) (spec; chat-first and panel §4a added 2026-11-01; the `leads` table waits on R0) | Owner conversation 2026-10-31 + [`../../research/growth/2026-10-31-scrapecreators-sales-finder.md`](../../research/growth/2026-10-31-scrapecreators-sales-finder.md) | [#133](https://github.com/marcus-legia/opencmo/pull/133) `cmo-sales-finder` → `cmo-build` |
 | 2026-10-28 | [P6 Quality and reach](2026-10-28-p6-quality-reach-plan.md) · [P6 sessions](2026-10-28-p6-sessions/) (refreshed 2026-10-31 after P5) | Owner conversation 2026-10-28 + `docs/architecture/` | [#128](https://github.com/marcus-legia/opencmo/pull/128) `cmo-p6` → `cmo-build` |
 | 2026-10-30 | [Three-column shell for UI v2](2026-10-30-three-column-shell-plan.md) (rail · chat · tab panel, resizable; S1–S3 here, editor S4 later) | Owner conversation 2026-10-30 + canvas https://claude.ai/artifact/5E6W7sADybZEkzpEZVHurF | `cmo-p5-shell` → `cmo-p5` |
 | 2026-10-28 | [P5 Research for Studio, safe Sales, slideshows](2026-10-28-p5-research-sales-slides-plan.md) · [P5 sessions](2026-10-28-p5-sessions/) (refreshed 2026-10-30 after P4) | Owner conversation 2026-10-28 + `docs/architecture/` | [#127](https://github.com/marcus-legia/opencmo/pull/127) `cmo-p5` → `cmo-build` |
