@@ -5,7 +5,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(24);
+select plan(25);
 
 insert into auth.users (id, email) values ('e1300000-0000-4000-8000-00000000000a', 'r6-a@test.local');
 insert into public.jobs (id, user_id, source_url, duration_seconds, status) values
@@ -70,7 +70,9 @@ reset role;
 select is(public.credit_balance('e1300000-0000-4000-8000-00000000000a'), 29, '30 − 1 (huỷ khi đang chạy): không hoàn hai lần');
 select is(public.credit_held('generation', (select (r->'generation'->>'id')::uuid from g)), 0, 'generation hoàn đủ một lần');
 select is(public.credit_held('captions', (select (v->>'task_id')::uuid from cap)), 0, 'phụ đề hoàn đủ một lần');
-select is(public.credit_held('job', 'e1301000-0000-4000-8000-00000000000a'), 1, 'job giữ lại đúng 1 credit');
+-- Review R5 (20270102030000): the 1-credit fee is its own ref kind, so a Retry's hold never absorbs it.
+select is(public.credit_held('job', 'e1301000-0000-4000-8000-00000000000a'), 0, 'the job hold is fully refunded');
+select is(public.credit_held('job_fee', 'e1301000-0000-4000-8000-00000000000a'), 1, 'and the cancel fee is 1 credit on its own ref');
 select is(public.credit_refund('e1300000-0000-4000-8000-00000000000a', 'generation', (select (r->'generation'->>'id')::uuid from g), 'again'),
   0, 'hoàn lần hai ghi 0');
 select is(

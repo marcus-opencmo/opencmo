@@ -16,7 +16,8 @@ export const MAX_REPLY_CHECKS = 10;
 /** Enough comments to find a reply that is not near the top. */
 const REDDIT_COMMENTS = 100;
 
-const words = (s: string) => s.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^a-z0-9]+/g, " ").trim().split(" ").filter((w) => w.length > 2);
+// Letters and digits of every script: a reply written in Russian or Japanese has words too.
+const words = (s: string) => s.toLowerCase().replace(/https?:\/\/\S+/g, " ").replace(/[^\p{L}\p{N}]+/gu, " ").trim().split(" ").filter((w) => [...w].length > 2 || /[^\p{Script=Latin}\p{N}]/u.test(w));
 
 /** How much of the founder's reply a comment holds (0–1): the share of the reply's words found in it. */
 export function replyOverlap(reply: string, comment: string): number {
@@ -70,6 +71,8 @@ export async function checkReply(due: ReplyOutcomeDue, readers: ReplyReaders): P
     const mine = findReply(due.reply, read.comments);
     return mine ? { status: "found", votes: mine.score, replies: mine.replies ?? null } : { status: "not_found", votes: null, replies: null };
   } catch (error) {
+    // A removed or deleted Reddit thread is gone for good: reading it again every day would cost a lookup each time.
+    if (error instanceof SocialReadError && error.kind === "not_found") return { status: "gone", votes: null, replies: null };
     if (error instanceof SocialReadError || error instanceof HnReadError) return null;
     throw error;
   }

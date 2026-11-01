@@ -30,7 +30,7 @@ export function kickCmoQueue(runId?: string, budgetMs = 250_000): void {
     try {
       await drainCmoQueue(supabaseStore(createAdminClient()), { runId, budgetMs });
     } catch (error) {
-      console.error("[cmo] chạy hàng đợi thất bại", error);
+      console.error("[cmo] draining the queue failed", error);
     }
   });
 }

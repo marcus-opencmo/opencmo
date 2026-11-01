@@ -95,7 +95,8 @@ export function briefOf(order: Order) {
 async function runOrder(admin: SupabaseClient, order: Order): Promise<void> {
   const { ctx, adapter } = brainStudio(order.user_id, order.id);
   try {
-    // The team's model calls are paid from the balance: with nothing left, the order waits for a top-up.
+    // The team's model calls are paid from the balance: with nothing left the order fails as needs_credits (nothing
+    // re-queues it after a top-up yet; see the R2 review follow-ups).
     const credits = (await balance(ctx.supabase, order.user_id))?.credits;
     if (credits !== undefined && credits < 1) {
       return move(admin, order.id, "failed", "", { code: "needs_credits", message: "Top up credits so the video team can work." });

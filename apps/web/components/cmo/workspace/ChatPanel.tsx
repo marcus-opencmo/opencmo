@@ -9,6 +9,7 @@
  * demo; còn lại ô nhập tắt và nói rõ lý do.
  */
 
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ApiError, api, jsonBody } from "@/components/clipping/api";
@@ -16,13 +17,14 @@ import { readStream } from "@/components/clipping/agent-stream";
 import { ContinueInClaude } from "@/components/editor/assistant/ContinueInClaude";
 import { Markdown } from "@/components/editor/assistant/Markdown";
 import { Icon } from "@/components/icons";
+import { panelHref, PanelOpenSchema, screenOfPath, type ScreenContext } from "@/lib/agent/panel";
 import type { ChatMessage, Workspace } from "@/lib/cmo/workspace";
 
 import { ago } from "./time";
 
 const SUGGESTIONS = ["Plan my week", "Draft a post for X about what we shipped", "What should I post today?", "Who is my ideal customer?"];
 
-type TurnView = { number: number; prompt: string; status: string; error: string | null; reply: string; actions: { name: string; ok: boolean; summary: string }[] };
+type TurnView = { number: number; prompt: string; status: string; pause_reason?: string | null; error: string | null; reply: string; actions: { name: string; ok: boolean; summary: string }[] };
 type SessionView = { id: string; turns: TurnView[] };
 type PastSession = { id: string; title: string; created_at: string };
 type Loaded = { available: boolean; session: SessionView | null; sessions: PastSession[] };
@@ -35,7 +37,11 @@ function toMessages(session: SessionView | null): ChatMessage[] {
     {
       id: `${turn.number}-c`,
       role: "cmo" as const,
-      text: turn.reply || (turn.status === "failed" ? (turn.error ?? "Something went wrong. Please try again.") : turn.actions.map((a) => a.summary).join(". ")),
+      // A turn that failed after some text keeps both, as it showed live.
+      text:
+        turn.status === "failed" && turn.reply && turn.error
+          ? `${turn.reply}\n\n${turn.error}`
+          : turn.reply || (turn.status === "failed" ? (turn.error ?? "Something went wrong. Please try again.") : turn.actions.map((a) => a.summary).join(". ")),
     },
   ]);
 }
@@ -43,6 +49,14 @@ function toMessages(session: SessionView | null): ChatMessage[] {
 /** Nhãn "đang làm" theo tool CMO đang gọi (research đọc mạng xã hội, create_task giao việc). */
 function workingLabel(tool: string): string {
   if (tool === "create_task") return "Handing it to an agent…";
+  if (tool === "read_site") return "Reading the website…";
+  if (tool === "search_hackernews") return "Reading Hacker News…";
+  if (tool === "read_skill") return "Reading a playbook…";
+  if (tool === "get_run_result") return "Checking on the team…";
+  if (tool === "update_document") return "Updating your document…";
+  if (tool === "remember") return "Saving to memory…";
+  if (tool === "set_week_goal") return "Proposing a goal…";
+  if (tool === "open_screen") return "Opening it on the right…";
   if (/reddit|subreddit/.test(tool)) return "Reading Reddit…";
   if (tool === "x_profile" || tool === "find_outliers") return "Reading X…";
   if (tool === "search_videos" || tool === "get_transcript") return "Watching videos…";
@@ -56,8 +70,29 @@ const CARD_TOOLS = new Set(["create_task", "set_week_goal", "update_document"]);
 /** What the chat reads of the workspace; the v2 Dashboard's ask sheet passes only this. */
 export type ChatSource = Pick<Workspace, "chat" | "chatTitle" | "demo"> & { live: Pick<Workspace["live"], "chat"> };
 
-export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onToast: (message: string) => void; onWorkStarted: () => void | Promise<void> }) {
+/**
+ * `drivesPanel`: the chat sits in the v2 shell, so a tool's `view.open` opens that screen in column 3 and each turn says
+ * which screen is open. Off elsewhere (the classic workspace, the Dashboard's ask sheet), where there is no panel.
+ */
+export function ChatPanel({
+  ws,
+  onToast,
+  onWorkStarted,
+  drivesPanel = false,
+}: {
+  ws: ChatSource;
+  onToast: (message: string) => void;
+  onWorkStarted: () => void | Promise<void>;
+  drivesPanel?: boolean;
+}) {
   const live = ws.live.chat;
+  const router = useRouter();
+  const pathname = usePathname();
+  // Read inside the stream callback, which outlives the render it was made in.
+  const pathRef = useRef(pathname);
+  pathRef.current = pathname;
+  // The rows the last `view.open` put on screen; sent back with the next turn while that screen is still open.
+  const shown = useRef<{ path: string; ids: string[] } | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>(ws.chat);
   const [title, setTitle] = useState(ws.chatTitle);
   const [session, setSession] = useState<SessionView | null>(null);
@@ -68,6 +103,8 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
   const [rated, setRated] = useState<Record<string, "up" | "down">>({});
   const [past, setPast] = useState<PastSession[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
+  // A session whose last turn paused on time or steps before a reload: continued once the stream is ready.
+  const [resume, setResume] = useState<string | null>(null);
   // Lần tải đầu: khung chờ thay cho lời chào, để lời chào không nháy rồi bị thay bằng cuộc chat cũ.
   const [loading, setLoading] = useState(live);
   const listRef = useRef<HTMLOListElement>(null);
@@ -80,7 +117,11 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
     setMessages(toMessages(loaded.session));
     setTitle(loaded.session?.turns[0]?.prompt.slice(0, 60) ?? null);
     setPast(loaded.sessions ?? []);
-    setExtend(null);
+    // A pause outlives a reload: 'budget' needs the founder's Continue, 'time' and 'steps' go on by themselves.
+    const last = loaded.session?.turns.at(-1);
+    const paused = last?.status === "awaiting_continue" ? last.pause_reason : null;
+    setExtend(paused === "budget" ? 10 : null);
+    if (loaded.session && (paused === "time" || paused === "steps")) setResume(loaded.session.id);
   }, []);
 
   useEffect(() => {
@@ -119,6 +160,19 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight });
   }, [messages, working]);
 
+  /** Opens a tool's screen in column 3; true when the result named a screen, so that screen reloads. */
+  const openPanel = useCallback(
+    (open: unknown): boolean => {
+      const href = panelHref(open);
+      if (!href) return false;
+      const path = href.split("?")[0]!;
+      shown.current = { path, ids: PanelOpenSchema.parse(open).ids ?? [] };
+      if (pathRef.current !== path) router.push(href);
+      return true;
+    },
+    [router],
+  );
+
   const stream = useCallback(
     async (sessionId: string, path: string, body: unknown, prompt: string | null) => {
       setBusy(true);
@@ -127,7 +181,11 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
       if (prompt !== null) {
         setMessages((m) => [...m, { id: `${Date.now()}-u`, role: "user", text: prompt }, { id: replyId, role: "cmo", text: "" }]);
       } else {
-        setMessages((m) => [...m, { id: replyId, role: "cmo", text: "" }]);
+        // A continuation writes into the bubble it continues, so an empty one is not left saying "Thinking…".
+        setMessages((m) => {
+          const last = m.at(-1);
+          return last?.role === "cmo" ? [...m.slice(0, -1), { ...last, id: replyId }] : [...m, { id: replyId, role: "cmo", text: "" }];
+        });
       }
       const append = (more: string) => setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, text: msg.text + more } : msg)));
       let done: Done = {};
@@ -142,7 +200,8 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
           if (event === "tool_start") setWorking(workingLabel(String(data.name)));
           if (event === "tool_result") {
             setWorking(null);
-            if (CARD_TOOLS.has(String(data.name)) && data.ok) void onWorkStarted();
+            const opened = data.ok && drivesPanel ? openPanel((data.view as { open?: unknown } | undefined)?.open) : false;
+            if (data.ok && (opened || CARD_TOOLS.has(String(data.name)))) void onWorkStarted();
           }
           if (event === "done") done = data as Done;
         });
@@ -152,15 +211,29 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
         setWorking(null);
         setBusy(false);
       }
-      if (done.status === "awaiting_continue" && done.reason === "time") {
+      if (done.status === "awaiting_continue" && (done.reason === "time" || done.reason === "steps")) {
         await stream(sessionId, "continue", {}, null);
         return;
       }
       if (done.status === "awaiting_continue" && done.reason === "budget") setExtend(done.extend ?? 10);
-      if (done.status === "failed" && done.error) append(done.error);
+      if (done.status === "failed" && done.error) append(`\n\n${done.error}`);
     },
-    [onWorkStarted],
+    [onWorkStarted, drivesPanel, openPanel],
   );
+
+  /** The screen in column 3, and the rows a tool put there if it is still the same screen. */
+  function screenAttachment(): { attachments: { screen: ScreenContext } } | Record<string, never> {
+    const name = screenOfPath(pathname);
+    if (!name) return {};
+    const ids = shown.current?.path === pathname ? shown.current.ids : [];
+    return { attachments: { screen: { name, ...(ids.length ? { ids } : {}) } } };
+  }
+
+  useEffect(() => {
+    if (!resume || busy) return;
+    setResume(null);
+    void stream(resume, "continue", {}, null);
+  }, [resume, busy, stream]);
 
   async function send(text: string) {
     const value = text.trim();
@@ -186,7 +259,7 @@ export function ChatPanel({ ws, onToast, onWorkStarted }: { ws: ChatSource; onTo
       onToast(error instanceof ApiError ? error.message : "Your CMO is not available right now.");
       return;
     }
-    await stream(current.id, "turns", { prompt: value }, value);
+    await stream(current.id, "turns", { prompt: value, ...(drivesPanel ? screenAttachment() : {}) }, value);
   }
 
   async function newChat() {

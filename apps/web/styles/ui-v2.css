@@ -490,6 +490,8 @@ html[data-ui="v2"] body { background: var(--v2-paper); }
 .v2-sash { position: relative; z-index: 2; background: var(--v2-line); cursor: col-resize; touch-action: none; }
 .v2-sash::before { content: ""; position: absolute; inset: 0 -4px; }
 .v2-sash:hover, .v2-sash:focus-visible, :root[data-v2-resizing] .v2-sash:active { background: var(--v2-brand); }
+.v2-sash[data-disabled] { cursor: default; }
+.v2-sash[data-disabled]:hover { background: var(--v2-line); }
 .v2 .v2-sash:focus-visible { outline: 2px solid var(--v2-brand-deep); outline-offset: 0; }
 :root[data-v2-resizing], :root[data-v2-resizing] * { cursor: col-resize !important; user-select: none; }
 

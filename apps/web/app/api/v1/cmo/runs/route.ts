@@ -17,7 +17,7 @@ const body = z.object({
  * "Plan my week", "Run now" của X Agent / Reddit Agent. Trần mỗi ngày + credit kiểm trong `enqueue_cmo_run`.
  * In mode B the task goes to the founder's Claude inbox instead of failing for credits.
  */
-export const POST = withApi({ body }, async ({ supabase, user, body }) => {
+export const POST = withApi({ body, rateLimit: { bucket: "cmo-runs", limit: 60, windowSeconds: 3600 } }, async ({ supabase, user, body }) => {
   const input: Record<string, unknown> = body.idea ? { idea: body.idea } : {};
   if ((await brainMode(supabase, user.id)).brain === "claude") input.brain = "claude";
   return startCmoRun(supabase, body.kind, input);

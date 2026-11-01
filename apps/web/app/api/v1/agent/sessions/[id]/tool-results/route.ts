@@ -47,4 +47,5 @@ const body = z.object({
  * rồi lượt chạy tiếp — cùng Server-Sent Events với route `turns`. Lượt không
  * chờ gì (đã Stop, đã trả) thì 409, trước khi stream mở.
  */
-export const POST = withApi({ body }, async ({ supabase, user, body, params }) => continueTurn(supabase, user.id, params.id, body.results));
+// Up to 8 results with 4 images each: the default 256 KB cap refused real captures with a 413 before zod ran.
+export const POST = withApi({ body, rateLimit: { bucket: "agent-continue", limit: 300, windowSeconds: 3600 }, maxBodyBytes: 4 * 1024 * 1024 }, async ({ supabase, user, body, params }) => continueTurn(supabase, user.id, params.id, body.results));

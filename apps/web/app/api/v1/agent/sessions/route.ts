@@ -75,7 +75,8 @@ export const GET = withApi({}, async ({ supabase, request }) => {
   }
   if (sessionId !== null && !UUID.test(sessionId)) throw new ApiError(422, "session_id: Invalid");
 
-  const model = pickModel(params.get("model"));
+  // A CMO chat is opened on the `cmo` agent's model (POST below), not the editor Assistant's: look it up the same way.
+  const model = cmo ? (agentChatProvider("cmo")?.model ?? null) : pickModel(params.get("model"));
   let query = supabase.from("agent_sessions").select("id, clip_id, job_id, model, lock_until");
   query = cmo ? query.eq("scope", "cmo") : query.eq("clip_id", clipId!);
   if (sessionId) query = query.eq("id", sessionId);
@@ -104,7 +105,8 @@ const body = z.union([
 ]);
 
 /** Opens (or returns) this clip's session (`new` is "New chat"), or the CMO chat (`scope: "cmo"`). Project chat is gone with clipping. */
-export const POST = withApi({ body }, async ({ supabase, body }) => {
+// Clip chats had no cap at all (agent_new_session counts nothing); CMO chats keep their own 30 an hour in SQL.
+export const POST = withApi({ body, rateLimit: { bucket: "agent-session", limit: 60, windowSeconds: 3600 } }, async ({ supabase, body }) => {
   let session: SessionRow;
   if ("clip_id" in body) {
     const model = pickModel(body.model);

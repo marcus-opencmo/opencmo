@@ -107,9 +107,15 @@ def _code(fn: ast.FunctionDef) -> str:
 def test_worker_wake_endpoint_checks_its_own_token():
     source = _code(_functions(_tree(WORKER_APP))["wake"])
     assert "OPENCMO_WAKE_TOKEN" in source
-    assert "compare_digest" in source
+    # Compared through the one bytes-safe helper (review R6: str compare_digest raised on non-ASCII tokens).
+    assert "_token_ok(expected, given)" in source
     assert "OPENCMO_WORKER_TOKEN" not in source
     assert "sweep.spawn()" in source
+
+
+def test_token_check_compares_bytes():
+    source = _code(_functions(_tree(WORKER_APP))["_token_ok"])
+    assert "compare_digest" in source and ".encode(" in source
 
 
 def test_cleanup_sends_the_cleanup_secret():

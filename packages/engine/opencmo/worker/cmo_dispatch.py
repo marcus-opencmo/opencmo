@@ -34,9 +34,32 @@ def count_dispatchable(
 ) -> int:
     """Runs a call to `/api/internal/cmo/run` would pick up now.
 
-    Same rule as `claim_cmo_run`: queued and past `not_before`, or running with an expired lease
-    (the claim puts those back in the queue).
+    Counted in SQL by `cmo_dispatch_count`, next to `claim_cmo_run`, so the two rules cannot drift: the REST filter
+    below missed the pause filter, and the sweep sent calls every minute that claimed nothing (review R6). A database
+    without the function (before its migration) falls back to that filter.
     """
+    own = client is None
+    http = client or httpx.Client(timeout=_CALL_TIMEOUT)
+    try:
+        resp = http.post(
+            f"{supabase_url.rstrip('/')}/rest/v1/rpc/cmo_dispatch_count",
+            json={"p_limit": limit},
+            headers={"apikey": service_role_key, "Authorization": f"Bearer {service_role_key}"},
+        )
+        if resp.status_code != 404:
+            resp.raise_for_status()
+            return int(resp.json() or 0)
+    finally:
+        if own:
+            http.close()
+    return _count_dispatchable_rest(supabase_url, service_role_key, limit=limit, client=client)
+
+
+def _count_dispatchable_rest(
+    supabase_url: str, service_role_key: str, *, limit: int, client: httpx.Client | None = None
+) -> int:
+    """The older count, for a database without `cmo_dispatch_count`: queued and past `not_before`, or running with an
+    expired lease."""
     now = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     claimable = (
         f'(and(status.eq.queued,or(not_before.is.null,not_before.lte."{now}")),'

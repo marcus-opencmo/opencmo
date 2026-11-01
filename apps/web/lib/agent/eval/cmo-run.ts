@@ -50,6 +50,11 @@ export function recordingClient(tables: Record<string, Row[]>): { client: Supaba
         rows = rows.filter((row) => !(column in row) || row[column] === value);
         return query;
       },
+      // Paged reads (`history`, the session view): one page holds every fixture row.
+      range: (from: number, to: number) => {
+        rows = rows.slice(from, to + 1);
+        return query;
+      },
       maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
       single: async () => ({ data: rows[0] ?? null, error: rows[0] ? null : { message: "no rows" } }),
       then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) => Promise.resolve(result()).then(resolve, reject),
@@ -63,6 +68,8 @@ export function recordingClient(tables: Record<string, Row[]>): { client: Supaba
       recording.costUsd += usageUsd({ model: String(args.p_model), input: Number(args.p_input), output: Number(args.p_output), cacheRead: Number(args.p_cache_read), cacheWrite: Number(args.p_cache_write) });
       return 0;
     },
+    // The founder's research counters (review R4): under the limit, so the research tools really run.
+    cmo_read_hit: () => true,
     agent_append: (args) => recording.messages.push({ role: args.p_role as StoredMessage["role"], content: args.p_content as unknown[] }) && null,
     agent_record_tool: (args) => {
       if (args.p_status !== "pending") recording.calls.push({ name: String(args.p_name), input: args.p_input, ok: args.p_status === "done" });

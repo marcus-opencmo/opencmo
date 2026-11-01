@@ -11,6 +11,7 @@ import "server-only";
 
 import { z } from "zod";
 
+import { ApiError } from "@/lib/api/errors";
 import { firstRow, rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { clampDocument, DOCUMENT_KINDS, DOCUMENT_SCHEMAS, DOCUMENTS, wasCut, type DocumentKind } from "@/lib/cmo/documents";
 import { startCmoRun } from "@/lib/cmo/jobs/start";
@@ -23,6 +24,7 @@ import { CMO_SKILLS } from "@/lib/cmo/skills/index.gen";
 import { SKILL_NAMES, skillText, type SkillName } from "@/lib/cmo/skills";
 
 import { RESEARCH_TOOL_SPECS, RESEARCH_TOOLS } from "./cmo-research";
+import { PANEL_SCREENS, PanelOpenSchema, type PanelOpen } from "./panel";
 import type { ToolOutcome, ToolSpec } from "./tools";
 
 const EMPTY = { type: "object", properties: {}, additionalProperties: false };
@@ -51,7 +53,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
   {
     name: "list_approvals",
     description:
-      "List drafts waiting for the user's approval, posts approved or published in the last 14 days and Reddit conversations (community, score, status) waiting for the user to reply.",
+      "List the cards waiting on the founder in Approvals (every kind: post, reply, goal, schedule, script, price, finished video, shorts, slideshow, correction), posts drafted, approved or published in the last 14 days, and Reddit conversations (community, score, status) waiting for a reply.",
     schema: EMPTY,
     strict: true,
   },
@@ -64,7 +66,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
       "sales: search Reddit for people describing the problem, score threads with quotes, draft replies the founder posts themselves (5 credits; only when the founder asks).",
       "research: study competitors' X accounts, find posts that beat their baseline and the hooks behind them, and save what works for the planner and X writer (2 credits; pass handles, or it uses the X handles in Competitor Analysis; when = now only).",
       "video: a short-video task. The founder records and uploads their OWN video, so this always becomes a calendar item with an \"Upload video\" button that opens the editor; you cannot upload video for them.",
-      "when: \"now\" runs it in the background (result in Approvals within a minute). A date (YYYY-MM-DD, within 13 days) puts it on the calendar and it runs that morning. Nothing is posted until the founder approves.",
+      "when: \"now\" runs it in the background, usually within a minute: x_writer and sales results land in Approvals, the planner's on the calendar, research's in what the planner and X writer read. A date (YYYY-MM-DD, within 13 days) puts it on the calendar and it runs that morning. Nothing is posted until the founder approves.",
     ].join(" "),
     schema: {
       type: "object",
@@ -125,7 +127,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
   {
     name: "get_run_result",
     description:
-      "Check on tasks you handed out: the status, steps and result of one task (by run_id) or of the 8 most recent tasks. Use it before telling the founder something is done, and to learn from what failed.",
+      "Check on tasks you handed out: the status, steps and result of one task (by run_id) or of the 8 most recent tasks. Use it before telling the founder something is done, and to learn from what failed. Video tasks and dated tasks are calendar items, not runs: check those with list_calendar.",
     schema: {
       type: "object",
       properties: { run_id: { type: "string", description: "A run id from an earlier create_task result. Omit for the latest tasks." } },
@@ -141,7 +143,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
       type: "object",
       properties: {
         week: { type: "string", enum: ["this", "next"] },
-        goal: { type: "string", description: "One sentence, 3 to 300 characters." },
+        goal: { type: "string", description: "One sentence, 3 to 200 characters." },
         metric: { type: "string", enum: ["posts", "replies", "views"] },
         target: { type: "integer", description: "1 to 1,000,000." },
       },
@@ -168,6 +170,22 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
       additionalProperties: false,
     },
     strict: true,
+  },
+  // Column 3 of the shell (audit 2026-11-01). Last, so the cached prompt prefix stays the same.
+  {
+    name: "open_screen",
+    description:
+      "Open a screen in the panel next to the chat, so the founder sees what you are talking about: dashboard (cards waiting), schedule, sales, writer, studio, research, brain, analytics, library or settings. Tools that start work already open their screen; use this when the founder asks to see something, or to show what you just read.",
+    schema: {
+      type: "object",
+      properties: {
+        screen: { type: "string", enum: [...PANEL_SCREENS] },
+        ids: { type: "array", items: { type: "string" }, description: "Optional ids of the rows you mean (cards, runs, threads), at most 20." },
+      },
+      required: ["screen"],
+      additionalProperties: false,
+    },
+    strict: false,
   },
 ];
 
@@ -201,10 +219,22 @@ const siteInput = z.object({ url: z.string().trim().min(3).max(300) });
 const runInput = z.object({ run_id: z.string().uuid().optional() });
 const goalInput = z.object({
   week: z.enum(["this", "next"]),
-  goal: z.string().trim().min(3).max(300),
+  goal: z.string().trim().min(3).max(200),
   metric: z.enum(["posts", "replies", "views"]),
   target: z.number().int().min(1).max(1_000_000),
 });
+
+/**
+ * `view.open`: the chat panel opens this screen in column 3 when the tool succeeds. Only work the founder asked for
+ * (a task, a calendar item) and `open_screen` set it: the model reads the calendar or Approvals for its own reasoning
+ * too, and the panel must not jump while the founder is looking at something else.
+ */
+const opens = (open: PanelOpen): { view: { open: PanelOpen } } => ({ view: { open } });
+/** Where each kind of work shows up once it is started or scheduled. */
+const SCREEN_OF_AGENT = { planner: "dashboard", x_writer: "writer", sales: "sales", research: "research", video: "schedule" } as const;
+
+/** A read that failed is not "nothing there": the model must not plan on an empty calendar or a missing document. */
+const readFailed: ToolOutcome = { ok: false, content: JSON.stringify({ error: "Could not read this right now. Try again in a moment." }), summary: "Could not read" };
 
 const invalid = (message: string): ToolOutcome => ({ ok: false, content: JSON.stringify({ INVALID_INPUT: message }), summary: "Invalid request" });
 
@@ -224,11 +254,23 @@ export const SITE_READS_PER_TURN = 3;
 export type CmoTurn = { siteReads: number; brain?: Brain };
 
 export async function runCmoTool(supabase: SupabaseClient, name: string, input: unknown, turn: CmoTurn = { siteReads: 0 }): Promise<ToolOutcome> {
+  try {
+    return await runTool(supabase, name, input, turn);
+  } catch (error) {
+    // A refused write (a goal already approved, a full memory) is the model's to explain; it must not end the turn.
+    const message = error instanceof ApiError ? error.message : "That did not work. Try again in a moment.";
+    if (!(error instanceof ApiError)) console.error("[cmo] tool failed", name, error);
+    return { ok: false, content: JSON.stringify({ error: message }), summary: "Could not finish" };
+  }
+}
+
+async function runTool(supabase: SupabaseClient, name: string, input: unknown, turn: CmoTurn): Promise<ToolOutcome> {
   switch (name) {
     case "read_doc": {
       const parsed = readInput.safeParse(input);
       if (!parsed.success) return invalid("kind must be product, strategy, competitors or content_strategy.");
-      const { data: row } = await supabase.from("marketing_documents_latest").select("body, created_by, version").eq("kind", parsed.data.kind).maybeSingle();
+      const { data: row, error } = await supabase.from("marketing_documents_latest").select("body, created_by, version").eq("kind", parsed.data.kind).maybeSingle();
+      if (error) return readFailed;
       if (!row) return { ok: true, content: JSON.stringify({ missing: true }), summary: `No ${DOCUMENTS[parsed.data.kind].title} yet` };
       return { ok: true, content: data(row), summary: `Read ${DOCUMENTS[parsed.data.kind].title}` };
     }
@@ -238,13 +280,14 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
       return updateDocument(supabase, parsed.data.kind, parsed.data.fields_json);
     }
     case "list_calendar": {
-      const { data: rows } = await supabase
+      const { data: rows, error } = await supabase
         .from("content_items")
         .select("id, day, department, platform, idea, reason, status")
         .gte("day", isoDay())
         .lte("day", isoDay(13))
         .order("day")
         .limit(40);
+      if (error) return readFailed;
       return { ok: true, content: data({ today: isoDay(), items: rows ?? [] }), summary: `Read the calendar (${rows?.length ?? 0} items)` };
     }
     case "list_approvals": {
@@ -264,8 +307,18 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         .not("reply", "is", null)
         .order("score", { ascending: false })
         .limit(10);
-      const count = (rows?.length ?? 0) + (threads?.length ?? 0);
-      return { ok: true, content: data({ items: rows ?? [], reddit_conversations: threads ?? [] }), summary: `Read Approvals (${count} items)` };
+      // The queue the Dashboard shows: every kind of card (goal, schedule, Studio, correction…), not only drafts.
+      const { data: cards } = await supabase
+        .from("approvals")
+        .select("id, kind, department, ref_kind, ref_id, post_at, expires_at, created_at")
+        .eq("status", "waiting")
+        .order("created_at", { ascending: true })
+        .limit(50);
+      return {
+        ok: true,
+        content: data({ waiting_cards: cards ?? [], items: rows ?? [], reddit_conversations: threads ?? [] }),
+        summary: `Read Approvals (${cards?.length ?? 0} waiting)`,
+      };
     }
     case "create_task": {
       const parsed = taskInput.safeParse(input);
@@ -286,14 +339,14 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
             p_reason: "Added by your CMO",
             p_body: { brief: task.brief },
           });
-          return { ok: true, content: JSON.stringify({ scheduled: true, item_id: item.id, day: item.day }), summary: task.agent === "video" ? "Added a video task to the calendar" : `Scheduled for ${item.day}` };
+          return { ok: true, content: JSON.stringify({ scheduled: true, item_id: item.id, day: item.day }), summary: task.agent === "video" ? "Added a video task to the calendar" : `Scheduled for ${item.day}`, ...opens({ screen: "schedule" }) };
         }
         const kind = JOB_OF[task.agent as keyof typeof JOB_OF];
         const input =
           kind === "post_draft" ? { idea: task.brief, brief: task.brief, ...(task.thread ? { thread: true } : {}) } : kind === "competitor_research" ? { brief: task.brief, handles: task.handles ?? [] } : { brief: task.brief };
         const run = await startCmoRun(supabase, kind, turn.brain === "claude" ? { ...input, brain: "claude" } : input);
         const label = { plan_week: "Planning the week", post_draft: task.thread ? "Writing an X thread" : "Drafting a post for X", sales_scan: "Scanning Reddit", competitor_research: "Researching competitors" }[kind];
-        return { ok: true, content: JSON.stringify({ started: true, run_id: run.id, status: run.status }), summary: label };
+        return { ok: true, content: JSON.stringify({ started: true, run_id: run.id, status: run.status }), summary: label, ...opens({ screen: SCREEN_OF_AGENT[task.agent], ids: [run.id] }) };
       } catch (error) {
         return { ok: false, content: JSON.stringify({ error: error instanceof Error ? error.message : "Could not start this task." }), summary: "Could not start" };
       }
@@ -336,7 +389,8 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
       if (!parsed.success) return invalid("run_id must be a run id from create_task.");
       let query = supabase.from("cmo_runs").select("id, kind, status, error, steps, output, created_at, finished_at").order("created_at", { ascending: false });
       query = parsed.data.run_id ? query.eq("id", parsed.data.run_id).limit(1) : query.limit(8);
-      const { data: runs } = await query;
+      const { data: runs, error } = await query;
+      if (error) return readFailed;
       const rows = ((runs ?? []) as { id: string; kind: string; status: string; error: string | null; steps: { label: string; status: string }[] | null; output: unknown; created_at: string; finished_at: string | null }[]).map((r) => ({
         run_id: r.id,
         task: r.kind,
@@ -352,7 +406,7 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
     }
     case "set_week_goal": {
       const parsed = goalInput.safeParse(input);
-      if (!parsed.success) return invalid("week must be this or next; goal 3 to 300 characters; metric posts, replies or views; target 1 to 1,000,000.");
+      if (!parsed.success) return invalid("week must be this or next; goal 3 to 200 characters; metric posts, replies or views; target 1 to 1,000,000.");
       const week = isoDay(parsed.data.week === "next" ? 7 : 0, new Date(`${mondayOf()}T00:00:00Z`));
       await rpcOrThrow(supabase, "cmo_set_week_goal", { p_week: week, p_goal: parsed.data.goal, p_metric: parsed.data.metric, p_target: parsed.data.target });
       return {
@@ -361,6 +415,11 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         summary: "Proposed a weekly goal",
       };
     }
+    case "open_screen": {
+      const parsed = PanelOpenSchema.pick({ screen: true, ids: true }).safeParse(input);
+      if (!parsed.success) return invalid(`screen must be one of: ${PANEL_SCREENS.join(", ")}; ids at most 20 ids from your tools.`);
+      return { ok: true, content: JSON.stringify({ opened: parsed.data.screen }), summary: `Opened ${parsed.data.screen}`, ...opens(parsed.data) };
+    }
     default:
       return { ok: false, content: JSON.stringify({ error: `Unknown tool ${name}.` }), summary: "Unknown tool" };
   }
@@ -368,8 +427,8 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
 
 /** State appended after the request: items awaiting approval + today's calendar, short to stay cheap. */
 export async function cmoState(supabase: SupabaseClient): Promise<string> {
-  const [{ data: pending }, { data: threads }, { data: today }, { data: runs }, { data: memories }] = await Promise.all([
-    supabase.from("content_items").select("id", { count: "exact", head: false }).eq("status", "in_review").limit(20),
+  const [{ count: pending }, { data: threads }, { data: today }, { data: runs }, { data: memories }] = await Promise.all([
+    supabase.from("approvals").select("id", { count: "exact", head: true }).eq("status", "waiting"),
     supabase.from("opportunities").select("id").eq("status", "in_review").not("reply", "is", null).limit(20),
     supabase.from("content_items").select("department, platform, idea, status").eq("day", isoDay()).limit(10),
     supabase.from("cmo_runs").select("kind, status").in("status", ["queued", "running"]).limit(5),
@@ -385,7 +444,7 @@ export async function cmoState(supabase: SupabaseClient): Promise<string> {
   const { data: lessonRows } = await supabase.from("cmo_lessons").select("week, topic, body").order("week", { ascending: false }).limit(20);
   return `<cmo_state>${JSON.stringify({
     today: isoDay(),
-    awaiting_approval: pending?.length ?? 0,
+    awaiting_approval: pending ?? 0,
     reddit_conversations_waiting: threads?.length ?? 0,
     calendar_today: today ?? [],
     jobs_running: runs ?? [],
@@ -419,12 +478,14 @@ async function updateDocument(supabase: SupabaseClient, kind: DocumentKind, fiel
   const changed = Object.keys(fields);
   if (!changed.length) return invalid("fields_json has no fields to change.");
   for (const key of changed) {
-    if (!(key in shape)) return invalid(`${DOCUMENTS[kind].title} has no field "${key}". Its fields are: ${Object.keys(shape).join(", ")}.`);
+    if (!Object.hasOwn(shape, key)) return invalid(`${DOCUMENTS[kind].title} has no field "${key}". Its fields are: ${Object.keys(shape).join(", ")}.`);
     if (!shape[key].safeParse((fields as Record<string, unknown>)[key]).success) {
       return invalid(`"${key}" has the wrong shape. Use the same shape read_doc returned.`);
     }
   }
-  const { data: latest } = await supabase.from("marketing_documents_latest").select("body").eq("kind", kind).maybeSingle();
+  const { data: latest, error: readError } = await supabase.from("marketing_documents_latest").select("body").eq("kind", kind).maybeSingle();
+  // Merging into {} after a failed read would save a document with every other field blanked.
+  if (readError) return { ok: false, content: JSON.stringify({ error: "Could not read the document. Try again in a moment." }), summary: "Could not read the document" };
   const merged = { ...((latest?.body as Record<string, unknown> | undefined) ?? {}), ...(fields as Record<string, unknown>) };
   const body = clampDocument(kind, merged);
   // Fields longer than the document allows are cut; say so instead of saving half a sentence silently.

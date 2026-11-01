@@ -23,7 +23,8 @@ export const GET = withApi({}, async ({ request, supabase }) => {
 
   // Trần 49 chứ không phải 50: `list_projects` tự kẹp ở 50, nên xin 51 hàng để
   // dò trang sau sẽ nhận đúng 50 và `next_cursor` im lặng thành null.
-  const limit = Math.min(Math.max(Number(url.searchParams.get("limit")) || LIMIT, 1), 49);
+  // Whole numbers only: "1.5" reached an integer parameter and failed its cast.
+  const limit = Math.min(Math.max(Math.trunc(Number(url.searchParams.get("limit"))) || LIMIT, 1), 49);
   const rows = await rpcOrThrow<JobRow[]>(supabase, "list_projects", {
     p_cursor_created_at: cursor?.createdAt ?? null,
     p_cursor_id: cursor?.id ?? null,

@@ -174,7 +174,8 @@ export function encodeCursor(createdAt: string, id: string): string {
 export function decodeCursor(cursor: string): { createdAt: string; id: string } | null {
   try {
     const [createdAt, id] = Buffer.from(cursor, "base64url").toString("utf8").split("|");
-    if (!createdAt || !id) return null;
+    // A well-formed but wrong cursor would fail a Postgres cast (a 500): only a real timestamp and uuid pass.
+    if (!createdAt || !id || Number.isNaN(Date.parse(createdAt)) || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) return null;
     return { createdAt, id };
   } catch {
     return null;

@@ -675,6 +675,8 @@ begin
       return v_session;
     end if;
   end if;
+  -- Counted under a lock: parallel requests all passed a plain count before any of them committed.
+  perform pg_advisory_xact_lock(hashtextextended(v_user::text || ':cmo_session', 0));
   if (select count(*) from public.agent_sessions
       where user_id = v_user and scope = 'cmo' and created_at > now() - interval '1 hour') >= 30 then
     raise exception 'Too many new conversations in the last hour. Try again later.' using errcode = 'P0001';
@@ -878,10 +880,10 @@ $$;
 -- Name: agent_reap_turns(); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.agent_reap_turns() RETURNS integer
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
+CREATE FUNCTION public.agent_reap_turns() returns integer
+  language plpgsql security definer
+  set search_path to 'public'
+  as $$
 declare
   v_turn record;
   v_count integer := 0;
@@ -903,6 +905,16 @@ begin
     end if;
     perform 1 from public.agent_sessions where id = v_turn.session_id for update skip locked;
     if not found then
+      continue;
+    end if;
+    -- Under the locks, check again (review R6): a turn the founder resumed between the scan and the locks (new hold,
+    -- fresh session lock) must not be closed while it streams.
+    if not exists (
+      select 1 from public.agent_turns t join public.agent_sessions s on s.id = t.session_id
+      where t.id = v_turn.id and t.status = v_turn.status
+        and ((t.status in ('running', 'awaiting_browser') and (s.lock_until is null or s.lock_until < now()))
+          or (t.status in ('awaiting_approval', 'awaiting_input', 'awaiting_continue') and s.updated_at < now() - interval '24 hours'))
+    ) then
       continue;
     end if;
     perform public.agent_close_turn(
@@ -2597,8 +2609,10 @@ begin
   -- huỷ là một vòng lặp compute miễn phí. Giữ lại 1 credit — ghi thành dòng
   -- ledger RIÊNG chứ không trừ vào số hoàn, để đối soát đọc được cả hai vế.
   -- Job `failed` vẫn hoàn đủ: lỗi thường là của ta, không phải của người dùng.
-  if v_was_running and v_refunded > 1 then
-    perform public.credit_hold(v_user, 'job', p_job_id, 1, 'Cancelled while running', p_job_id);
+  -- Review R5: also when exactly 1 was held (every short upload once settle_job_credits ran), and under its own ref
+  -- kind, so a Retry's hold and a later settle or refund of the job never absorb or return the fee.
+  if v_was_running and v_refunded >= 1 then
+    perform public.credit_hold(v_user, 'job_fee', p_job_id, 1, 'Cancelled while running', p_job_id);
   end if;
   update public.tasks set status = 'cancelled', finished_at = now(), lease_until = null
   where status in ('queued', 'running') and (
@@ -3138,27 +3152,6 @@ $$;
 
 
 --
--- Name: claim_next_job(); Type: FUNCTION; Schema: public; Owner: -
---
-
-CREATE FUNCTION public.claim_next_job() RETURNS public.jobs
-    LANGUAGE sql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
-  update public.jobs
-  set status = 'running'
-  where id = (
-    select id from public.jobs
-    where status = 'queued'
-    order by created_at
-    for update skip locked
-    limit 1
-  )
-  returning *;
-$$;
-
-
---
 -- Name: claim_next_job_attempt(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3189,10 +3182,11 @@ $$;
 -- Name: claim_next_task(text[], integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.claim_next_task(p_kinds text[], p_lease_seconds integer DEFAULT 120) RETURNS SETOF public.tasks
-    LANGUAGE sql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
+CREATE FUNCTION public.claim_next_task(p_kinds text[], p_lease_seconds integer default 120, p_max_running integer default null)
+  returns setof public.tasks
+  language sql security definer
+  set search_path to 'public'
+  as $$
   update public.tasks
   set status = 'running',
       attempt = attempt + 1,
@@ -3201,10 +3195,14 @@ CREATE FUNCTION public.claim_next_task(p_kinds text[], p_lease_seconds integer D
       heartbeat_at = now(),
       started_at = coalesce(started_at, now())
   where id = (
-    select id from public.tasks
-    where status = 'queued' and kind = any(p_kinds)
-    order by array_position(p_kinds, kind), created_at
-    -- `skip locked`: tám worker chạy song song không bao giờ nhận trùng một task.
+    select t.id from public.tasks t
+    where t.status = 'queued' and t.kind = any(p_kinds)
+      and (p_max_running is null
+           or (select count(*) from public.tasks r where r.status = 'running' and r.kind = any(p_kinds)) < p_max_running)
+    -- The user with the fewest running tasks first, then kind order and age: fair across users, priority within one.
+    order by (select count(*) from public.tasks r where r.status = 'running' and r.user_id = t.user_id),
+      array_position(p_kinds, t.kind), t.created_at
+    -- `skip locked`: parallel claims never take the same task.
     for update skip locked
     limit 1
   )
@@ -3216,10 +3214,11 @@ $$;
 -- Name: claim_task(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.claim_task(p_task_id uuid, p_lease_seconds integer DEFAULT 120) RETURNS SETOF public.tasks
-    LANGUAGE sql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
+CREATE FUNCTION public.claim_task(p_task_id uuid, p_lease_seconds integer default 120, p_max_running integer default null)
+  returns setof public.tasks
+  language sql security definer
+  set search_path to 'public'
+  as $$
   update public.tasks
   set status = 'running',
       attempt = attempt + 1,
@@ -3228,6 +3227,8 @@ CREATE FUNCTION public.claim_task(p_task_id uuid, p_lease_seconds integer DEFAUL
       heartbeat_at = now(),
       started_at = coalesce(started_at, now())
   where id = p_task_id and status = 'queued'
+    -- Every container busy: the task stays queued and the sweep takes it when one frees up.
+    and (p_max_running is null or (select count(*) from public.tasks r where r.status = 'running') < p_max_running)
   returning *;
 $$;
 
@@ -3739,6 +3740,24 @@ $$;
 
 
 --
+-- Name: cmo_dispatch_count(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_dispatch_count(p_limit integer default 10) returns integer
+  language sql stable security definer
+  set search_path to 'public'
+  as $$
+  select count(*)::integer from (
+    select 1 from public.cmo_runs r
+    where not public.cmo_paused(r.user_id)
+      and ((r.status = 'queued' and (r.not_before is null or r.not_before <= now()))
+        or (r.status = 'running' and r.kind <> 'onboard' and r.lease_until < now() and r.attempt < 3))
+    limit greatest(1, least(coalesce(p_limit, 10), 100))
+  ) x;
+$$;
+
+
+--
 -- Name: cmo_enqueue(uuid, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -3755,6 +3774,13 @@ declare
   v_key text := case when p_kind in ('post_draft', 'write_caption', 'write_video_brief', 'write_slides', 'publish_post')
     then coalesce(p_input->>'item_id', p_input->>'order_id') end;
 begin
+  -- The founder's own Claude answers inbox items over MCP, which is for paid plans only: a free founder's inbox item
+  -- could never be answered, and its price was charged for nothing (review R5). Their run thinks with OpenCMO
+  -- instead, and is refused below when they cannot pay for it.
+  if p_input->>'brain' = 'claude' and not public.is_paid(p_user) then
+    p_input := p_input - 'brain';
+    v_price := public.cmo_job_price(p_kind);
+  end if;
   if p_kind is null or p_kind = 'onboard' or public.cmo_job_daily_limit(p_kind) <= 0 then
     raise exception 'Unknown task.' using errcode = '22023';
   end if;
@@ -3773,8 +3799,12 @@ begin
 
   select * into v_row from public.cmo_runs
   where user_id = p_user and kind = p_kind and status in ('queued', 'running')
-    and (status = 'queued' or lease_until is null or lease_until > now())
-    and (v_key is null or coalesce(input->>'item_id', input->>'order_id') = v_key)
+    -- A running run whose lease ran out is still in flight: claim_cmo_run puts it back in the queue. Treating it as
+    -- gone made a second run and a second hold, and both ran (review R5).
+    -- Without an item or order, only the same request is the same run: two posts with two briefs are two runs
+    -- (review R4; the second brief used to be dropped while the chat said it had started).
+    and (case when v_key is null then (input - 'brain') = (p_input - 'brain')
+              else coalesce(input->>'item_id', input->>'order_id') = v_key end)
   order by created_at desc limit 1;
   if found then
     return v_row;
@@ -4201,7 +4231,19 @@ begin
   values (v_user, p_bucket, v_window, 1)
   on conflict (user_id, bucket, window_start) do update set count = public.rate_limits.count + 1
   returning count into v_count;
-  return v_count <= v_limit;
+  if v_count > v_limit then
+    return false;
+  end if;
+  -- Social reads spend OpenCMO's ScrapeCreators key and cost the founder nothing: one daily ceiling for the chat and
+  -- MCP together, on top of the hourly ones.
+  if p_bucket in ('mcp_social', 'chat_social') then
+    insert into public.rate_limits (user_id, bucket, window_start, count)
+    values (v_user, 'social_day', date_trunc('day', now()), 1)
+    on conflict (user_id, bucket, window_start) do update set count = public.rate_limits.count + 1
+    returning count into v_count;
+    return v_count <= 400;
+  end if;
+  return true;
 end;
 $$;
 
@@ -4213,7 +4255,12 @@ $$;
 CREATE FUNCTION public.cmo_read_limit(p_bucket text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
-  select case p_bucket when 'mcp_social' then 60 when 'mcp_site' then 20 else 0 end
+  select case p_bucket
+    when 'mcp_social' then 60 when 'mcp_site' then 20
+    -- Review R4: the in-app CMO chat counts here too (its in-memory caps start again on every continue).
+    when 'chat_social' then 120 when 'chat_site' then 30
+    when 'research_credits' then 30
+    else 0 end
 $$;
 
 
@@ -4229,6 +4276,57 @@ begin
   update public.cmo_goals set result = greatest(0, p_result)
   where user_id = p_user and week = p_week and status = 'approved';
   return found;
+end;
+$$;
+
+
+--
+-- Name: cmo_release_parked_runs(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_release_parked_runs(p_days integer DEFAULT 7) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_run public.cmo_runs;
+  v_n integer := 0;
+begin
+  for v_run in
+    select r.* from public.cmo_runs r join public.profiles p on p.id = r.user_id
+    where r.status = 'queued' and r.not_before = 'infinity'
+      and p.cmo_paused_at is not null and p.cmo_paused_at < now() - make_interval(days => greatest(1, coalesce(p_days, 7)))
+    for update of r skip locked
+  loop
+    update public.cmo_runs set status = 'failed', error = 'Cancelled: your CMO was paused for over a week. Your credits were refunded.',
+      finished_at = now()
+    where id = v_run.id;
+    perform public.cmo_refund_run(v_run);
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end;
+$$;
+
+
+--
+-- Name: refund_stale_caption_translations(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.refund_stale_caption_translations() RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_id uuid;
+  v_n integer := 0;
+begin
+  for v_id in select id from public.caption_translations where status = 'charged' and created_at < now() - interval '15 minutes' loop
+    if public.refund_caption_translation(v_id) then
+      v_n := v_n + 1;
+    end if;
+  end loop;
+  return v_n;
 end;
 $$;
 
@@ -5896,6 +5994,8 @@ begin
     raise exception 'Unsupported aspect ratio.' using errcode = '22023';
   end if;
 
+  -- The profile lock first, as retry_job takes it: two creates counted 2 in progress at once and both went in.
+  perform 1 from public.profiles where id = v_user for update;
   if (select count(*) from public.jobs
       where user_id = v_user and status in ('queued', 'running') and purging_at is null) >= 3
   then
@@ -6522,7 +6622,9 @@ CREATE FUNCTION public.enqueue_cmo_run(p_kind text, p_input jsonb DEFAULT '{}'::
     AS $$
 begin
   -- Posting is ordered only by Schedule, for a slot whose card the founder approved.
-  if p_kind = 'publish_post' then
+  -- The schedule's own jobs are free and spend provider money (the planner model, ScrapeCreators): only the schedule
+  -- queues them (enqueue_cmo_run_for), never a direct call (review R5).
+  if p_kind in ('publish_post', 'review_week', 'pull_metrics', 'summarize_memory') then
     raise exception 'Unknown task.' using errcode = '22023';
   end if;
   return public.cmo_enqueue(public.require_user(), p_kind, p_input);
@@ -8514,10 +8616,16 @@ begin
     delete from public.push_subscriptions where id = p_subscription;
     return false;
   end if;
-  update public.push_subscriptions
-  set last_pushed_at = case when p_status between 200 and 299 then now() else last_pushed_at end,
-      failed_at = case when p_status between 200 and 299 then null else now() end
-  where id = p_subscription;
+  if p_status between 200 and 299 then
+    update public.push_subscriptions set last_pushed_at = now(), failed_at = null, failures = 0 where id = p_subscription;
+    return true;
+  end if;
+  -- The third refusal in a row: the push service will not take this subscription, so stop retrying it every hour.
+  delete from public.push_subscriptions where id = p_subscription and failures >= 2;
+  if found then
+    return false;
+  end if;
+  update public.push_subscriptions set failed_at = now(), failures = failures + 1 where id = p_subscription;
   return true;
 end;
 $$;
@@ -8538,7 +8646,8 @@ CREATE FUNCTION public.push_due(p_limit integer) RETURNS TABLE(subscription_id u
     and not exists (select 1 from public.notify_settings n where n.user_id = s.user_id and not n.push)
     and exists (select 1 from public.approvals a where a.user_id = s.user_id and a.status = 'waiting'
                 and coalesce(a.released_at, a.created_at) > coalesce(s.last_pushed_at, s.created_at))
-  order by s.user_id
+  -- Healthy subscriptions first: failing ones cannot crowd them out of the limit.
+  order by s.failures, s.user_id
   limit greatest(1, least(coalesce(p_limit, 200), 1000));
 $$;
 
@@ -8812,7 +8921,14 @@ begin
       or (p_bucket = 'generations' and p_limit = 120 and p_window_seconds = 3600)
       -- `create_generation` itself: a direct PostgREST call skips the route's bucket.
       or (p_bucket = 'generation_create' and p_limit = 120 and p_window_seconds = 3600)
-      or (p_bucket = 'mcp_look' and p_limit = 60 and p_window_seconds = 3600);
+      or (p_bucket = 'mcp_look' and p_limit = 60 and p_window_seconds = 3600)
+      -- Review R4 (20270102020000): routes that had no limit of their own.
+      or (p_bucket = 'agent-turn' and p_limit = 120 and p_window_seconds = 3600)
+      or (p_bucket = 'agent-continue' and p_limit = 300 and p_window_seconds = 3600)
+      or (p_bucket = 'agent-session' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'captures' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'cmo-runs' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'onboarding' and p_limit = 20 and p_window_seconds = 3600);
   end if;
 
   if not v_allowed then
@@ -8905,17 +9021,17 @@ $$;
 -- Name: reclaim_expired_tasks(integer); Type: FUNCTION; Schema: public; Owner: -
 --
 
-CREATE FUNCTION public.reclaim_expired_tasks(p_max_attempts integer DEFAULT 3) RETURNS jsonb
-    LANGUAGE plpgsql SECURITY DEFINER
-    SET search_path TO 'public'
-    AS $$
+CREATE FUNCTION public.reclaim_expired_tasks(p_max_attempts integer default 3) returns jsonb
+  language plpgsql security definer
+  set search_path to 'public'
+  as $$
 declare
   r record;
   v_requeued int := 0;
   v_failed int := 0;
 begin
   for r in
-    select id, attempt, attempt_id
+    select id, attempt, attempt_id, kind, asset_id
     from public.tasks
     where status = 'running' and attempt_id is not null and lease_until < now()
     order by lease_until
@@ -8932,13 +9048,29 @@ begin
     else
       update public.tasks
       set status = 'failed',
-          error = 'Rendering stopped unexpectedly. Please try again.',
+          -- The users of each kind see this sentence: "Rendering" only where something was rendered.
+          error = case r.kind
+            when 'render_document' then 'Rendering stopped unexpectedly. Please try again.'
+            when 'render_stills' then 'Rendering stopped unexpectedly. Please try again.'
+            when 'probe_media' then 'We could not check this file. Upload it again.'
+            when 'generate' then 'Generation failed. Your credits were refunded.'
+            when 'publish_media' then 'Preparing the post stopped unexpectedly. Please try again.'
+            when 'capture_page' then 'Capturing the page stopped unexpectedly. Please try again.'
+            when 'transcribe_media' then 'Making the captions stopped unexpectedly. Please try again.'
+            when 'transcribe_asset' then 'Transcribing stopped unexpectedly. Please try again.'
+            else 'This stopped unexpectedly. Please try again.'
+          end,
           finished_at = now(),
           lease_until = null
       where id = r.id and status = 'running'
         and attempt_id = r.attempt_id and lease_until < now();
       if found then
         v_failed := v_failed + 1;
+        -- probe_media has no status trigger: without this its asset stayed 'pending' with no error, forever.
+        if r.kind = 'probe_media' and r.asset_id is not null then
+          update public.media_assets set status = 'rejected', error = 'We could not check this file. Upload it again.'
+          where id = r.asset_id and status = 'pending';
+        end if;
       end if;
     end if;
   end loop;
@@ -14120,7 +14252,7 @@ CREATE TABLE public.credit_ledger (
     external_id text,
     ref_kind text,
     ref_id uuid,
-    CONSTRAINT credit_ledger_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['job'::text, 'generation'::text, 'captions'::text, 'caption_translation'::text, 'agent_turn'::text, 'cmo_run'::text, 'work_order'::text]))),
+    CONSTRAINT credit_ledger_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['job'::text, 'job_fee'::text, 'generation'::text, 'captions'::text, 'caption_translation'::text, 'agent_turn'::text, 'cmo_run'::text, 'work_order'::text]))),
     CONSTRAINT credit_ledger_ref_pair CHECK (((ref_kind IS NULL) = (ref_id IS NULL)))
 );
 
@@ -14498,6 +14630,7 @@ CREATE TABLE public.push_subscriptions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     failed_at timestamp with time zone,
     last_pushed_at timestamp with time zone,
+    failures smallint DEFAULT 0 NOT NULL,
     CONSTRAINT push_subscriptions_auth_check CHECK ((auth ~ '^[A-Za-z0-9_-]{8,100}={0,2}$'::text)),
     CONSTRAINT push_subscriptions_endpoint_check CHECK (public.push_endpoint_allowed(endpoint)),
     CONSTRAINT push_subscriptions_p256dh_check CHECK ((p256dh ~ '^[A-Za-z0-9_-]{20,200}={0,2}$'::text)),
@@ -15563,6 +15696,13 @@ ALTER TABLE ONLY public.zernio_receipts
 
 
 --
+-- Name: agent_turns_open_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_turns_open_idx ON public.agent_turns USING btree (created_at) WHERE (status = ANY (ARRAY['running'::text, 'awaiting_browser'::text, 'awaiting_approval'::text, 'awaiting_input'::text, 'awaiting_continue'::text]));
+
+
+--
 -- Name: account_metrics_user_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -15784,6 +15924,13 @@ CREATE INDEX content_items_user_status_idx ON public.content_items USING btree (
 --
 
 CREATE UNIQUE INDEX credit_ledger_external_idx ON public.credit_ledger USING btree (external_id) WHERE (external_id IS NOT NULL);
+
+
+--
+-- Name: credit_ledger_ref_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX credit_ledger_legacy_job_idx ON public.credit_ledger USING btree (job_id) WHERE (ref_kind IS NULL);
 
 
 --

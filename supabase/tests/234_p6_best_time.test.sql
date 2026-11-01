@@ -17,8 +17,9 @@ update public.profiles set timezone = 'Asia/Ho_Chi_Minh' where id = 'e2340000-00
 -- Nine X posts: six at 14:00 local (many views), three at 09:00 local (few). Threads: three posts.
 insert into public.content_items (id, user_id, department, platform, day, idea, status, body, published_at)
 select ('e2342000-0000-4000-8000-' || lpad(g::text, 12, '0'))::uuid, 'e2340000-0000-4000-8000-00000000000a', 'post',
-  case when g <= 9 then 'X' else 'Threads' end, current_date - g, 'Post ' || g, 'published', '{"text":"x"}',
-  date_trunc('day', now() - make_interval(days => g)) + case when g <= 6 then interval '7 hours' else interval '2 hours' end
+  case when g <= 9 then 'X' else 'Threads' end, current_date - g - 1, 'Post ' || g, 'published', '{"text":"x"}',
+  -- One day further back than g: a post must be 24 hours old (settleHours) whatever time of day the test runs.
+  date_trunc('day', now() - make_interval(days => g + 1)) + case when g <= 6 then interval '7 hours' else interval '2 hours' end
 from generate_series(1, 12) g;
 insert into public.post_metrics (user_id, item_id, url, views, source)
 select 'e2340000-0000-4000-8000-00000000000a', id, '', case when published_at::time = '07:00' then 1000 + extract(day from published_at)::int else 50 end, 'public'

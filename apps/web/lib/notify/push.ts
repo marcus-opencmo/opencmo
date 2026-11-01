@@ -32,10 +32,17 @@ export function vapidFromEnv(env: Record<string, string | undefined> = process.e
   const point = fromB64url(pub);
   const d = fromB64url(priv);
   if (point.length !== 65 || point[0] !== 4 || d.length !== 32) return null;
-  const key = createPrivateKey({
-    key: { kty: "EC", crv: "P-256", x: b64url(point.subarray(1, 33)), y: b64url(point.subarray(33, 65)), d: b64url(d) },
-    format: "jwk",
-  });
+  let key: KeyObject;
+  try {
+    key = createPrivateKey({
+      key: { kty: "EC", crv: "P-256", x: b64url(point.subarray(1, 33)), y: b64url(point.subarray(33, 65)), d: b64url(d) },
+      format: "jwk",
+    });
+  } catch {
+    // A mistyped key of the right length is not on the curve: "push is not set up", never a cron that throws every hour.
+    console.error("[notify] VAPID keys are not a valid P-256 key pair");
+    return null;
+  }
   return { publicKey: b64url(point), key, subject: env.VAPID_SUBJECT?.trim() || `mailto:${SUPPORT_EMAIL}` };
 }
 

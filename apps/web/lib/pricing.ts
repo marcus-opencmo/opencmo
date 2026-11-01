@@ -110,7 +110,6 @@ export const PLANS: Plan[] = [
     highlight: true,
     features: [
       "Everything in Monthly, billed $720 once a year",
-      "Priority processing queue",
     ],
     checkoutUrl: process.env.POLAR_CHECKOUT_CREATOR,
     productId: process.env.POLAR_PRODUCT_CREATOR,

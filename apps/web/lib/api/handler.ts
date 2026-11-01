@@ -48,10 +48,12 @@ export type ApiContext<Body> = {
 export type RateLimit = { bucket: string; limit: number; windowSeconds: number };
 
 export type ApiOptions<Schema extends z.ZodType | undefined> = {
-  /** Mặc định true. Chỉ route công khai mới tắt. */
+  /** Default true. Only public routes turn it off. */
   auth?: boolean;
   body?: Schema;
   rateLimit?: RateLimit;
+  /** A larger body cap for the few routes that carry images (the Assistant's tool results); MAX_BODY_BYTES otherwise. */
+  maxBodyBytes?: number;
 };
 
 type Inferred<Schema> = Schema extends z.ZodType ? z.infer<Schema> : undefined;
@@ -98,17 +100,38 @@ export function crossSite(request: NextRequest): boolean {
   }
 }
 
-/** Đọc body có trần. Trả `undefined` khi không có body. */
-async function readJson(request: NextRequest): Promise<unknown> {
+async function readCapped(request: NextRequest, max: number): Promise<string> {
+  // No stream to read (a test double, an empty body): read the text and measure it, in bytes not UTF-16 units.
+  if (!request.body || typeof request.body.getReader !== "function") {
+    const text = typeof request.text === "function" ? await request.text() : "";
+    if (Buffer.byteLength(text, "utf8") > max) throw new ApiError(413, "That request is too large.");
+    return text;
+  }
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > max) {
+      await reader.cancel().catch(() => undefined);
+      throw new ApiError(413, "That request is too large.");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+/** Reads the body under a cap; `undefined` when there is none. */
+async function readJson(request: NextRequest, max = MAX_BODY_BYTES): Promise<unknown> {
   const declared = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+  if (Number.isFinite(declared) && declared > max) {
     throw new ApiError(413, "That request is too large.");
   }
-  const text = await request.text();
-  // `content-length` may be missing (chunked): measure the real body, in bytes, not UTF-16 units.
-  if (Buffer.byteLength(text, "utf8") > MAX_BODY_BYTES) {
-    throw new ApiError(413, "That request is too large.");
-  }
+  // Read as a stream and stop at the cap: without a content-length (chunked) `request.text()` buffered the whole body
+  // before it could be measured.
+  const text = await readCapped(request, max);
   if (!text) return undefined;
   try {
     return JSON.parse(text);
@@ -163,7 +186,7 @@ export async function handleApi<Schema extends z.ZodType | undefined = undefined
 
       let body: unknown = undefined;
       if (options.body) {
-        const raw = await readJson(request);
+        const raw = await readJson(request, options.maxBodyBytes);
         const parsed = options.body.safeParse(raw ?? {});
         if (!parsed.success) return errorResponse(422, zodMessage(parsed.error));
         body = parsed.data;

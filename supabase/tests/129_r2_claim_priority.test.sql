@@ -41,7 +41,7 @@ select is_empty(
 reset role;
 
 select ok(
-  not has_function_privilege('authenticated', 'public.claim_next_task(text[], int)', 'execute'),
+  not has_function_privilege('authenticated', 'public.claim_next_task(text[], int, int)', 'execute'),
   'người dùng không tự claim việc của worker'
 );
 

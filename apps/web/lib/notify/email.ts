@@ -9,6 +9,7 @@
  * Resend's own host.
  */
 
+import { escapeHtml } from "@/lib/cmo/digest";
 import { isProduction } from "@/lib/production";
 
 export type EmailMessage = {
@@ -90,10 +91,6 @@ function localSender(base: string, doFetch: typeof fetch): EmailSender {
       return { id: typeof body?.ID === "string" ? body.ID.slice(0, 100) : "local" };
     },
   };
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
 /** The footer every email carries: why it came, how to stop it, where to write. */
