@@ -43,5 +43,8 @@ export const POST = withApi({ body, rateLimit: { bucket: "project-write", limit:
     console.error("[oauth] consent failed", error);
     throw new ApiError(502, "That did not go through. Please try again.");
   }
+  // An app whose redirect host we do not support is denied without being sent back to it: following its registered
+  // URI from opencmo.io's own page would make the site an open redirector for a phishing client (RFC 9700 §4.11.2).
+  if (body.decision === "deny" && !allowedRedirectHost(details.data.redirect_uri)) return { redirect_url: null, denied: true };
   return { redirect_url: data.redirect_url };
 });

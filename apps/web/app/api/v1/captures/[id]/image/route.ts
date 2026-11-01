@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 export const GET = withApi({}, async ({ request, supabase, params }) => {
   const row = await readCapture(supabase, String(params.id ?? ""));
-  const urls = row ? await captureUrls(row) : null;
+  const urls = row ? await captureUrls(supabase, row) : null;
   if (!urls) throw notFound("This capture is not ready.");
   return new URL(request.url).searchParams.get("resolve") === "1" ? { url: urls.image_url } : NextResponse.redirect(urls.image_url, 303);
 });

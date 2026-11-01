@@ -23,7 +23,8 @@ export type Digest = { subject: string; text: string; html: string; empty: boole
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 
-function escapeHtml(s: string): string {
+/** The one HTML escaper of every email (the digest body here, the footer in `lib/notify/email.ts`). */
+export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 

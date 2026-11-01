@@ -1,19 +1,18 @@
 /**
- * Xác thực webhook của Polar.
+ * Verifies Polar's webhooks.
  *
- * Polar dùng chuẩn Standard Webhooks: chữ ký là HMAC-SHA256 của chuỗi
- * `<webhook-id>.<webhook-timestamp>.<body thô>`, khóa là secret đã base64.
+ * Polar uses Standard Webhooks: the signature is HMAC-SHA256 of `<webhook-id>.<webhook-timestamp>.<raw body>`. The key
+ * is the secret's UTF-8 bytes (see `verifySignature`).
  *
- * Tự viết thay vì thêm thư viện: đúng 30 dòng, và nó nằm trên đường tiền vào —
- * chỗ đáng đọc hiểu từng dòng nhất trong cả app. Xem ARCHITECTURE.md §2 về việc
- * thêm dependency.
+ * Written by hand instead of adding a library: about 30 lines, on the path money comes in, where every line is worth
+ * understanding. See ARCHITECTURE.md §2 on adding dependencies.
  *
- * BẮT BUỘC dùng body THÔ, chưa qua JSON.parse: parse rồi stringify lại sẽ đổi
- * thứ tự khóa và khoảng trắng, chữ ký lập tức sai mà không rõ vì sao.
+ * The body MUST be the raw one, before JSON.parse: parsing and stringifying again changes key order and whitespace,
+ * and the signature fails with no obvious reason.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-/** Lệch giờ tối đa cho phép, để chữ ký cũ không dùng lại được. */
+/** The clock skew allowed, so an old signature cannot be replayed. */
 const TOLERANCE_SECONDS = 5 * 60;
 
 export type WebhookHeaders = {
@@ -38,21 +37,20 @@ export function verifySignature(
     return { ok: false, reason: "timestamp too old or in the future" };
   }
 
-  // Polar phát secret dạng `whsec_<base64>`; dashboard đôi khi hiện cả tiền tố.
+  // Polar signs with the secret's raw UTF-8 bytes (its SDK base64-encodes the secret before handing it to Standard
+  // Webhooks, which decodes it again). The base64-decoded key is still accepted, so a secret stored that way keeps
+  // working; both keys come from our own secret, so accepting either lets nobody else sign.
   const raw = secret.startsWith("whsec_") ? secret.slice(6) : secret;
-  const key = Buffer.from(raw, "base64");
+  const keys = [Buffer.from(secret, "utf8"), Buffer.from(raw, "base64")];
+  const signed = `${id}.${timestamp}.${body}`;
+  const expected = keys.map((key) => createHmac("sha256", key).update(signed).digest());
 
-  const expected = createHmac("sha256", key)
-    .update(`${id}.${timestamp}.${body}`)
-    .digest();
-
-  // Header chứa nhiều chữ ký cách nhau bởi dấu cách (Polar xoay khóa thì có 2).
-  // Khớp một cái là đủ.
+  // The header holds several signatures separated by spaces (two while Polar rotates a key); one match is enough.
   for (const part of signature.split(" ")) {
     const [version, value] = part.split(",");
     if (version !== "v1" || !value) continue;
     const given = Buffer.from(value, "base64");
-    if (given.length === expected.length && timingSafeEqual(given, expected)) {
+    if (expected.some((e) => given.length === e.length && timingSafeEqual(given, e))) {
       return { ok: true };
     }
   }

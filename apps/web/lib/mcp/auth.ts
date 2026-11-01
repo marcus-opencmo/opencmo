@@ -25,7 +25,7 @@ export const keyHash = (key: string): string => createHash("sha256").update(key,
 
 function jwtSecret(): string {
   const secret = process.env.SUPABASE_JWT_SECRET;
-  if (!secret) throw new Error("Thiếu SUPABASE_JWT_SECRET: MCP không ký được phiên cho người dùng.");
+  if (!secret) throw new Error("SUPABASE_JWT_SECRET is missing: MCP cannot sign a session for the user.");
   return secret;
 }
 

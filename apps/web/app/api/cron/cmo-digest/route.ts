@@ -56,7 +56,8 @@ export async function GET(request: NextRequest) {
   let expiring = 0;
   if (send) {
     try {
-      expiring = await sendExpiringEmails(admin, send, { appUrl: SITE_URL, now });
+      // Leaves the push round its own share of the run.
+      expiring = await sendExpiringEmails(admin, send, { appUrl: SITE_URL, now, deadline: started + (maxDuration - 50) * 1000 });
     } catch (err) {
       console.warn("[cron] cmo-digest: expiring emails not sent", err instanceof Error ? err.message : err);
     }

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 export const GET = withApi({}, async ({ supabase, params }) => {
   const row = await readCapture(supabase, String(params.id ?? ""));
   if (!row) throw notFound("There is no capture with that id.");
-  const urls = await captureUrls(row);
+  const urls = await captureUrls(supabase, row);
   return {
     id: row.id,
     url: row.url,

@@ -78,12 +78,16 @@ export function parseZernioEvent(rawBody: string): ZernioUpdate {
     const firstTarget = Array.isArray(post.platforms) ? obj(post.platforms[0]) : {};
     const url = str(platform.publishedUrl);
     if (event === "post.platform.published") {
+      // "Published" moves money and the founder's schedule: without an account the SQL check that the post is on the
+      // slot's account would be skipped, so an event with none is refused, not trusted.
+      const zernioAccountId = str(account.accountId) ?? str(firstTarget.accountId);
+      if (!zernioAccountId) throw new WebhookPayloadError("Invalid webhook payload.");
       return {
         kind: "slot",
         eventId,
         slotId,
-        zernioAccountId: str(account.accountId),
-        platform: fromZernioSlug(str(platform.name) ?? str(account.platform) ?? ""),
+        zernioAccountId,
+        platform: fromZernioSlug(str(platform.name) ?? str(account.platform) ?? str(firstTarget.platform) ?? ""),
         status: "published",
         externalId: str(platform.platformPostId) ?? str(post.id),
         url: url && url.startsWith("https://") && url.length <= 1000 ? url : null,
