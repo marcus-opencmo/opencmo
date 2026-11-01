@@ -7,7 +7,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(54);
+select plan(55);
 
 select is(public.cmo_job_price('write_caption'), 1, 'a caption run costs 1 credit');
 select is(public.cmo_job_price('write_video_brief'), 1, 'so does a brief');
@@ -95,9 +95,14 @@ select isnt((public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 
   'two posts due today each get a run');
 select is((public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 'post_draft', '{"item_id":"e2129999-0000-4000-8000-000000000001"}')).id,
   (select id from public.cmo_runs where input->>'item_id' = 'e2129999-0000-4000-8000-000000000001'), 'the same item waits behind its own run');
+-- Review R4 (20270102020000): without an item, only the same request waits behind the queued one; another brief is
+-- its own run (the second brief used to be dropped while the chat said it had started).
 select is((public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 'post_draft', '{}')).id,
+  (public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 'post_draft', '{}')).id,
+  'a post without an item still waits behind the same queued request');
+select isnt((public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 'post_draft', '{}')).id,
   (public.enqueue_cmo_run_for('e2120000-0000-4000-8000-00000000000a', 'post_draft', '{"brief":"now"}')).id,
-  'a post without an item still waits behind the queued one');
+  'a post with a brief is its own run');
 
 -- Captions: a finished-video card orders them for the platforms this week's plan targets.
 insert into public.jobs (id, user_id, source_url, duration_seconds, status) values
