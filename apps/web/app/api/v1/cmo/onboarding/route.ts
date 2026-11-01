@@ -9,4 +9,5 @@ export const maxDuration = 120;
 
 const body = z.object({ site: z.string().trim().min(3).max(300) });
 
-export const POST = withApi({ body }, async ({ supabase, body }) => runOnboarding(supabase, body.site));
+// Each onboarding reads a website and runs the model; SQL allows 5 a day, this stops a loop before any of that work.
+export const POST = withApi({ body, rateLimit: { bucket: "onboarding", limit: 20, windowSeconds: 3600 } }, async ({ supabase, body }) => runOnboarding(supabase, body.site));

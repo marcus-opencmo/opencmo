@@ -573,6 +573,13 @@ function checkBlock(report: Awaited<ReturnType<typeof runCheck>>): string {
  * nào tốn tiền ngoài credit của việc được giao, và không tool nào đăng gì. Ngân sách lời gọi
  * research tính theo YÊU CẦU (scope dựng lại mỗi lượt).
  */
+/** The `cmo_read_hit` bucket a CMO chat tool counts against: social reads, website reads, the credit balance. */
+export function chatReadBucket(name: string): "chat_social" | "chat_site" | "research_credits" | null {
+  if (name === "read_site") return "chat_site";
+  if (name === "research_credits") return "research_credits";
+  return RESEARCH_TOOLS.has(name) ? "chat_social" : null;
+}
+
 export function cmoScope(supabase: SupabaseClient): Scope {
   const budget = new ScBudget(RESEARCH_CALLS_PER_TURN);
   const turn: CmoTurn = { siteReads: 0 };
@@ -585,7 +592,21 @@ export function cmoScope(supabase: SupabaseClient): Scope {
     async plan() {
       return { kind: "run" };
     },
-    run: (call) => (RESEARCH_TOOLS.has(call.name) ? runResearchTool(call.name, call.input, budget) : runCmoTool(supabase, call.name, call.input, turn)),
+    async run(call) {
+      // The in-memory caps above start again on every request (each continue rebuilds the scope); the founder's
+      // counters in SQL do not, and the daily cap is shared with MCP (review R4).
+      const bucket = chatReadBucket(call.name);
+      if (bucket) {
+        const { data: allowed, error } = await supabase.rpc("cmo_read_hit", { p_bucket: bucket });
+        if (error || !allowed) {
+          const message = error
+            ? "Could not check the research limit. Try again in a minute."
+            : "The research limit for now is reached. Work with what you have read, or try again later.";
+          return { ok: false, content: JSON.stringify({ error: message }), summary: "Research limit reached" };
+        }
+      }
+      return RESEARCH_TOOLS.has(call.name) ? runResearchTool(call.name, call.input, budget) : runCmoTool(supabase, call.name, call.input, turn);
+    },
     async decide(call) {
       throw new Error(`CMO scope has no approval tool ${call.name}.`);
     },

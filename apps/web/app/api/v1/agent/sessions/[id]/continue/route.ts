@@ -17,7 +17,8 @@ const body = z.object({ extend: z.boolean().optional() });
  * - paused because the held credits ran out ('budget'): runs only with `extend: true`, after the
  *   user pressed "Continue for N credits" and SQL held more.
  */
-export const POST = withApi({ body }, async ({ supabase, user, body, params }) => {
+// Each continue gets fresh per-request caps, so continues are counted too (agent_resume_turn counts nothing).
+export const POST = withApi({ body, rateLimit: { bucket: "agent-continue", limit: 300, windowSeconds: 3600 } }, async ({ supabase, user, body, params }) => {
   if (body.extend !== true) {
     // Only a turn paused at a request limit continues without anyone: a turn waiting for an answer
     // or an approval card would get here with the question skipped and the card cancelled.

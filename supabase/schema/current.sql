@@ -675,6 +675,8 @@ begin
       return v_session;
     end if;
   end if;
+  -- Counted under a lock: parallel requests all passed a plain count before any of them committed.
+  perform pg_advisory_xact_lock(hashtextextended(v_user::text || ':cmo_session', 0));
   if (select count(*) from public.agent_sessions
       where user_id = v_user and scope = 'cmo' and created_at > now() - interval '1 hour') >= 30 then
     raise exception 'Too many new conversations in the last hour. Try again later.' using errcode = 'P0001';
@@ -3774,7 +3776,10 @@ begin
   select * into v_row from public.cmo_runs
   where user_id = p_user and kind = p_kind and status in ('queued', 'running')
     and (status = 'queued' or lease_until is null or lease_until > now())
-    and (v_key is null or coalesce(input->>'item_id', input->>'order_id') = v_key)
+    -- Without an item or order, only the same request is the same run: two posts with two briefs are two runs
+    -- (review R4; the second brief used to be dropped while the chat said it had started).
+    and (case when v_key is null then (input - 'brain') = (p_input - 'brain')
+              else coalesce(input->>'item_id', input->>'order_id') = v_key end)
   order by created_at desc limit 1;
   if found then
     return v_row;
@@ -4201,7 +4206,19 @@ begin
   values (v_user, p_bucket, v_window, 1)
   on conflict (user_id, bucket, window_start) do update set count = public.rate_limits.count + 1
   returning count into v_count;
-  return v_count <= v_limit;
+  if v_count > v_limit then
+    return false;
+  end if;
+  -- Social reads spend OpenCMO's ScrapeCreators key and cost the founder nothing: one daily ceiling for the chat and
+  -- MCP together, on top of the hourly ones.
+  if p_bucket in ('mcp_social', 'chat_social') then
+    insert into public.rate_limits (user_id, bucket, window_start, count)
+    values (v_user, 'social_day', date_trunc('day', now()), 1)
+    on conflict (user_id, bucket, window_start) do update set count = public.rate_limits.count + 1
+    returning count into v_count;
+    return v_count <= 400;
+  end if;
+  return true;
 end;
 $$;
 
@@ -4213,7 +4230,12 @@ $$;
 CREATE FUNCTION public.cmo_read_limit(p_bucket text) RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$
-  select case p_bucket when 'mcp_social' then 60 when 'mcp_site' then 20 else 0 end
+  select case p_bucket
+    when 'mcp_social' then 60 when 'mcp_site' then 20
+    -- Review R4: the in-app CMO chat counts here too (its in-memory caps start again on every continue).
+    when 'chat_social' then 120 when 'chat_site' then 30
+    when 'research_credits' then 30
+    else 0 end
 $$;
 
 
@@ -5896,6 +5918,8 @@ begin
     raise exception 'Unsupported aspect ratio.' using errcode = '22023';
   end if;
 
+  -- The profile lock first, as retry_job takes it: two creates counted 2 in progress at once and both went in.
+  perform 1 from public.profiles where id = v_user for update;
   if (select count(*) from public.jobs
       where user_id = v_user and status in ('queued', 'running') and purging_at is null) >= 3
   then
@@ -8819,7 +8843,14 @@ begin
       or (p_bucket = 'generations' and p_limit = 120 and p_window_seconds = 3600)
       -- `create_generation` itself: a direct PostgREST call skips the route's bucket.
       or (p_bucket = 'generation_create' and p_limit = 120 and p_window_seconds = 3600)
-      or (p_bucket = 'mcp_look' and p_limit = 60 and p_window_seconds = 3600);
+      or (p_bucket = 'mcp_look' and p_limit = 60 and p_window_seconds = 3600)
+      -- Review R4 (20270102020000): routes that had no limit of their own.
+      or (p_bucket = 'agent-turn' and p_limit = 120 and p_window_seconds = 3600)
+      or (p_bucket = 'agent-continue' and p_limit = 300 and p_window_seconds = 3600)
+      or (p_bucket = 'agent-session' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'captures' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'cmo-runs' and p_limit = 60 and p_window_seconds = 3600)
+      or (p_bucket = 'onboarding' and p_limit = 20 and p_window_seconds = 3600);
   end if;
 
   if not v_allowed then

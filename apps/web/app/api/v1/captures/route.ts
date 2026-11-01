@@ -14,4 +14,5 @@ const body = z.object({
  * addresses that are not public pages and caps captures at 30 a day (429), and the same page
  * within 24 h comes back from the cache.
  */
-export const POST = withApi({ body }, async ({ supabase, body }) => createCapture(supabase, body.url));
+// Each capture loads someone else's page on our worker.
+export const POST = withApi({ body, rateLimit: { bucket: "captures", limit: 60, windowSeconds: 3600 } }, async ({ supabase, body }) => createCapture(supabase, body.url));
