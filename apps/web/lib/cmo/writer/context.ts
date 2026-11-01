@@ -73,6 +73,7 @@ export function writerData(context: WriterContext, profile: WriterProfile | null
     documentsBlock(context.documents),
     context.memories ?? "",
     context.insight ?? "",
+    context.niche ?? "",
     context.recent.length ? `<recent_texts>\n${context.recent.map((text) => `- ${text}`).join("\n")}\n</recent_texts>` : "",
     brief,
   ].filter(Boolean).join("\n\n");

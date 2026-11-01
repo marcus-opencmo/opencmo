@@ -15,10 +15,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { EditorClip } from "@/app/api/v1/editor/clips/route";
 
 import { createBlankEdit } from "./ClipPicker";
+import { startsEmpty } from "@/lib/editor/kinds";
 
 /** Bản nên mở: sửa gần nhất (API đã xếp `edited_at` mới nhất đầu), rồi bản trống chưa mở. */
 export function pickEdit(clips: EditorClip[]): EditorClip | null {
-  return clips.find((clip) => clip.edited_at) ?? clips.find((clip) => clip.kind === "blank") ?? null;
+  return clips.find((clip) => clip.edited_at) ?? clips.find((clip) => startsEmpty(clip.kind)) ?? null;
 }
 
 export function EditorHome() {

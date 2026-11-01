@@ -95,3 +95,11 @@ export type ScorePart = z.infer<typeof ScorePartSchema>;
 
 export const QuoteSchema = z.object({ text: z.string().max(400), from: z.string().max(80) });
 export type Quote = z.infer<typeof QuoteSchema>;
+
+/**
+ * The rule a Sales thread was drafted under (P5 R1; SQL `opportunities.rule`: `mention_ok` → `mention_allowed`,
+ * `skip` → `skipped`). `text` says why: "r/SaaS forbids self-promotion", "you named the product in 1 of the last 10
+ * replies". A `skipped` thread gets no draft and no card.
+ */
+export const SalesRuleSchema = z.object({ kind: z.enum(["mention_allowed", "help_only", "skipped"]), text: z.string().max(200) });
+export type SalesRule = z.infer<typeof SalesRuleSchema>;

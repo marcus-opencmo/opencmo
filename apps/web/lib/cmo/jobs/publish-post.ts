@@ -51,17 +51,20 @@ export type FiredSlot = {
   /** The approved card's snapshot. */
   snapshot: ScheduleSnapshot | null;
   /** `schedule_content(deliverable, platform)` now: what would go out if posted this second. */
-  current: { content_hash: string; text: string | null; title: string | null; clip_id: string | null } | null;
+  current: { content_hash: string; text: string | null; title: string | null; clip_id: string | null; image?: ScheduleSnapshot["image"]; thread?: string[] } | null;
 };
 
 /** The finished export of the slot's edit at the approved document, if one is rendered. */
-export type ExportFile = { object: string; bytes: number };
+export type ExportFile = { object: string; bytes: number; contentType: MediaType };
+
+/** What goes up with a post: a video export, or a post's image (one PNG still, P5). */
+export type MediaType = "video/mp4" | "image/png";
 
 /** Where the `publish_media` upload stands for this slot. */
 export type MediaUpload =
   | { state: "none" }
   | { state: "running"; startedAt: string }
-  | { state: "done"; publicUrl: string; contentType: "video/mp4" }
+  | { state: "done"; publicUrl: string; contentType: MediaType }
   | { state: "failed"; error: string };
 
 export type PublishStatusUpdate =
@@ -137,7 +140,7 @@ export function refusal(slot: FiredSlot, now: Date): PublishStatusUpdate | null 
 const wholeSeconds = (iso: string) => Math.floor(Date.parse(iso) / 1000);
 
 /** The approved content → the adapter's deliverable and slot. */
-export function adapterInput(slot: FiredSlot, mediaUrl: string | null): { deliverable: PublishDeliverable; slot: PublishSlot } {
+export function adapterInput(slot: FiredSlot, mediaUrl: string | null, mediaType: MediaType = "video/mp4"): { deliverable: PublishDeliverable; slot: PublishSlot } {
   const s = slot.snapshot!;
   if (!isPublishPlatform(slot.platform)) throw new PublishError("invalid", "This platform cannot be posted to.", false);
   return {
@@ -146,7 +149,9 @@ export function adapterInput(slot: FiredSlot, mediaUrl: string | null): { delive
       kind: s.deliverable_kind,
       text: slot.current?.text ?? "",
       title: slot.platform === "youtube" ? (slot.current?.title ?? null) : null,
-      media: mediaUrl ? [{ url: mediaUrl, contentType: "video/mp4" }] : [],
+      media: mediaUrl ? [{ url: mediaUrl, contentType: mediaType }] : [],
+      // P6 W4: a thread is in the approved content's hash (`schedule_content`), so it goes out as approved.
+      ...(slot.platform === "x" && slot.current?.thread?.length ? { thread: slot.current.thread } : {}),
     },
     slot: {
       id: slot.id,
@@ -185,26 +190,37 @@ export async function runPublishPost(deps: PublishPostDeps, slotId: string): Pro
   }
 
   const clipId = slot.snapshot!.clip_id;
+  // A post's image goes up the same way as a video, as the approved card's still (P5 F12).
+  const image = clipId ? undefined : slot.snapshot!.image;
+  const what = image ? "image" : "video";
   let mediaUrl: string | null = null;
-  if (clipId) {
+  let mediaType: MediaType = "video/mp4";
+  if (clipId || image) {
     const upload = await deps.media(slot.id);
     if (upload.state === "failed") return settle(fail("unavailable", upload.error, true), "failed");
     if (upload.state === "running" && deps.now().getTime() - Date.parse(upload.startedAt) < UPLOAD_STALE_MS) {
-      return { kind: "waiting", text: "Uploading the video" };
+      return { kind: "waiting", text: `Uploading the ${what}` };
     }
     if (upload.state !== "done") {
-      const file = await deps.exportFor(clipId, slot.snapshot!.content_hash);
-      if (!file) return settle(fail("invalid", "The approved video has no finished export. Export it, then retry."), "failed");
+      const file = await deps.exportFor(clipId ?? image!.clip_id, slot.snapshot!.content_hash);
+      if (!file || (image && file.object !== image.object)) {
+        return settle(
+          fail("invalid", image ? "The approved image is not ready. Open its post card and approve it again." : "The approved video has no finished export. Export it, then retry."),
+          "failed",
+        );
+      }
       try {
-        const presigned = await deps.adapter.presignMedia({ filename: `${slot.id}.mp4`, contentType: "video/mp4", bytes: file.bytes });
+        const ext = file.contentType === "image/png" ? "png" : "mp4";
+        const presigned = await deps.adapter.presignMedia({ filename: `${slot.id}.${ext}`, contentType: file.contentType, bytes: file.bytes });
         await deps.startMedia(slot.id, file, presigned);
       } catch (error) {
         if (error instanceof PublishError) return settle({ status: "failed", error: error.info() }, "failed");
         throw error;
       }
-      return { kind: "waiting", text: "Uploading the video" };
+      return { kind: "waiting", text: `Uploading the ${what}` };
     }
     mediaUrl = upload.publicUrl;
+    mediaType = upload.contentType;
     // The upload took a while: check again that nothing changed before the post goes out.
     const again = await deps.slot(slot.id);
     if (!again || again.status !== "publishing") return { kind: "skipped", reason: again ? `slot is ${again.status}` : "slot not found" };
@@ -215,7 +231,7 @@ export async function runPublishPost(deps: PublishPostDeps, slotId: string): Pro
 
   let input: ReturnType<typeof adapterInput>;
   try {
-    input = adapterInput(slot, mediaUrl);
+    input = adapterInput(slot, mediaUrl, mediaType);
   } catch {
     // A card without a field the platform requires (TikTok's privacy or comment toggle) never gets a default.
     return settle(fail("invalid", "This post is missing a setting the platform needs. Open its card and approve it again."), "failed");

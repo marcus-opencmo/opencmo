@@ -7,7 +7,7 @@ import {
   signedSourceUrl,
   signedTranscriptUrl,
 } from "@/lib/editor/media";
-import { ensureBlankProject, ensureEditorProject, hasTranscript } from "@/lib/editor/project";
+import { ensureBlankProject, ensureEditorProject, hasTranscript, startsEmpty } from "@/lib/editor/project";
 
 export const dynamic = "force-dynamic";
 
@@ -63,7 +63,7 @@ export const GET = withApi({}, async ({ supabase, request, params: _params }) =>
   const context = await clipContext(supabase, clipId);
 
   // New edit (F1): không có video người nói, không transcript — thư viện là nguồn media.
-  if (context.clip.kind === "blank") {
+  if (startsEmpty(context.clip.kind)) {
     const media = { project_id: context.clip.job_id, master: null, transcript: null };
     if (url.searchParams.get("refresh") === "media") return { media };
     return { ...(await ensureBlankProject(supabase, context, clipId)), media };

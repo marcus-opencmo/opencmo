@@ -39,7 +39,7 @@ export async function startCmoRun(supabase: SupabaseClient, kind: CmoJobKind, in
   if (cmoPausedEverywhere()) throw new ApiError(503, PAUSED_EVERYWHERE);
   // Kiểm TRƯỚC khi giữ credit: không có khoá đọc Reddit thì lượt nào cũng hỏng.
   if (kind === "sales_scan" && !socialReaderReady()) throw new ApiError(503, "Reddit scanning is not set up on this server yet.");
-  if ((kind === "competitor_research" || kind === "pull_metrics") && !socialReaderReady()) throw new ApiError(503, "Social research is not set up on this server yet.");
+  if ((kind === "competitor_research" || kind === "niche_video_research" || kind === "pull_metrics") && !socialReaderReady()) throw new ApiError(503, "Social research is not set up on this server yet.");
   const run = firstRow(await rpcOrThrow<StartedRun | StartedRun[]>(supabase, "enqueue_cmo_run", { p_kind: kind, p_input: input }));
   if (!run) throw new ApiError(500, "Could not start this task.");
   // An inbox run only goes as far as its first model call: Modal's sweep opens it within a

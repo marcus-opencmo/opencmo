@@ -39,6 +39,7 @@ const TITLES: Record<string, string> = {
   set_week_goal: "Propose a weekly goal",
   update_document: "Update a marketing document",
   search_reddit: "Search Reddit",
+  search_hackernews: "Search Hacker News",
   subreddit_posts: "Read a subreddit",
   reddit_thread: "Read a Reddit thread",
   x_profile: "Read an X profile",

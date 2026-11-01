@@ -92,6 +92,40 @@ async function main() {
   assert.equal(fake.items[0]!.label, "huge");
   delete process.env.OPENCMO_AGENT_FAKE;
 
+  // Live shapes (checked against the provider 2026-10-31): TikTok's trimmed search item is flat, and its author may be
+  // missing (the share URL names them); YouTube answers `videos: []` beside the Shorts; Google answers 404 for none.
+  const flat = tiktokPost({ aweme_id: "7701", desc: "STOP WASTING HOURS", url: "https://www.tiktok.com/@toolstackmedia/video/7701", statistics: { play_count: 900 }, create_time: 1_793_215_823 });
+  assert.deepEqual([flat?.author, flat?.views], ["@toolstackmedia", 900], "flat TikTok item, author from the URL");
+  assert.equal(itemsOf({ videos: [], shorts: [{ id: "a" }] }, ["videos", "shorts"]).length, 1, "an empty first list is skipped");
+  {
+    const realFetch = globalThis.fetch;
+    process.env.SCRAPECREATORS_API_KEY = "sc-test";
+    process.env.OPENCMO_AGENT_FAKE = "0";
+    const { youtubeSearch, googleSearch } = await import("./research");
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url.includes("/v1/youtube/search") && url.includes("bare")) {
+        // A bare array answer: read once, not once per key.
+        return new Response(JSON.stringify([1, 2].map((n) => ({ id: `v${n}`, url: `https://www.youtube.com/watch?v=v${n}`, title: `Video ${n}`, viewCountInt: n }))));
+      }
+      if (url.includes("/v1/youtube/search")) {
+        assert.ok(url.includes("type=shorts"), "the Shorts filter is sent");
+        return new Response(JSON.stringify({ success: true, videos: [], shorts: [{ type: "short", id: "4EfEyJdC4ls", url: "https://www.youtube.com/watch?v=4EfEyJdC4ls", title: "SaaS promo", viewCountInt: 226 }] }));
+      }
+      return new Response(JSON.stringify({ success: false, error: "not_found" }), { status: 404 });
+    }) as typeof fetch;
+    try {
+      const shorts = await youtubeSearch("saas demo", new ScBudget(5), { type: "shorts" });
+      assert.deepEqual(shorts.map((v) => [v.url, v.views]), [["https://www.youtube.com/watch?v=4EfEyJdC4ls", 226]], "Shorts are read");
+      assert.deepEqual((await youtubeSearch("bare", new ScBudget(5))).map((v) => v.url), ["https://www.youtube.com/watch?v=v1", "https://www.youtube.com/watch?v=v2"], "a bare array is not listed three times");
+      assert.deepEqual(await googleSearch('site:x.com "nothing"', new ScBudget(5)), [], "no Google results is an empty list");
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.SCRAPECREATORS_API_KEY;
+      delete process.env.OPENCMO_AGENT_FAKE;
+    }
+  }
+
   console.log("research.check — ScrapeCreators: parser, URL, outlier, ngân sách, lỗi HTTP đều đúng.");
 }
 

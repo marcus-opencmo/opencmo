@@ -325,6 +325,11 @@ const BROWSER_TOOLS: ToolSpec[] = [
 
 /** Mô tả op cho model. */
 const OP_DESCRIPTIONS: Record<string, string> = {
+  add_slide: "Add a slide to a slideshow: a heading, an optional body and a colour or library image behind them, shown for a few seconds. Text is always a layer, never inside the image. Refused on a timeline with video.",
+  move_slide: "Move a slide of a slideshow to another position; the slides stay touching and keep their durations.",
+  delete_slide: "Delete a slide of a slideshow and close the gap. The last slide cannot be deleted.",
+  set_slide_duration: "Change how many seconds a slide of a slideshow stays on screen; the later slides move with it.",
+  set_slide_text: "Change a slide's heading or body. An empty body removes it.",
   remove_words:
     "Cut words out of the video (and captions) by word id. Non-adjacent ids become separate cuts. Get ids from get_transcript or search_transcript. tightness also cuts the pauses around the removed words, leaving tight 0.06s / balanced 0.15s / loose 0.32s next to the words that stay — use balanced for fillers and stumbles so the sentence does not gap. element_id picks the video when the clip has several with speech (speech_sources in <clip_context>).",
   remove_silence:

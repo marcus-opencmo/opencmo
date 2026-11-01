@@ -4,7 +4,7 @@ import type { SupabaseClient as BaseClient } from "@supabase/supabase-js";
 
 import { DOCUMENT_KINDS, type DocumentKind } from "../documents";
 import { latestPerTopic } from "./context";
-import type { CmoStore, CompetitorInsight, Documents, Goal, InboxState, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
+import type { CmoStore, CompetitorInsight, ConnectedAccountRow, ReplyOutcomeDue, ZernioPostRow, Documents, NicheVideoInsight, SubredditRule, Goal, InboxState, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
 
 const ITEM_COLUMNS =
   "id, run_id, department, platform, day, idea, reason, status, priority, body, final_text, external_url, decided_at, published_at, created_at";
@@ -109,7 +109,7 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       ]);
       // Several measurements per post: keep the highest per post, then add them up.
       const best = new Map<string, number>();
-      for (const row of (measured ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+      for (const row of (measured ?? []) as { item_id: string; views: number | null }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
       return { posts, replies, views: [...best.values()].reduce((a, b) => a + b, 0) };
     },
     async proposeGoal(userId, runId, week, goal) {
@@ -149,6 +149,29 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       return new Set(((data ?? []) as { url: string }[]).map((r) => r.url));
     },
     saveOpportunities: (userId, runId, items) => rpc<number>("cmo_save_opportunities", { p_user: userId, p_run: runId, p_items: items }),
+    async subredditRule(subreddit) {
+      const { data, error } = await admin.from("subreddit_rules").select("subreddit, verdict, summary, read_at").eq("subreddit", subreddit.toLowerCase()).maybeSingle();
+      if (error) throw new Error(`subreddit_rules: ${error.message}`);
+      return (data as SubredditRule | null) ?? null;
+    },
+    async saveSubredditRule(rule) {
+      const { error } = await admin
+        .from("subreddit_rules")
+        .upsert({ subreddit: rule.subreddit.toLowerCase(), verdict: rule.verdict, summary: rule.summary.slice(0, 200), read_at: new Date().toISOString() });
+      if (error) throw new Error(`subreddit_rules: ${error.message}`);
+    },
+    async salesSettings(userId) {
+      const { data, error } = await admin.from("sales_settings").select("excluded_subreddits, co_occurrence").eq("user_id", userId).maybeSingle();
+      if (error) throw new Error(`sales_settings: ${error.message}`);
+      const row = data as { excluded_subreddits: string[]; co_occurrence: [string, string][] } | null;
+      return { excluded: row?.excluded_subreddits ?? [], pairs: row?.co_occurrence ?? [] };
+    },
+    recentMentions: (userId) => rpc<number>("sales_mention_count_for", { p_user: userId }),
+    async waitingMentions(userId) {
+      const { count, error } = await admin.from("opportunities").select("id", { count: "exact", head: true }).eq("user_id", userId).eq("status", "in_review").eq("rule", "mention_ok");
+      if (error) throw new Error(`opportunities: ${error.message}`);
+      return count ?? 0;
+    },
     defer: (run, seconds, steps) => rpc<boolean>("cmo_defer_run", { p_run: run.id, p_attempt: run.attempt, p_seconds: seconds, p_steps: steps }),
     async saveInsight(userId, runId, body) {
       await rpc("cmo_save_insight", { p_user: userId, p_run: runId, p_kind: "competitors", p_body: body });
@@ -157,7 +180,30 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       const { data } = await admin.from("cmo_insights").select("body").eq("user_id", userId).eq("kind", "competitors").order("created_at", { ascending: false }).limit(1).maybeSingle();
       return ((data as { body?: CompetitorInsight } | null)?.body ?? null);
     },
+    async saveNicheInsight(userId, runId, body) {
+      await rpc("cmo_save_insight", { p_user: userId, p_run: runId, p_kind: "niche_video", p_body: body });
+    },
+    async latestNicheInsight(userId) {
+      const { data } = await admin.from("cmo_insights").select("body").eq("user_id", userId).eq("kind", "niche_video").order("created_at", { ascending: false }).limit(1).maybeSingle();
+      return ((data as { body?: NicheVideoInsight } | null)?.body ?? null);
+    },
     saveMetrics: (userId, rows) => rpc<number>("cmo_save_metrics", { p_user: userId, p_rows: rows }),
+    zernioPosts: (userId, since) => rpc<ZernioPostRow[]>("cmo_zernio_posts", { p_user: userId, p_since: since }).then((rows) => rows ?? []),
+    async connectedAccounts(userId) {
+      const [profile, accounts] = await Promise.all([
+        admin.from("zernio_profiles").select("zernio_profile_id").eq("user_id", userId).maybeSingle(),
+        admin.from("social_accounts").select("id, platform, handle, zernio_account_id").eq("user_id", userId).eq("status", "connected"),
+      ]);
+      if (profile.error) throw new Error(`zernio_profiles: ${profile.error.message}`);
+      if (accounts.error) throw new Error(`social_accounts: ${accounts.error.message}`);
+      const id = (profile.data as { zernio_profile_id?: string } | null)?.zernio_profile_id ?? null;
+      return { zernioProfileId: id, accounts: id ? ((accounts.data ?? []) as ConnectedAccountRow[]) : [] };
+    },
+    saveAccountMetrics: (userId, rows) => rpc<number>("cmo_save_account_metrics", { p_user: userId, p_rows: rows }),
+    refreshBestSlots: (userId) => rpc<number>("best_slots_refresh", { p_user: userId }),
+    replyOutcomesDue: (userId, limit) => rpc<ReplyOutcomeDue[]>("cmo_reply_outcomes_due", { p_user: userId, p_limit: limit }).then((rows) => rows ?? []),
+    saveReplyOutcome: (userId, outcomeId, c) =>
+      rpc<boolean>("cmo_save_reply_outcome", { p_user: userId, p_outcome: outcomeId, p_status: c.status, p_votes: c.votes, p_replies: c.replies }),
     async inbox(userId, inboxId) {
       const { data, error } = await admin.from("cmo_inbox").select("answers, memo").eq("id", inboxId).eq("user_id", userId).maybeSingle();
       if (error) throw new Error(`inbox: ${error.message}`);

@@ -14,6 +14,7 @@ import { PauseButton } from "../brain/PauseButton";
 import { cx, ErrorNote, PageHeader, Panel, Screen, SkeletonBlocks } from "../parts";
 import { isSample, useScreen } from "../useScreen";
 import { AccountsPanel } from "./AccountsPanel";
+import { NotifyPanel } from "./NotifyPanel";
 
 const DIGEST_HOURS = [6, 7, 8, 9, 10, 12, 18];
 
@@ -216,6 +217,8 @@ function SettingsBody({ data, live }: { data: Data; live: Record<keyof Data, boo
           </div>
         </section>
       </div>
+
+      <NotifyPanel />
     </>
   );
 }

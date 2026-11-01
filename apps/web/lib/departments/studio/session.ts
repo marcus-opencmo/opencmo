@@ -9,7 +9,7 @@ import { clipContext } from "@/lib/api/clips";
 import type { SupabaseClient } from "@/lib/api/handler";
 import { clipScopeWith, type ClipHost, type Scope } from "@/lib/agent/scope";
 import type { LlmUsage } from "@/lib/cmo/jobs/llm";
-import { ensureBlankProject, ensureEditorProject } from "@/lib/editor/project";
+import { ensureProject } from "@/lib/editor/project";
 import { loadCatalog } from "@/lib/generate/models";
 
 import type { StudioCaller } from "./types";
@@ -31,8 +31,7 @@ export async function studioSession(supabase: SupabaseClient, caller: StudioCall
   const context = await clipContext(supabase, clipId);
   // The editor creates a clip's project the first time it opens it; outside the editor nobody opens
   // it, so the first call does the same (both keep a project that already exists).
-  if (context.clip.kind === "blank") await ensureBlankProject(supabase, context, clipId);
-  else await ensureEditorProject(supabase, context, clipId);
+  await ensureProject(supabase, context, clipId);
   const host: ClipHost = {
     checkpoint: { take: () => ({ kind: "agent" as const, label: CHECKPOINT[caller] }), mark: async () => undefined },
     recordUsage:

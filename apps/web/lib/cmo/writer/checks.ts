@@ -7,6 +7,8 @@
  * Facts and product rules only: No AI Slop is advice in the prompt, never a check here.
  */
 
+import { SLIDE_TEXT_MAX } from "@opencmo/editor-core";
+
 import { checkPost, factIssues, hashtagCount, hasLink, type CheckRules } from "../jobs/check-post";
 import type { CaptionDraft, Slide, VideoBrief, WriterProfile, YoutubeDraft } from "./types";
 
@@ -93,6 +95,8 @@ export function checkSlides(slides: readonly Slide[], rules: CheckRules): string
   const issues: string[] = [];
   if (slides.length < 5 || slides.length > 10) issues.push(`It has ${slides.length} slides; a slideshow has 5 to 10.`);
   if (slides.some((slide) => !slide.heading.trim())) issues.push("A slide has no heading.");
+  if (slides.some((slide) => slide.heading.length > SLIDE_TEXT_MAX.heading)) issues.push(`A heading is over ${SLIDE_TEXT_MAX.heading} characters; it would not fit the frame.`);
+  if (slides.some((slide) => slide.body.length > SLIDE_TEXT_MAX.body)) issues.push(`A body is over ${SLIDE_TEXT_MAX.body} characters; it would not fit the frame.`);
   const text = slides.map((slide) => `${slide.heading}\n${slide.body}`).join("\n");
   if (hasLink(text, rules.names)) issues.push("A slide has a link.");
   if (hashtagCount(text)) issues.push("A slide has a hashtag.");

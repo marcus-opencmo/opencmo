@@ -11,6 +11,9 @@ select plan(31);
 
 insert into auth.users (id, email) values ('e2130000-0000-4000-8000-00000000000a', 'fixes@test.local');
 update public.profiles set credit_balance = 50 where id = 'e2130000-0000-4000-8000-00000000000a';
+-- P5 A2: fresh niche research, so the week plan orders none and the briefs start at once, as this test expects.
+insert into public.cmo_insights (user_id, kind, body) values
+  ('e2130000-0000-4000-8000-00000000000a', 'niche_video', '{}');
 create temp table t (name text primary key, id uuid) on commit drop;
 grant all on t to authenticated;
 create function pg_temp.id(p text) returns uuid language sql as $$ select id from t where name = p $$;

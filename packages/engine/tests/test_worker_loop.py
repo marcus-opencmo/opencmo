@@ -91,8 +91,9 @@ def test_tasks_are_claimed_in_one_call_in_user_wait_priority():
 
     # One RPC per pass, the array in task-kinds.json's order; the P4 upload (publish_media) comes last.
     assert store.claimed_kinds[0] == list(task_kinds())
-    assert task_kinds()[:6] == (
-        "probe_media", "generate", "transcribe_media", "transcribe_asset", "render_document", "capture_page",
+    assert task_kinds()[:7] == (
+        "probe_media", "generate", "transcribe_media", "transcribe_asset", "render_document", "render_stills",
+        "capture_page",
     )
     assert task_kinds()[-1] == "publish_media"
     assert handled == ["probe-1", "capture-1"]

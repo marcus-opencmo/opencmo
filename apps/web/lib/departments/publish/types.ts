@@ -70,9 +70,16 @@ export const PublishDeliverableSchema = z
     /** YouTube's title; null elsewhere. */
     title: z.string().min(1).max(100).nullable(),
     media: z.array(PublishMediaSchema).max(35),
+    /** P6 W4: an X thread, 5–8 posts of at most 280 code points; `text` is its first post. Posted as one. */
+    thread: z
+      .array(z.string().min(1).refine((t) => [...t].length <= 280, "A thread post is at most 280 characters."))
+      .min(5)
+      .max(8)
+      .optional(),
   })
   .strict()
   .refine((d) => d.kind === "post" || d.media.length > 0, { message: "A video, short or slideshow needs its media." })
+  .refine((d) => !d.thread || (d.kind === "post" && d.thread[0] === d.text), { message: "A thread is a post whose first post is its text." })
   .refine((d) => d.text.trim().length > 0 || d.media.length > 0, { message: "Nothing to post." });
 export type PublishDeliverable = z.infer<typeof PublishDeliverableSchema>;
 

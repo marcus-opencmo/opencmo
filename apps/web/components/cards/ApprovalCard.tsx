@@ -29,6 +29,7 @@ import {
   SlideshowBody,
 } from "./bodies";
 import { blockedReason, editCaption, type Decision } from "./decide";
+import { renderAgain, saveSlideText, slidesHref } from "./slides";
 import { NUMERAL, cardHead, headNote } from "./labels";
 import { approveBlocked, fromLocalInput, sameOptions, savedOptions, toLocalInput } from "./schedule";
 
@@ -61,17 +62,14 @@ const DECLINE: Partial<Record<Card["kind"], { label: string; action: "skip" | "d
   price: { label: "Cancel", action: "cancel" },
   finished_video: { label: "Send back", action: "send_back" },
   shorts_batch: { label: "Send back", action: "send_back" },
+  slideshow: { label: "Send back", action: "send_back" },
   correction: { label: "Dismiss", action: "reject" },
   schedule: { label: "Cancel", action: "cancel" },
 };
 
-/** A secondary action that belongs to a later phase: shown, disabled, with the reason. */
-const LATER = "Opens with this department's release.";
-
 function firstText(card: Card): string {
   if (card.body.kind === "post") return card.body.platforms[0]?.versions[0] ?? "";
   if (card.body.kind === "correction") return card.body.rule;
-  if (card.body.kind === "slideshow") return card.body.slides[0] ?? "";
   return "";
 }
 
@@ -116,6 +114,10 @@ export function ApprovalCard({
   const [moving, setMoving] = useState(false);
   const [newTime, setNewTime] = useState("");
   const [shown, setShown] = useState(() => firstText(card));
+  /** Slideshow card: a slide's words were saved, so its renders are older than the edit and a new render runs. */
+  const [slideEdited, setSlideEdited] = useState(false);
+  /** Slideshow card: a decision was refused (the slideshow was edited elsewhere since it was rendered). */
+  const [slideStale, setSlideStale] = useState(false);
   const [draft, setDraft] = useState(() => firstText(card));
   const beats = card.body.kind === "script" ? card.body.beats : [];
 
@@ -134,6 +136,8 @@ export function ApprovalCard({
     const ok = await onDecide(card, decision);
     // A decided card leaves the queue and unmounts; only a refused one comes back to edit.
     if (!ok) setBusy(false);
+    // A slideshow refused after an edit in the Slides view can be rendered again from here.
+    if (!ok && card.kind === "slideshow") setSlideStale(true);
     return ok;
   }
 
@@ -151,6 +155,34 @@ export function ApprovalCard({
     const tab = window.open(target.url, "_blank", "noopener,noreferrer");
     if (!(await copied)) toast("Copy did not work here. Select the post and copy it yourself.");
     else toast(tab === null && !target.copy ? "Your browser blocked the new tab. Open the platform yourself and post it from your account." : "Post it from your account, then tell us here.");
+  }
+
+  async function saveSlide(index: number, heading: string, words: string): Promise<boolean> {
+    try {
+      const next = await saveSlideText(card, index, heading, words, sample);
+      setChanged({ from: given, card: next });
+      setSlideEdited(true);
+      toast(sample ? "Slide saved (sample, nothing was sent)." : "Slide saved. The slideshow renders again and comes back as a new card.");
+      return true;
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
+      return false;
+    }
+  }
+
+  async function rerender() {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await renderAgain(card, sample);
+      setSlideEdited(true);
+      setSlideStale(false);
+      toast(sample ? "Rendering again (sample, nothing was sent)." : "Rendering again. A new card replaces this one when it is ready.");
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function saveCaption(caption: Caption): Promise<boolean> {
@@ -204,11 +236,12 @@ export function ApprovalCard({
   const blockedFor = (action: Extract<Action, { run: () => void }>) =>
     action.declines ? declineBlocked : action.checks ? blockedReason(card, sample, action.checks) : blocked;
   const primary = (label = PRIMARY_ACTION[card.kind]): Action => ({ label, variant: "primary", run: approve });
-  const later = (label: string): Action => ({ label, variant: "secondary", run: () => undefined, disabled: LATER });
 
   const actions: Action[] = (() => {
     switch (card.body.kind) {
       case "post":
+        // A thread (P6 W4) is approved as written: one edited post would no longer match the thread it opens.
+        if (card.body.platforms.some((p) => p.thread)) return [primary("Approve thread"), ...declineAction];
         return [primary(editing ? "Approve edit" : "Approve"), editAction(), ...declineAction];
       case "reply":
         return [
@@ -228,7 +261,9 @@ export function ApprovalCard({
       case "shorts_batch":
         return [primary(), ...declineAction];
       case "slideshow":
-        return [primary(), later("Open in Slides")];
+        // Approving words the renders do not show yet would approve a video nobody saw: wait for the new card.
+        if (slideStale && !slideEdited) return [{ label: "Render again", variant: "primary", run: () => void rerender() }, { label: "Open in Slides", variant: "secondary", href: slidesHref(card.body.clipId) }, ...declineAction];
+        return [{ ...primary(), disabled: slideEdited ? "The slideshow renders again with your words; approve the new card." : undefined }, { label: "Open in Slides", variant: "secondary", href: slidesHref(card.body.clipId) }, ...declineAction];
       case "schedule": {
         const body = card.body;
         const changeTime: Action = {
@@ -323,7 +358,7 @@ export function ApprovalCard({
           ) : card.body.kind === "shorts_batch" ? (
             <ShortsBody body={card.body} cardId={card.id} editable={captionsBlocked} onSaveCaption={saveCaption} />
           ) : card.body.kind === "slideshow" ? (
-            <SlideshowBody body={card.body} cardId={card.id} firstSlide={shown} onFirstSlide={setShown} />
+            <SlideshowBody body={card.body} cardId={card.id} editable={captionsBlocked} edited={slideEdited} onSaveSlide={saveSlide} onSaveCaption={saveCaption} />
           ) : card.body.kind === "schedule" ? (
             <ScheduleBody body={card.body} cardId={card.id} options={options} onOptions={setOptions} editable={blocked ?? (busy ? "Wait for the decision to finish." : card.body.state === "failed" || card.body.state === "no_account" || card.body.state === "unconfirmed" ? "It posts as you approved it; change the time to start again." : null)} />
           ) : (
@@ -331,6 +366,13 @@ export function ApprovalCard({
           )}
 
           {foot ? <div className="v2-card-meta">{foot}</div> : null}
+
+          {"lookNote" in card.body && card.body.lookNote ? (
+            <p className="v2-card-state is-expired" data-testid="look-note">
+              <b>Look check</b>
+              <span>{card.body.lookNote.replace(/^look check:\s*/i, "").replace(/^./, (c) => c.toUpperCase())}</span>
+            </p>
+          ) : null}
 
           {card.body.kind === "schedule" && card.body.lastError && !card.problem && card.status === "waiting" && card.body.state !== "waiting" ? (
             <p className={`v2-card-state ${card.body.state === "failed" || card.body.state === "unconfirmed" ? "is-failed" : "is-expired"}`}>

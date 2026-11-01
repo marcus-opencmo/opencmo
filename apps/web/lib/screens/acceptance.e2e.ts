@@ -14,7 +14,8 @@ import assert from "node:assert/strict";
 
 import { createClient } from "@supabase/supabase-js";
 
-import { buildDigest, digestSender, loadDigestInput } from "@/lib/cmo/digest";
+import { buildDigest, loadDigestInput } from "@/lib/cmo/digest";
+import { emailSender } from "@/lib/notify/email";
 import { drainCmoQueue } from "@/lib/cmo/jobs/runner";
 import { supabaseStore } from "@/lib/cmo/jobs/store";
 import { enqueueDueLoops } from "@/lib/cmo/schedule";
@@ -131,9 +132,9 @@ export async function run(): Promise<void> {
   assert.equal(input.waiting.length, dashboard.data.queue.length, "the digest lists every waiting card");
   assert.ok(digest.text.includes(`/app/inbox/${input.waiting[0]!.id}`), "with links that open the card");
   assert.ok(dashboard.data.digest && dashboard.data.digest.waiting.length === input.waiting.length, "and the Dashboard shows it");
-  const send = digestSender();
-  if (send) {
-    await send(email, digest);
+  const send = emailSender();
+  if (send?.name === "local") {
+    await send.send({ to: email, subject: digest.subject, text: digest.text, html: digest.html, unsubscribeUrl: "http://127.0.0.1:3000/unsubscribe" });
     step(`digest sent to the local mail catcher: “${digest.subject}”`);
   } else step(`digest built: “${digest.subject}” (no local mail sender set)`);
 

@@ -114,7 +114,7 @@ export function fakePost(idea: string, product: string): PostDraft {
 }
 
 /** CI stand-ins: plain text with no stock pattern, link or hashtag in a post, from the brief alone. */
-function fakeOutput(kind: WriterKind, profile: WriterProfile | null, brief: WriterBrief, product: string): unknown {
+function fakeOutput(kind: WriterKind, profile: WriterProfile | null, brief: WriterBrief, product: string, context: WriterContext): unknown {
   switch (kind) {
     case "post":
       return fakePost((brief as WriterBrief<"post">).idea, product);
@@ -143,6 +143,7 @@ function fakeOutput(kind: WriterKind, profile: WriterProfile | null, brief: Writ
         seconds: b.seconds ?? 30,
         aspect: b.aspect ?? "9:16",
         rationale: "From this week's video item.",
+        learnedFrom: (context.nicheUrls ?? []).slice(0, 2),
       };
     }
     case "slides": {
@@ -236,7 +237,7 @@ function finish<K extends WriterKind>(kind: K, profile: WriterProfile | null, ou
     }
     case "video_brief": {
       const raw = output as z.infer<typeof VideoBriefDraftSchema>;
-      return { brief: toBrief(raw).data!, rationale: raw.rationale } as WriterOutput<K>;
+      return { brief: toBrief(raw).data!, rationale: raw.rationale, learnedFrom: raw.learnedFrom ?? [] } as WriterOutput<K>;
     }
     default: {
       const slides = output as z.infer<typeof SlidesDraftSchema>;
@@ -261,7 +262,7 @@ export function createWriter(deps: WriterDeps): Writer {
       const data = writerData(context, p, briefBlock(kind, brief));
       const agent = deps.agentFor(kind, p);
       const ask = (prompt: string, round: string) =>
-        deps.think({ agent, system, prompt, schema, label: `${label}${deps.labelSuffix ?? ""}${round}`, title, failure: FAILURE, fake: () => fakeOutput(kind, p, brief, product), ...(deps.onUsage ? { onUsage: deps.onUsage } : {}) });
+        deps.think({ agent, system, prompt, schema, label: `${label}${deps.labelSuffix ?? ""}${round}`, title, failure: FAILURE, fake: () => fakeOutput(kind, p, brief, product, context), ...(deps.onUsage ? { onUsage: deps.onUsage } : {}) });
 
       let output: unknown = await ask(data, "");
       const problems = problemsOf(kind, p, output, rules);

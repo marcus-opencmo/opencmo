@@ -50,6 +50,7 @@ Rules:
 - keyPoints: up to six facts the script may use, each copied from the documents or the brief. The director invents none, so leave out anything the documents do not say.
 - cta: one thing the viewer should do at the end, in the founder's words; no link.
 - seconds: 15 to 60 unless the brief asks for another length; aspect: 9:16 unless the brief asks for another frame.
+- learnedFrom: when <what_works_on_video> is given, adapt the structure of its hooks and formats (never their words) and list the URLs of the videos you learned from, copied exactly; leave it empty when none was given or none fits.
 ${FOUNDER_FIRST}
 - ${DATA_RULE}`;
 

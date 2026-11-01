@@ -182,7 +182,7 @@ async function writerChecks() {
   assert.equal(kept.versions.length, 3, "a style problem the writer could not fix still reaches the founder");
 
   // Video brief: exactly three hooks, facts from the documents, parsed into Studio's type.
-  const brief = { objective: "Show how Paylane chases a late invoice", angle: "Show it working", hooks: ["Your invoice is late.", "Paylane sends the reminder.", "Stop chasing invoices."], keyPoints: ["Plans start at $12/month"], cta: "Try Paylane", seconds: 30, aspect: "9:16", rationale: "r" };
+  const brief = { objective: "Show how Paylane chases a late invoice", angle: "Show it working", hooks: ["Your invoice is late.", "Paylane sends the reminder.", "Stop chasing invoices."], keyPoints: ["Plans start at $12/month"], cta: "Try Paylane", seconds: 30, aspect: "9:16", rationale: "r", learnedFrom: [] };
   const b = await createWriter({ think: scripted([brief]).think, agentFor: () => "x_writer", canFix: false }).draft("video_brief", null, { idea: "Late invoices" }, ctx);
   assert.deepEqual([b.brief.hooks.length, b.brief.cta, b.brief.seconds], [3, "Try Paylane", 30]);
   assert.equal(VideoBriefSchema.parse(b.brief).objective, brief.objective, "Studio's buildVideo takes it as is");
@@ -302,6 +302,15 @@ async function studioChecks() {
   const parsed = VideoBriefSchema.parse(out.brief);
   assert.deepEqual([parsed.hooks.length, parsed.seconds, parsed.aspect, Boolean(parsed.cta), typeof out.reason], [3, 30, "9:16", true, "string"]);
   assert.deepEqual(Object.keys(out.brief as object).sort(), ["angle", "aspect", "cta", "hooks", "keyPoints", "objective", "seconds"], "the keys SQL copies into the video order");
+  assert.deepEqual((b.output as { sources: string[] }).sources, [], "no niche research, no sources");
+  // P5 F8: with niche research the brief cites its videos, and only URLs the research read.
+  const nicheRun = memoryStore(docs, []);
+  const nicheVideo = (n: number) => ({ platform: "tiktok" as const, url: `https://www.tiktok.com/@a/video/${n}`, author: "@a", views: 9000, lift: 4, hook: "Stop editing on a timeline", format: "Screen demo", why: "Names the pain" });
+  await nicheRun.store.saveNicheInsight("u", "r", { topics: ["invoices"], videos: [nicheVideo(1), nicheVideo(2), nicheVideo(3)], formats: ["Screen demo"], measured_at: new Date().toISOString() });
+  const nb = nicheRun.enqueue("write_video_brief", { order_id: "o3", idea: "Chasing a late invoice in one take" });
+  await drainCmoQueue(nicheRun.store);
+  assert.equal(nb.status, "done", `brief with niche research (${nb.error})`);
+  assert.deepEqual((nb.output as { sources: string[] }).sources, [nicheVideo(1).url, nicheVideo(2).url], "the brief cites the niche videos it learned from");
   const noIdea = briefRun.enqueue("write_video_brief", { order_id: "o2", idea: "" });
   await drainCmoQueue(briefRun.store);
   assert.equal(noIdea.status, "failed", "a brief with no idea fails its order");

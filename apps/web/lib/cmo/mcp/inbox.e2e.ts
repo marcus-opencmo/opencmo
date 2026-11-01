@@ -120,6 +120,16 @@ export async function run(userId: string) {
   }, ctx);
   await drain();
   item = await call("get_inbox_item", { id: scan.id }, ctx);
+  // P5 R1: the communities' rules, read as data, before any reply is drafted.
+  assert.equal((item.structuredContent as { step: string }).step, "check_rules", text(item).slice(0, 400));
+  const communities = (text(item).match(/<rules index=/g) ?? []).length;
+  await call("submit_sales_scan", {
+    id: scan.id,
+    step: "check_rules",
+    answer: { rules: Array.from({ length: communities }, (_, index) => ({ index, verdict: "help_only", summary: "No self-promotion" })) },
+  }, ctx);
+  await drain();
+  item = await call("get_inbox_item", { id: scan.id }, ctx);
   assert.equal((item.structuredContent as { step: string }).step, "draft_reply", text(item).slice(0, 400));
   const toReply = (text(item).match(/<thread index=/g) ?? []).length;
   await call("submit_sales_scan", {

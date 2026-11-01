@@ -27,8 +27,9 @@ from opencmo.worker.task_run import TaskContext, TaskError, run_task
 
 SOURCE_BUCKET = "exports"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
-SOURCE_OBJECT = re.compile(rf"^({UUID})/{UUID}/{UUID}\.mp4$")
-CONTENT_TYPES = {"video/mp4"}
+# A video export, or one still of a post image (P5: `<task>-01.png` from `render_stills`).
+SOURCE_OBJECT = re.compile(rf"^({UUID})/{UUID}/{UUID}(\.mp4|-[0-9]{{2}}\.png)$")
+CONTENT_TYPES = {"video/mp4", "image/png"}
 # Zernio takes up to 5 GB; an OpenCMO export stays far below, so anything larger is not ours.
 MAX_BYTES = 2 * 1024**3
 CHUNK = 1024 * 1024
@@ -71,11 +72,13 @@ def _payload(task: Task) -> tuple[str, str, str]:
     return object_name, upload_url, content_type
 
 
-def _probe(signed: str) -> dict[str, Any]:
-    """Reads only the header through the signed URL: an MP4 with a video stream and a duration."""
+def _probe(signed: str, content_type: str = "video/mp4") -> dict[str, Any]:
+    """Reads only the header through the signed URL: an MP4 with a video stream and a duration, or a PNG with a size.
+    The demuxer is named, never sniffed."""
+    image = content_type == "image/png"
     try:
         result = run(
-            ["ffprobe", "-v", "error", *USER_HTTP_INPUT, "-f", "mov", "-print_format", "json",
+            ["ffprobe", "-v", "error", *USER_HTTP_INPUT, "-f", "png_pipe" if image else "mov", "-print_format", "json",
              "-show_format", "-show_streams", signed],
             timeout=120,
         )
@@ -87,6 +90,10 @@ def _probe(signed: str) -> dict[str, Any]:
         duration = float(info.get("format", {}).get("duration") or 0)
     except (TypeError, ValueError):
         duration = 0.0
+    if image:
+        if video is None or not video.get("width") or not video.get("height"):
+            raise TaskError(NOT_PLAYABLE)
+        return {"width": video.get("width"), "height": video.get("height")}
     if video is None or duration <= 0:
         raise TaskError(NOT_PLAYABLE)
     return {"duration": duration, "width": video.get("width"), "height": video.get("height")}
@@ -141,7 +148,7 @@ def process(store: Any, task: Task) -> None:
         object_name, upload_url, content_type = _payload(task)
         # Short-lived: the probe and the upload start at once; the GET keeps streaming past expiry.
         signed = store.sign_object_url(SOURCE_BUCKET, object_name, expires_in=600)
-        probed = _probe(signed)
+        probed = _probe(signed, content_type)
         sent = _stream(ctx, signed, upload_url, content_type)
         if ctx.lost() or not store.heartbeat_task(task.id, task.attempt_id):
             return

@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ApiError, api } from "@/components/clipping/api";
-import { createBlankEdit } from "@/components/editor/ClipPicker";
+import { NewMenu } from "@/components/editor/slides/NewMenu";
 import { useShellState } from "@/components/shell-v2/ShellState";
 import { Button, ButtonLink, EmptyState, SampleTag, Tabs } from "@/components/ui";
 import type { Project } from "@/lib/clipping-types";
@@ -159,18 +159,7 @@ export function StudioScreen() {
             <ButtonLink href="/app/editor?panel=upload" variant="secondary">
               Upload your video
             </ButtonLink>
-            <Button
-              variant="primary"
-              data-testid="studio-new"
-              onClick={() =>
-                void createBlankEdit("9:16").then(
-                  (id) => router.push(`/app/editor/${id}`),
-                  (err: unknown) => setError(err instanceof Error ? err.message : "Could not start a new edit."),
-                )
-              }
-            >
-              New in the editor
-            </Button>
+            <NewMenu label="New in the editor" onOpen={(href) => router.push(href)} onError={setError} />
           </>
         }
       />

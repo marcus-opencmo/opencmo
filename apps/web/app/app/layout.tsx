@@ -2,7 +2,9 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
 import { WebShell } from "@/components/clipping/web/WebShell";
+import { COLUMNS_BOOT } from "@/components/shell-v2/columns";
 import { ShellV2 } from "@/components/shell-v2/ShellV2";
+import { agentChatProvider } from "@/lib/agent/model";
 import { UI_V2 } from "@/lib/screens/flag";
 import { isProduction } from "@/lib/production";
 import { THEME_BOOT } from "@/lib/theme-boot";
@@ -54,12 +56,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const account = await shellAccount(supabase, user);
 
-  // v2: tokens are scoped to `html[data-ui="v2"]`; set it before the first frame like the rail and theme.
+  // v2: tokens are scoped to `html[data-ui="v2"]`; set it before the first frame like the rail, theme and column widths.
   if (UI_V2) {
     return (
       <>
-        <script dangerouslySetInnerHTML={{ __html: RAIL_BOOT + THEME_BOOT + "document.documentElement.dataset.ui='v2';" }} />
-        <ShellV2 {...account} hideSample={isProduction()}>
+        <script dangerouslySetInnerHTML={{ __html: RAIL_BOOT + THEME_BOOT + COLUMNS_BOOT + "document.documentElement.dataset.ui='v2';" }} />
+        <ShellV2 {...account} chatLive={agentChatProvider("cmo") !== null} hideSample={isProduction()}>
           {children}
         </ShellV2>
       </>

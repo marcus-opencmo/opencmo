@@ -35,6 +35,7 @@ export const salesFixture: SalesScreen = {
     { id: "t-4", score: 61, community: "r/marketing", postedAt: at("2026-10-26", "10:00"), comments: null, title: "Do AI captions hurt reach?", url: "https://www.reddit.com/r/marketing/comments/sample4/", rule: { kind: "skipped", text: "Skipped: subreddit bans tool mentions" }, parts: [], quotes: [], draft: null, draftChecks: null, status: "open", approvalId: null },
   ],
   week: { replied: 1, dismissed: 3 },
+  settings: { excludedSubreddits: ["memes"], pairs: [["video", "editor"]] },
 };
 
-export const salesEmpty: SalesScreen = { mentions: { used: 0, window: 10 }, stuck: null, threads: [], week: { replied: 0, dismissed: 0 } };
+export const salesEmpty: SalesScreen = { mentions: { used: 0, window: 10 }, stuck: null, threads: [], week: { replied: 0, dismissed: 0 }, settings: { excludedSubreddits: [], pairs: [] } };

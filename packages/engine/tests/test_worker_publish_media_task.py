@@ -144,6 +144,36 @@ def test_streams_the_export_to_the_presigned_url(server: Server, mp4: bytes) -> 
     assert output["duration"] == pytest.approx(2, abs=0.2)
 
 
+def test_streams_a_post_image_still(mp4: bytes, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """P5: a post's image is one still of `render_stills`, read as a PNG (named demuxer) and sent as image/png."""
+    png = tmp_path / "still.png"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x320", "-frames:v", "1", str(png)], check=True)
+    monkeypatch.setenv("OPENCMO_PUBLISH_UPLOAD_HOSTS", "127.0.0.1")
+    s = Server(png.read_bytes())
+    try:
+        store = FakeStore(s)
+        still = f"{USER}/{CLIP}/{EXPORT}-01.png"
+        pm.process(store, task(s, object=still, content_type="image/png"))
+        assert store.failed == []
+        [(headers, body)] = s.uploads
+        assert headers["content-type"] == "image/png" and body == png.read_bytes()
+        [output] = store.completed
+        assert output["width"] == 320 and output["height"] == 320 and "duration" not in output
+        # A video sent as an image, or a still that is not a PNG, is refused.
+        bad = FakeStore(s)
+        pm.process(bad, task(s, object=still, content_type="video/mp4"))
+        assert bad.completed == [] and bad.failed == [pm.NOT_PLAYABLE]
+    finally:
+        s.close()
+    s2 = Server(mp4)
+    try:
+        wrong = FakeStore(s2)
+        pm.process(wrong, task(s2, object=f"{USER}/{CLIP}/{EXPORT}-01.png", content_type="image/png"))
+        assert wrong.failed == [pm.NOT_PLAYABLE]
+    finally:
+        s2.close()
+
+
 @pytest.mark.parametrize(
     "payload",
     [

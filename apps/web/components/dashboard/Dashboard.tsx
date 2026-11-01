@@ -6,31 +6,36 @@
  * Data: `DashboardScreen` from `/api/v1/screens/dashboard`; a block whose `live` flag is false shows "Sample data".
  */
 
+import { useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { useShellState } from "@/components/shell-v2/ShellState";
 import { Button, Kpi, KpiStrip, Panel } from "@/components/ui";
 
 import { ApprovalQueue } from "./ApprovalQueue";
-import { AskSheet } from "./AskSheet";
 import { DashboardHeader } from "./Header";
 import { LiveLog } from "./LiveLog";
 import { ResultsPanel, TodayPanel } from "./Tables";
 import { TeamGraph, TeamList } from "./TeamGraph";
 import { useDashboard } from "./useDashboard";
 
-export function Dashboard({ chatLive }: { chatLive: boolean }) {
+export function Dashboard() {
   const { state, decideCard, waiting, setPausedAt, reload } = useDashboard();
-  const { toast } = useShellState();
-  // `?ask=1` is the sheet's own address (the Brain page links to it). The History API, not the router: Next keeps
-  // useSearchParams in sync with it, and a router change would render this dynamic page again on the server.
+  const { focusChat, workVersion } = useShellState();
+  // `?ask=1` (the Brain and Writer pages link to it) lands in the shell's chat. The History API drops the flag, not the
+  // router: a router change would render this dynamic page again on the server.
   const asking = useSearchParams().get("ask") === "1";
-  const setAsking = (open: boolean) => {
+  useEffect(() => {
+    if (!asking) return;
+    focusChat();
     const url = new URL(window.location.href);
-    if (open) url.searchParams.set("ask", "1");
-    else url.searchParams.delete("ask");
+    url.searchParams.delete("ask");
     window.history.replaceState(null, "", url.pathname + url.search);
-  };
+  }, [asking, focusChat]);
+  // Work the chat starts (a task, a draft) shows up in the queue and the graph.
+  useEffect(() => {
+    if (workVersion > 0) void reload();
+  }, [workVersion, reload]);
 
   if (state.status === "loading") {
     return (
@@ -62,8 +67,7 @@ export function Dashboard({ chatLive }: { chatLive: boolean }) {
 
   return (
     <div className="v2-dash" data-testid="v2-dashboard">
-      <DashboardHeader count={count} goal={week.deliverables} pausedAt={data.cmo.pausedAt} pauseLive={live.cmo} onPaused={setPausedAt} onAsk={() => setAsking(true)} />
-      <AskSheet open={asking} chatLive={chatLive} onClose={() => setAsking(false)} onWorkStarted={() => void reload()} onToast={toast} />
+      <DashboardHeader count={count} goal={week.deliverables} pausedAt={data.cmo.pausedAt} pauseLive={live.cmo} onPaused={setPausedAt} onAsk={focusChat} />
 
       <div className="v2-dash-week">
         <KpiStrip label="This week, live">

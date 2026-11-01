@@ -9,6 +9,7 @@ import type { SalesScreen as Data } from "@/lib/screens/sales";
 import { ago } from "../format";
 import { cx, ErrorNote, PageHeader, Screen, SkeletonBlocks } from "../parts";
 import { isSample, useScreen } from "../useScreen";
+import { SalesSettings } from "./SalesSettings";
 
 type Thread = Data["threads"][number];
 
@@ -34,7 +35,12 @@ export function SalesScreen() {
       />
       {state.status === "loading" && <SkeletonBlocks />}
       {state.status === "error" && <ErrorNote>{state.message}</ErrorNote>}
-      {state.status === "ready" && <SalesBody data={state.data} live={!!state.live.threads} />}
+      {state.status === "ready" && (
+        <>
+          <SalesBody data={state.data} live={!!state.live.threads} />
+          <SalesSettings initial={state.data.settings} live={!!state.live.settings} />
+        </>
+      )}
     </Screen>
   );
 }
@@ -90,13 +96,27 @@ function SalesBody({ data, live }: { data: Data; live: boolean }) {
       {stuck && (
         <div role="alert" className="scr-banner is-stuck">
           <p>
-            <b>{stuck.text.split(". ")[0]}.</b> {stuck.text.split(". ").slice(1).join(". ")} {stuck.found} threads found before it
-            stopped are below.
+            <b>{stuck.text.split(". ")[0]}.</b> {stuck.text.split(". ").slice(1).join(". ")}
+            {/* Only a scan stopped by its budget left threads behind; one that found nothing worth joining did not. */}
+            {stuck.found > 0 ? ` ${stuck.found} threads found before it stopped are below.` : ""}
           </p>
           <span className="scr-head-actions">
-            <Button variant="primary" disabled title="Raising the week's budget arrives with the brain's budget controls">
-              Add {stuck.creditsToFinish} credits and finish
-            </Button>
+            {stuck.found > 0 ? (
+              <Button variant="primary" disabled title="Raising the week's budget arrives with the brain's budget controls">
+                Add {stuck.creditsToFinish} credits and finish
+              </Button>
+            ) : (
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const panel = document.getElementById("sales-settings-title");
+                  panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  panel?.focus({ preventScroll: true });
+                }}
+              >
+                Change where Sales looks
+              </Button>
+            )}
             <Button variant="secondary" onClick={() => setStuck(null)}>
               Wait for Monday
             </Button>

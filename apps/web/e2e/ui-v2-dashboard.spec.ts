@@ -18,16 +18,17 @@ test("on the fixture, approving drops every count, logs it, and empties the queu
 
   const queue = page.getByTestId("approval-queue");
   const headline = page.getByTestId("dash-headline");
-  const badge = page.getByRole("navigation", { name: "Main" }).locator(".v2-rail-count");
+  // The rail's status line under Dashboard (three-column shell): "N waiting on you".
+  const badge = page.getByRole("navigation", { name: "Main" }).getByTestId("rail-pending");
   await expect(queue.getByTestId("approval-card")).toHaveCount(5);
   await expect(headline).toHaveText("5 things wait on you.");
-  await expect(badge).toHaveText("5");
+  await expect(badge).toHaveText("5 waiting on you");
   const writer = page.getByRole("link", { name: /^Writer, working/ });
   await expect(writer).toContainText("1 waiting on you");
 
   await queue.getByRole("button", { name: "Approve", exact: true }).click();
   await expect(headline).toHaveText("4 things wait on you.");
-  await expect(badge).toHaveText("4");
+  await expect(badge).toHaveText("4 waiting on you");
   await expect(queue.getByTestId("queue-count")).toHaveText("4");
   await expect(writer).toContainText("Nothing waiting");
   await expect(page.getByTestId("live-log").locator("li").first()).toContainText("You approved the X post");

@@ -5,7 +5,8 @@
 
 import type { VideoSource } from "../writer/types";
 import { latestPerTopic } from "./context";
-import { isoDay, type CmoStore, type CompetitorInsight, type MetricRow, type Documents, type Goal, type InboxRequest, type ItemRow, type Lesson, type MemoryEvent, type Opportunity, type QueuedRun, type Step, type VoiceNoteRow, type WeekResults } from "./types";
+import { isoDay, type CmoStore, type CompetitorInsight, type ConnectedAccountRow, type ReplyOutcomeDue, type MetricRow, type ZernioPostRow, type NicheVideoInsight, type SalesSettings, type SubredditRule, type Documents, type Goal, type InboxRequest, type ItemRow, type Lesson, type MemoryEvent, type Opportunity, type QueuedRun, type Step, type VoiceNoteRow, type WeekResults } from "./types";
+import type { AccountMetricRow } from "./metrics-source";
 
 export type InboxItem = {
   id: string;
@@ -34,9 +35,20 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
   const runs: RunState[] = [];
   const items: ItemRow[] = [];
   const opps: Opportunity[] = [];
+  const rules = new Map<string, SubredditRule>();
+  const salesSettings: SalesSettings = { excluded: [], pairs: [] };
+  const mentions = { used: 0 };
   const insights: CompetitorInsight[] = [];
+  const niche: NicheVideoInsight[] = [];
   const metrics: MetricRow[] = [];
+  const zernio: { profileId: string | null; accounts: ConnectedAccountRow[]; posts: ZernioPostRow[]; days: AccountMetricRow[] } = {
+    profileId: null,
+    accounts: [],
+    posts: [],
+    days: [],
+  };
   const inbox: InboxItem[] = [];
+  const replies: (ReplyOutcomeDue & { check?: { status: string; votes: number | null; replies: number | null } })[] = [];
   let seq = 0;
   const id = () => `id-${++seq}`;
   const store: CmoStore = {
@@ -117,6 +129,14 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
       return item;
     },
     seenUrls: async () => new Set(opps.map((o) => o.url)),
+    subredditRule: async (name) => rules.get(name.toLowerCase()) ?? null,
+    async saveSubredditRule(rule) {
+      rules.set(rule.subreddit.toLowerCase(), { ...rule, subreddit: rule.subreddit.toLowerCase(), read_at: new Date().toISOString() });
+    },
+    salesSettings: async () => salesSettings,
+    recentMentions: async () => mentions.used,
+    // Saved threads here are never decided, so every mention draft still waits.
+    waitingMentions: async () => opps.filter((o) => o.rule === "mention_ok").length,
     async saveOpportunities(_u, _r, list) {
       const fresh = list.filter((o) => !opps.some((x) => x.url === o.url));
       opps.push(...fresh);
@@ -132,10 +152,37 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
       insights.push(body);
     },
     latestInsight: async () => insights.at(-1) ?? null,
+    async saveNicheInsight(_u, _run, body) {
+      niche.push(body);
+    },
+    latestNicheInsight: async () => niche.at(-1) ?? null,
     async saveMetrics(_u, rows) {
-      const ok = rows.filter((row) => items.some((i) => i.id === row.item_id && i.status === "published"));
+      const ok = rows.filter(
+        (row) =>
+          (row.source === "zernio" && zernio.posts.some((p) => p.item_id === row.item_id)) ||
+          (row.source !== "zernio" && items.some((i) => i.id === row.item_id && i.status === "published")),
+      );
       metrics.push(...ok);
       return ok.length;
+    },
+    zernioPosts: async (_u, since) => zernio.posts.filter((p) => p.published_at >= since),
+    connectedAccounts: async () => ({ zernioProfileId: zernio.profileId, accounts: zernio.profileId ? zernio.accounts : [] }),
+    async saveAccountMetrics(_u, rows) {
+      const ok = rows.filter((r) => zernio.accounts.some((a) => a.id === r.social_account_id));
+      for (const r of ok) {
+        const i = zernio.days.findIndex((d) => d.social_account_id === r.social_account_id && d.day === r.day);
+        if (i >= 0) zernio.days[i] = r;
+        else zernio.days.push(r);
+      }
+      return ok.length;
+    },
+    refreshBestSlots: async () => 0,
+    replyOutcomesDue: async (_u, limit) => replies.filter((r) => !r.check).slice(0, limit),
+    async saveReplyOutcome(_u, outcomeId, check) {
+      const row = replies.find((r) => r.outcome_id === outcomeId && !r.check);
+      if (!row) return false;
+      row.check = check;
+      return true;
     },
     inbox: async (_u, inboxId) => {
       const item = inbox.find((i) => i.id === inboxId);
@@ -179,5 +226,5 @@ export function memoryStore(docs: Documents, memories: string[] = ["Skipped the 
     runs.push(run);
     return run;
   };
-  return { store, runs, items, opps, insights, metrics, lessons, goals, results, enqueue, inbox, submit, voice, videos, captions };
+  return { store, runs, items, opps, rules, salesSettings, mentions, insights, niche, metrics, zernio, replies, lessons, goals, results, enqueue, inbox, submit, voice, videos, captions };
 }

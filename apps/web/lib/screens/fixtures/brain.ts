@@ -26,6 +26,13 @@ export const brainFixture: BrainScreen = {
     { week: "2026-10-19", goal: "Post every weekday on X", result: "Missed: 3 of 5 posts went out (Threads disconnected).", done: 9, total: 12, credits: { used: 51, budget: 80 } },
     { week: "2026-10-12", goal: "Set up the CMO", result: "Done: documents checked, first 4 posts approved.", done: 6, total: 6, credits: { used: 22, budget: 80 } },
   ],
+  measures: [
+    { key: "plan_accepted", value: 50, unit: "percent", change: 17, target: "Half of plans", note: "2 of 4 plans" },
+    { key: "drafts_as_is", value: 62, unit: "percent", change: 8, target: "Rising week over week", note: "8 of 13 drafts" },
+    { key: "orders_on_time", value: 86, unit: "percent", change: -4, target: "Most", note: "12 of 14 orders" },
+    { key: "credits_per_approved", value: 3.2, unit: "credits", change: -0.6, target: "Falling week over week", note: "13 approved, 42 credits" },
+    { key: "replans", value: 1, unit: "count", change: 0, target: "Few", note: null },
+  ],
 };
 
 export const brainEmpty: BrainScreen = {
@@ -35,4 +42,11 @@ export const brainEmpty: BrainScreen = {
   learned: [],
   corrections: [],
   pastWeeks: [],
+  measures: [
+    { key: "plan_accepted", value: null, unit: "percent", change: null, target: "Half of plans", note: null },
+    { key: "drafts_as_is", value: null, unit: "percent", change: null, target: "Rising week over week", note: null },
+    { key: "orders_on_time", value: null, unit: "percent", change: null, target: "Most", note: null },
+    { key: "credits_per_approved", value: null, unit: "credits", change: null, target: "Falling week over week", note: null },
+    { key: "replans", value: null, unit: "count", change: null, target: "Few", note: null },
+  ],
 };

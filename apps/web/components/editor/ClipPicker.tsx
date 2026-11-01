@@ -9,7 +9,9 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { EditorClip } from "@/app/api/v1/editor/clips/route";
+import { slidesHref } from "@/components/cards/slides";
 import { studioItemHref } from "@/components/screens/studio/href";
+import { startsEmpty } from "@/lib/editor/kinds";
 
 export async function loadEditorClips(): Promise<EditorClip[]> {
   const response = await fetch("/api/v1/editor/clips").catch(() => null);
@@ -18,12 +20,12 @@ export async function loadEditorClips(): Promise<EditorClip[]> {
   return body?.items ?? [];
 }
 
-/** New edit (F1): project trống; trả clip id để mở `/app/editor/<id>`. */
-export async function createBlankEdit(aspect: string): Promise<string> {
+/** New edit (F1), or a New slideshow (P5): an empty project; returns the clip id to open `/app/editor/<id>`. */
+export async function createBlankEdit(aspect: string, kind: "video" | "slideshow" = "video"): Promise<string> {
   const response = await fetch("/api/v1/editor/new", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ aspect }),
+    body: JSON.stringify({ aspect, kind }),
   });
   const data = (await response.json().catch(() => ({}))) as { clip_id?: string; detail?: unknown };
   if (!response.ok || !data.clip_id) throw new Error(typeof data.detail === "string" ? data.detail : "Could not start a new edit. Please try again.");
@@ -84,7 +86,7 @@ export function ClipPicker({ clipId, projectId, onOpen }: { clipId: string; proj
       >
         <span className="ed2-picker-project">{current?.project ?? "Clip"}</span>
         {/* Bản New edit: tên project chính là tên bản sửa — không lặp hai lần. */}
-        {current?.kind === "blank" ? null : <span className="ed2-picker-clip">{current?.label ?? ""}</span>}
+        {current && startsEmpty(current.kind) ? null : <span className="ed2-picker-clip">{current?.label ?? ""}</span>}
         <span aria-hidden>▾</span>
       </button>
       {open ? (
@@ -162,14 +164,26 @@ export function ClipPicker({ clipId, projectId, onOpen }: { clipId: string; proj
                 void createBlankEdit("9:16").then((id) => onOpen(`/app/editor/${id}`), () => onOpen("/app/editor"));
               }}
             >
-              New edit
+              New video
             </button>
-            {current?.kind === "blank" ? (
+            <button
+              type="button"
+              className="ed2-link"
+              data-testid="clip-picker-new-slideshow"
+              onClick={() => {
+                setOpen(false);
+                void createBlankEdit("9:16", "slideshow").then((id) => onOpen(slidesHref(id)), () => onOpen("/app/editor"));
+              }}
+            >
+              New slideshow
+            </button>
+            {/* A post image edit shares its upload's project: renaming it there would not show (the name is the project's). */}
+            {current && startsEmpty(current.kind) && !clips?.some((clip) => clip.project_id === current.project_id && clip.clip_id !== current.clip_id) ? (
               <button type="button" className="ed2-link" data-testid="clip-picker-rename" onClick={() => setNaming(current.project)}>
                 Rename
               </button>
             ) : null}
-            {current && current.kind !== "blank" ? (
+            {current && !startsEmpty(current.kind) ? (
               <button type="button" className="ed2-link" onClick={() => onOpen(studioItemHref(projectId))}>
                 Open project page
               </button>

@@ -392,3 +392,16 @@
 .scr-acc h2 button { width: 100%; min-height: 56px; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 0 18px; border: 0; background: transparent; font: 600 15px var(--v2-sans); cursor: pointer; text-align: left; }
 .scr-acc-body { padding: 0 18px 18px; }
 .scr-setup-brand { justify-content: space-between; flex-wrap: wrap; display: flex; align-items: center; }
+
+/* P5 C2: Sales settings (where Sales looks). */
+.scr-sales-settings { margin-top: 20px; }
+.scr-sales-settings .v2-panel-body { display: flex; flex-direction: column; gap: 12px; }
+.scr-settings-title { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
+.scr-settings-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px; }
+.scr-settings-row .v2-field { flex: 1 1 180px; min-width: 0; }
+.scr-chips { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+.scr-chips li { display: inline-flex; align-items: center; gap: 4px; padding: 0 0 0 10px; border: 1px solid var(--v2-line); border-radius: var(--v2-pill); font: 500 12px var(--v2-mono); }
+.scr-chips button { all: unset; box-sizing: border-box; width: 32px; height: 32px; display: inline-grid; place-items: center; border-radius: var(--v2-pill); cursor: pointer; }
+.scr-chips button:hover, .scr-chips button:focus-visible { background: var(--v2-paper3); }
+.scr-chips button:focus-visible { outline: 2px solid var(--v2-ink); }
+.scr-niche { margin-top: 20px; }

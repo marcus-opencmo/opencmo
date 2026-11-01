@@ -13,7 +13,6 @@ import { makeShort } from '@opencmo/editor-core';
 import { exportJob } from './export.ts';
 
 const FONTS = fileURLToPath(new URL('../../clip-media/fonts', import.meta.url));
-const LOTTIE = fileURLToPath(new URL('../../clip-media/lottie', import.meta.url));
 
 describe('a short (ffmpeg)', () => {
   let dir = '';
@@ -39,7 +38,7 @@ describe('a short (ffmpeg)', () => {
     });
     const short = await makeShort.apply(parent, { start: 1, end: 2 }, { master: { width: 640, height: 360 }, readTranscript: async () => [], saveTranscript: async () => 'x' });
     const out = join(dir, 'short.mp4');
-    const result = await exportJob({ document: short, media: [{ src: 'assets/master.mp4', file: join(dir, 'wide.mp4') }], transcripts: [], fonts: FONTS, lottie: LOTTIE, out, resolution: 720, parallel: 1 });
+    const result = await exportJob({ document: short, media: [{ src: 'assets/master.mp4', file: join(dir, 'wide.mp4') }], transcripts: [], fonts: FONTS, out, resolution: 720, parallel: 1 });
     expect(result).toMatchObject({ frames: 30, width: 720, height: 1280 });
     for (const n of [0, 15, 29]) expect(Math.abs(grayAt(out, n) - 2 * (30 + n))).toBeLessThan(3);
   });

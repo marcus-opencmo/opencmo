@@ -26,6 +26,11 @@ const ICON = {
       <path d="M3 10h18M8 3v4M16 3v4" />
     </svg>
   ),
+  chat: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M4 5h16v11H9l-5 4z" />
+    </svg>
+  ),
   more: (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
       <path d="M4 7h16M4 12h16M4 17h16" />
@@ -33,17 +38,22 @@ const ICON = {
   ),
 };
 
-/** Phone navigation (DashboardPhone.dc.html): Today · Approve · Calendar · More; More opens a sheet with the rest. */
+/**
+ * Phone navigation (DashboardPhone.dc.html): Today · Approve · Calendar · Chat · More; More opens a sheet with the rest.
+ * Chat opens the shell's CMO chat as a full-screen sheet: on a phone there is no room for it as a column.
+ */
 export function TabBar({
   segment,
   entries,
   pending,
   credits,
+  onChat,
 }: {
   segment: string | null;
   entries: (entries: NavEntry[]) => NavEntry[];
   pending: number | null;
   credits: number | null;
+  onChat: () => void;
 }) {
   const sheet = useRef<HTMLDialogElement>(null);
   const pathname = usePathname();
@@ -60,7 +70,7 @@ export function TabBar({
 
   return (
     <>
-      <nav aria-label="Main" className="v2-tabbar" style={{ gridTemplateColumns: `repeat(${calendar ? 4 : 3}, minmax(0, 1fr))` }}>
+      <nav aria-label="Main" className="v2-tabbar" style={{ gridTemplateColumns: `repeat(${calendar ? 5 : 4}, minmax(0, 1fr))` }}>
         <Link href="/app" className="v2-tabbar-item" aria-current={today ? "page" : undefined}>
           {ICON.today}
           Today
@@ -75,6 +85,10 @@ export function TabBar({
             Calendar
           </Link>
         ) : null}
+        <button type="button" className="v2-tabbar-item" aria-controls="v2-chat" onClick={onChat}>
+          {ICON.chat}
+          Chat
+        </button>
         <button type="button" className="v2-tabbar-item" aria-haspopup="dialog" aria-current={moreCurrent ? "page" : undefined} onClick={() => sheet.current?.showModal()}>
           {ICON.more}
           More

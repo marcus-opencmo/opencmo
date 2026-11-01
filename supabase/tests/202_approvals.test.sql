@@ -63,6 +63,8 @@ insert into t_ref select 'o1', id from x;
 with x as (insert into public.opportunities (user_id, url, title, score, reply)
   values ('e2020000-0000-4000-8000-00000000000a', 'https://www.reddit.com/r/SaaS/comments/a1/', 'Agencies only?', 40, 'Not for us.') returning id)
 insert into t_ref select 'o2', id from x;
+-- Eleven cards in one day here: start the day's budget again (P6 A4; the budget has its own test, 235).
+delete from public.card_budget where user_id = 'e2020000-0000-4000-8000-00000000000a';
 insert into t_ref select 'g1', (public.cmo_put_goal('e2020000-0000-4000-8000-00000000000a', null,
   date_trunc('week', current_date)::date, 'Publish 3 posts on X', 'posts', 3)).id;
 insert into t_ref select 'c1', (public.cmo_propose_correction('e2020000-0000-4000-8000-00000000000a', 'No question openers.')).id;
@@ -128,7 +130,8 @@ update public.approvals set kind = 'slideshow', department = 'studio' where ref_
 insert into t_card select 'p8', id, content_hash from public.approvals where ref_id = (select id from t_ref where name = 'p8') and status = 'waiting';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"e2020000-0000-4000-8000-00000000000a"}';
-select throws_ok($$ select pg_temp.decide('p8', 'approve') $$, 'P0001', 'This card cannot be decided yet.', 'slideshow cards wait for their phase (P5)');
+select throws_ok($$ select pg_temp.decide('p8', 'approve') $$, 'P0001', 'This card was already decided.',
+  'a slideshow card decides only its own slideshow step (P5)');
 select is((select count(*)::int from public.approvals where status = 'waiting'), 1, 'only the slideshow card still waits');
 
 select * from finish();

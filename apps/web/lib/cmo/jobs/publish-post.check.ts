@@ -69,7 +69,7 @@ async function main() {
       adapter,
       now: () => NOW,
       slot: async () => slots[Math.min(i++, slots.length - 1)] ?? null,
-      exportFor: async () => ({ object: "u/c/t.mp4", bytes: 1234 }),
+      exportFor: async () => ({ object: "u/c/t.mp4", bytes: 1234, contentType: "video/mp4" as const }),
       media: async () => ({ state: "none" }),
       startMedia: async () => "task-1",
       status: async (_id, u) => void updates.push(u),
@@ -165,6 +165,35 @@ async function main() {
     assert.deepEqual(call.sl.fields, { platform: "tiktok", privacy: "SELF_ONLY", allowComment: true, allowDuet: false, allowStitch: false, brandOrganic: false, brandContent: false, aiGenerated: true });
     assert.equal(updates.at(-1)!.status, "published");
 
+    // P5 F12: a post with its image uploads the approved still as image/png, then posts it with the text.
+    {
+      const image = { clip_id: "00000000-0000-4000-8000-0000000000e1", object: "u/e1/t-01.png", bytes: 2048 };
+      const withImage = fired({
+        idempotencyKey: "slot-key-img",
+        snapshot: { ...snapshot({}), image },
+        current: { content_hash: HASH, text: "We shipped.", title: null, clip_id: null, image },
+      });
+      let up: MediaUpload = { state: "none" };
+      const presigned: string[] = [];
+      const posted: unknown[] = [];
+      const { d: di } = deps([withImage], {
+        adapter: { ...adapter, presignMedia: async (f) => (presigned.push(`${f.filename} ${f.contentType}`), adapter.presignMedia(f)), publish: async (dl, sl) => (posted.push(dl), adapter.publish(dl, sl)) },
+        exportFor: async () => ({ object: image.object, bytes: 2048, contentType: "image/png" }),
+        media: async () => up,
+      });
+      assert.deepEqual(await runPublishPost(di, SLOT), { kind: "waiting", text: "Uploading the image" });
+      assert.deepEqual(presigned, [`${SLOT}.png image/png`]);
+      up = { state: "done", publicUrl: "https://media.example.com/img", contentType: "image/png" };
+      assert.deepEqual(await runPublishPost(di, SLOT), { kind: "done", status: "published" });
+      assert.deepEqual((posted[0] as { media: unknown[] }).media, [{ url: "https://media.example.com/img", contentType: "image/png" }]);
+      // A newer still than the approved one is never sent in its place.
+      const { d: dj, updates: uj } = deps([fired({ idempotencyKey: "slot-key-img2", snapshot: { ...snapshot({}), image }, current: { content_hash: HASH, text: "We shipped.", title: null, clip_id: null, image } })], {
+        exportFor: async () => ({ object: "u/e1/other-01.png", bytes: 1, contentType: "image/png" }),
+      });
+      await runPublishPost(dj, SLOT);
+      assert.ok(uj[0]!.status === "failed" && uj[0]!.error.message.includes("image"));
+    }
+
     // Edited while it uploaded: the re-check refuses it before posting.
     const { d: d2, updates: u2 } = deps([tiktok({ idempotencyKey: "slot-key-tt2" }), tiktok({ idempotencyKey: "slot-key-tt2", current: { content_hash: "c".repeat(64), text: "new", title: null, clip_id: null } })], {
       media: async () => ({ state: "done", publicUrl: "https://media.example.com/m", contentType: "video/mp4" }),
@@ -247,7 +276,7 @@ async function main() {
     assert.deepEqual(calls.map((c) => c.name), ["publish_slot_read", "publish_slot_start", "publish_slot_read"]);
     assert.ok(calls.every((c) => c.args.p_user === "user-1" && c.args.p_order === "order-1"));
     assert.deepEqual(await deps.exportFor("clip", "hash"), { object: "u/c/t.mp4", bytes: 9 });
-    assert.equal(await deps.startMedia(SLOT, { object: "u/c/t.mp4", bytes: 9 }, { uploadUrl: "https://up", publicUrl: "https://pub", expiresInSeconds: 3600 }), "task-1");
+    assert.equal(await deps.startMedia(SLOT, { object: "u/c/t.mp4", bytes: 9, contentType: "video/mp4" }, { uploadUrl: "https://up", publicUrl: "https://pub", expiresInSeconds: 3600 }), "task-1");
     assert.deepEqual(calls.at(-1)!.args, { p_slot: SLOT, p_object: "u/c/t.mp4", p_upload_url: "https://up", p_public_url: "https://pub", p_user: "user-1", p_order: "order-1" });
     await deps.status(SLOT, { status: "published", externalId: "ext", url: "https://x.com/p/1" });
     assert.deepEqual(calls.at(-1), { name: "publish_status", args: { p_slot: SLOT, p_status: "published", p_external_id: "ext", p_url: "https://x.com/p/1", p_error: null } });

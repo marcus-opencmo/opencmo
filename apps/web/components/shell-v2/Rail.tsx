@@ -1,8 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import type { MouseEvent, ReactNode } from "react";
+
+import { nextPostText, type RailStatus } from "@/lib/screens/rail";
 
 import { Logo } from "./Logo";
+import { NavIcon } from "./NavIcon";
 import { NAV_DEPARTMENTS, NAV_MAIN, NAV_MAKE, NAV_SETTINGS, isCurrent, type DepartmentName, type NavEntry } from "./nav";
 
 export type RailProps = {
@@ -12,65 +16,120 @@ export type RailProps = {
   stuck: DepartmentName[];
   /** Uploads being processed: shown on Studio, where they land. */
   processing: number;
+  /** Schedule's next post and Analytics' connected accounts (P6 F14); null until loaded or where it cannot be read. */
+  status?: RailStatus | null;
   credits: number | null;
   email: string | null;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
+  /** Clicking the screen already open hides the tab panel (and shows it again). */
+  onCurrent: () => void;
 };
 
-function RailLink({ entry, segment, children }: { entry: NavEntry; segment: string | null; children?: React.ReactNode }) {
+type Status = { text: string; tone: "waiting" | "stuck" | "live" | "info" };
+
+
+/** A status line only from numbers the shell already has; no line rather than a guessed one. */
+function statusOf(entry: NavEntry, props: RailProps): Status | null {
+  if (entry.screen === "dashboard" && props.pending) return { text: `${props.pending} waiting on you`, tone: "waiting" };
+  if (entry.department && props.stuck.includes(entry.department)) return { text: "Stuck", tone: "stuck" };
+  if (entry.department === "studio" && props.processing > 0) return { text: `${props.processing} processing`, tone: "live" };
+  if (entry.screen === "schedule" && props.status?.nextPostAt) return { text: nextPostText(props.status.nextPostAt, props.status.timezone), tone: "info" };
+  if (entry.screen === "analytics" && props.status?.connectedAccounts) {
+    const n = props.status.connectedAccounts;
+    return { text: `${n} account${n === 1 ? "" : "s"}`, tone: "info" };
+  }
+  return null;
+}
+
+function RailLink({ entry, props }: { entry: NavEntry; props: RailProps }) {
+  const current = isCurrent(entry, props.segment);
+  const status = statusOf(entry, props);
+  const name = status ? `${entry.label}, ${status.text}` : entry.label;
+  const onClick = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!current || event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    props.onCurrent();
+  };
   return (
-    <Link href={entry.href} className="v2-rail-item" aria-current={isCurrent(entry, segment) ? "page" : undefined}>
-      <span className="v2-rail-label">{entry.label}</span>
-      {children}
+    <Link
+      href={entry.href}
+      className="v2-rail-item"
+      aria-current={current ? "page" : undefined}
+      aria-label={name}
+      title={props.collapsed ? name : undefined}
+      data-flag={status?.tone}
+      onClick={onClick}
+    >
+      <NavIcon href={entry.href} />
+      <span className="v2-rail-text">
+        <span className="v2-rail-label">{entry.label}</span>
+        {status ? (
+          <span className={`v2-rail-status is-${status.tone}`} data-testid={entry.screen === "dashboard" ? "rail-pending" : undefined}>
+            {status.text}
+          </span>
+        ) : null}
+      </span>
     </Link>
   );
 }
 
-export function Rail({ segment, entries, pending, stuck, processing, credits, email }: RailProps) {
+function Group({ heading, children }: { heading?: string; children: ReactNode }) {
+  return (
+    <div className="v2-rail-group">
+      {heading ? <span className="v2-rail-heading">{heading}</span> : null}
+      {children}
+    </div>
+  );
+}
+
+export function Rail(props: RailProps) {
+  const { entries, credits, email, collapsed, onToggleCollapsed } = props;
   const departments = entries(NAV_DEPARTMENTS);
   return (
-    <nav aria-label="Main" className="v2-rail">
-      <Link href="/app" className="v2-rail-brand">
-        <Logo />
-        <span>OpenCMO</span>
-      </Link>
-
-      <div className="v2-rail-group">
-        {entries(NAV_MAIN).map((entry) => (
-          <RailLink key={entry.href} entry={entry} segment={segment}>
-            {entry.screen === "dashboard" && pending ? (
-              <span className="v2-rail-count" aria-label={`${pending} waiting on you`}>
-                {pending}
-              </span>
-            ) : null}
-          </RailLink>
-        ))}
+    <nav aria-label="Main" className="v2-rail" id="v2-rail">
+      <div className="v2-rail-top">
+        <Link href="/app" className="v2-rail-brand" aria-label="OpenCMO home">
+          <Logo />
+          <span>OpenCMO</span>
+        </Link>
+        <button
+          type="button"
+          className="v2-rail-toggle"
+          aria-label={collapsed ? "Expand the rail (⌘B)" : "Collapse the rail (⌘B)"}
+          aria-expanded={!collapsed}
+          aria-controls="v2-rail"
+          onClick={onToggleCollapsed}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="16" />
+            <path d="M9 4v16" />
+          </svg>
+        </button>
       </div>
+
+      <Group>
+        {entries(NAV_MAIN).map((entry) => (
+          <RailLink key={entry.href} entry={entry} props={props} />
+        ))}
+      </Group>
 
       {departments.length > 0 ? (
-        <div className="v2-rail-group">
-          <span className="v2-rail-heading">Departments</span>
+        <Group heading="Departments">
           {departments.map((entry) => (
-            <RailLink key={entry.href} entry={entry} segment={segment}>
-              {entry.department && stuck.includes(entry.department) ? <span className="v2-rail-stuck" role="img" aria-label="Needs attention" /> : null}
-              {entry.department === "studio" && processing > 0 ? (
-                <span className="v2-rail-processing" aria-label={`${processing} processing`}>
-                  {processing}
-                </span>
-              ) : null}
-            </RailLink>
+            <RailLink key={entry.href} entry={entry} props={props} />
           ))}
-        </div>
+        </Group>
       ) : null}
 
-      <div className="v2-rail-group">
-        <span className="v2-rail-heading">Make</span>
+      <Group heading="Make">
         {NAV_MAKE.map((entry) => (
-          <RailLink key={entry.href} entry={entry} segment={segment} />
+          <RailLink key={entry.href} entry={entry} props={props} />
         ))}
-      </div>
+      </Group>
 
       <div className="v2-rail-group v2-rail-foot">
-        <RailLink entry={NAV_SETTINGS} segment={segment} />
+        <RailLink entry={NAV_SETTINGS} props={props} />
         <Link href="/app/billing" className="v2-rail-credits" aria-label={credits === null ? "Credits" : `${credits} credits left`}>
           <span className="v2-mono is-small is-muted">Credits</span>
           <span className="v2-rail-credits-value">{credits ?? "–"}</span>

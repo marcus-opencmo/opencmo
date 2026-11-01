@@ -42,7 +42,7 @@ export async function shortRenders(supabase: SupabaseClient, clipIds: string[]):
 
 export async function signStudioCards(supabase: SupabaseClient, cards: ApprovalCard[], rows: ApprovalRow[]): Promise<ApprovalCard[]> {
   const snapshot = new Map(rows.map((r) => [r.id, r.snapshot]));
-  const studio = cards.filter((c) => c.kind === "price" || c.kind === "finished_video" || c.kind === "shorts_batch");
+  const studio = cards.filter((c) => c.kind === "price" || c.kind === "finished_video" || c.kind === "shorts_batch" || c.kind === "slideshow");
   if (!studio.length) return cards;
 
   const shortClips = studio.flatMap((c) => (c.body.kind === "shorts_batch" ? c.body.shorts.flatMap((s) => (s.shortClipId ? [s.shortClipId] : [])) : []));
@@ -55,6 +55,12 @@ export async function signStudioCards(supabase: SupabaseClient, cards: ApprovalC
         return typeof p === "string" ? [p] : [];
       }),
       ...renders.values(),
+      // P5: a slideshow's MP4, its PNG set and each slide's still, all in `exports`.
+      ...studio.flatMap((c) => {
+        if (c.kind !== "slideshow") return [];
+        const s = snapshot.get(c.id);
+        return [s?.mp4_path, s?.png_set_path, ...paths(s?.slides, "still_path")].filter((p): p is string => typeof p === "string");
+      }),
     ]),
   ]);
 
@@ -82,6 +88,19 @@ export async function signStudioCards(supabase: SupabaseClient, cards: ApprovalC
             }),
           },
         };
+      case "slideshow": {
+        const url = (p: unknown) => (typeof p === "string" ? exports.get(p) ?? null : null);
+        const slides = Array.isArray(s?.slides) ? (s.slides as { still_path?: unknown }[]) : [];
+        return {
+          ...card,
+          body: {
+            ...card.body,
+            previewUrl: url(s?.mp4_path),
+            pngSetUrl: url(s?.png_set_path),
+            slides: card.body.slides.map((x, i) => ({ ...x, stillUrl: url(slides[i]?.still_path) })),
+          },
+        };
+      }
       default:
         return card;
     }

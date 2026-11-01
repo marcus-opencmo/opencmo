@@ -13,6 +13,7 @@ import {
   ScheduleSnapshotSchema,
   ScriptSnapshotSchema,
   ShortsBatchSnapshotSchema,
+  SlideshowSnapshotSchema,
   type ApprovalCard,
   type Caption,
   type CardKind,
@@ -77,6 +78,8 @@ function build(row: ApprovalRow): Built | null {
       if (!profile) return null;
       const text = str(s.text);
       const versions = [text, ...strings(s.alternates)].filter(Boolean).slice(0, 3);
+      // An X thread (P6 W4): SQL emits it only when it is valid (5 to 8 posts, the first being `text`).
+      const thread = strings(s.thread);
       const { head, rest } = firstSentence(text);
       return {
         title: head || clip(str(s.idea), 200),
@@ -85,7 +88,13 @@ function build(row: ApprovalRow): Built | null {
         body: {
           kind: "post",
           platforms: [
-            { platform: profile.platform, versions: versions.length ? versions : [str(s.idea)], limit: profile.limit, visibleBeforeMore: profile.visibleBeforeMore },
+            {
+              platform: profile.platform,
+              versions: versions.length ? versions : [str(s.idea)],
+              limit: profile.limit,
+              visibleBeforeMore: profile.visibleBeforeMore,
+              ...(thread.length >= 5 && thread.length <= 8 && thread[0] === text ? { thread } : {}),
+            },
           ],
           checks: [],
           why: str(s.rationale) || null,
@@ -96,7 +105,8 @@ function build(row: ApprovalRow): Built | null {
       const parts = (Array.isArray(s.score_parts) ? s.score_parts : []) as Partial<ScorePart & { evidence: string }>[];
       const valid = parts.filter((p) => typeof p.label === "string" && typeof p.score === "number" && typeof p.max === "number" && p.max > 0);
       const quotes = valid.filter((p) => typeof p.evidence === "string" && p.evidence).map((p) => ({ text: clip(p.evidence!, 400), from: p.label!.toLowerCase() }));
-      const community = str(s.community) || "Reddit";
+      const hn = s.platform === "hn";
+      const community = str(s.community) || (hn ? "Hacker News" : "Reddit");
       const score = typeof s.score === "number" ? Math.round(s.score) : 0;
       return {
         title: clip(`${community} · “${str(s.title)}”`, 300),
@@ -112,6 +122,10 @@ function build(row: ApprovalRow): Built | null {
           quotes,
           draft: str(s.reply),
           rules: "you post it yourself",
+          ...(hn ? { platform: "hn" as const } : {}),
+          ...(s.rule === "mention_ok" || s.rule === "help_only"
+            ? { rule: { kind: s.rule === "mention_ok" ? ("mention_allowed" as const) : ("help_only" as const), text: clip(str(s.rule_why), 200) } }
+            : {}),
         },
       };
     }
@@ -189,6 +203,7 @@ function build(row: ApprovalRow): Built | null {
           previewUrl: null,
           frameAt: Math.min(2, v.seconds! / 2),
           captions: captionsOf(v.captions, v.clip_id),
+          ...(v.look?.note ? { lookNote: v.look.note } : {}),
         },
       };
     }
@@ -214,6 +229,30 @@ function build(row: ApprovalRow): Built | null {
             previewUrl: null,
             captions: captionsOf(v.captions, x.short_clip_id),
           })),
+          ...(v.look?.note ? { lookNote: v.look.note } : {}),
+        },
+      };
+    }
+    case "slideshow": {
+      const parsed = SlideshowSnapshotSchema.safeParse(s);
+      if (!parsed.success) return null;
+      const v = parsed.data;
+      const n = v.slides.length;
+      return {
+        title: clip(`${v.title || v.slides[0].text} · ${n} ${n === 1 ? "slide" : "slides"}`, 300),
+        summary: "An MP4 and a PNG set from one document. Edit a slide's text here or open it in Slides.",
+        meta: "No generation credits",
+        body: {
+          kind: "slideshow",
+          stepId: v.step_id,
+          clipId: v.clip_id,
+          documentHash: v.document_hash,
+          aspect: v.aspect,
+          slides: v.slides.map((x) => ({ text: x.text, stillUrl: null, seconds: x.seconds })),
+          previewUrl: null,
+          pngSetUrl: null,
+          captions: captionsOf(v.captions, v.clip_id),
+          ...(v.look?.note ? { lookNote: v.look.note } : {}),
         },
       };
     }

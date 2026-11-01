@@ -6818,3 +6818,28 @@ html[data-theme] .ed2-zoom {
   flex-wrap: wrap;
   gap: 4px;
 }
+
+/* P5 C1: Slides view. The strip replaces the Media panel, the slide panel the Inspector; the timeline is hidden. */
+.ed2-slides-strip { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; padding: 10px 8px; overflow: auto; }
+.ed2-slides-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; color: var(--ds-text); }
+.ed2-slides-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.ed2-slide-item { display: flex; align-items: stretch; gap: 4px; border-radius: var(--ds-radius-control); }
+.ed2-slide-item[aria-current] .ed2-slide-thumb { box-shadow: 0 0 0 2px var(--ds-focus); }
+.ed2-slide-item[data-over] { box-shadow: 0 -2px 0 var(--ds-focus); }
+.ed2-slide-thumb { position: relative; flex: 1; min-width: 0; min-height: 64px; padding: 18px 8px 8px; display: flex; align-items: flex-end; border: 1px solid var(--ds-line); border-radius: var(--ds-radius-control); background: var(--ds-raised); color: #fff; text-align: left; cursor: pointer; font-size: var(--ds-text-12); text-shadow: 0 1px 2px rgb(0 0 0 / 0.6); }
+.ed2-slide-thumb[data-image] { background: repeating-linear-gradient(45deg, var(--ds-raised), var(--ds-raised) 6px, var(--ds-panel) 6px, var(--ds-panel) 12px); }
+.ed2-slide-thumb:focus-visible { outline: 2px solid var(--ds-focus); outline-offset: 1px; }
+.ed2-slide-n, .ed2-slide-sec { position: absolute; top: 4px; font-size: var(--ds-text-10); }
+.ed2-slide-n { left: 6px; }
+.ed2-slide-sec { right: 6px; }
+.ed2-slide-text { overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+.ed2-slide-tools { display: flex; flex-direction: column; justify-content: space-between; }
+.ed2-slides-add { align-self: stretch; }
+.ed2-slides-panel { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 12px; padding: 12px; overflow: auto; background: var(--ds-panel); border-left: 1px solid var(--ds-line); font-size: var(--ds-text-12); color: var(--ds-text); }
+.ed2-slides-title { margin: 0; font-size: var(--ds-text-13); font-weight: 600; }
+.ed2-slides-panel .ed2-field { display: flex; flex-direction: column; gap: 4px; }
+.ed2-slides-panel .ed2-field > span { color: var(--ds-muted); }
+.ed2-slides-panel .ed2-field small { color: var(--ds-muted); }
+.ed2-slides-panel .ed2-input { min-height: 32px; padding: 4px 8px; border: 1px solid var(--ds-line); border-radius: var(--ds-radius-control); background: var(--ds-raised); color: var(--ds-text); font: inherit; }
+.ed2-slides-panel textarea.ed2-input { resize: vertical; }
+.ed2-slides-panel .ed2-slide-color { flex: none; align-self: flex-start; width: 48px; height: 32px; min-height: 0; max-height: 32px; padding: 0; border: 1px solid var(--ds-line); border-radius: var(--ds-radius-control); background: none; }

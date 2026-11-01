@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useState } from "react";
 
-import { Tabs, Toggle } from "@/components/ui";
+import { Button, Tabs, Toggle } from "@/components/ui";
 import type { CardBody, ScheduleOptions } from "@/lib/screens/approval-card";
 import { DEPARTMENT_LABEL, PLATFORM_LABEL, type Platform } from "@/lib/screens/common";
 
 import { CaptionList, charCount, type SaveCaption } from "./captions";
+import { joinSlideText, slideTextProblem, splitSlideText } from "./slides";
 import { formatSeconds } from "./labels";
 import { AI_LABEL_PLATFORMS, PRIVACY_LABEL, TIKTOK_MUSIC_TERMS, formatWhen } from "./schedule";
 
@@ -48,6 +49,8 @@ export function PostBody({
   const length = charCount(editing ? draft : text);
   const limit = current?.limit ?? 0;
   const fold = current?.visibleBeforeMore ?? null;
+
+  if (current?.thread) return <ThreadPosts posts={current.thread} limit={limit || 280} why={body.why} />;
 
   return (
     <>
@@ -98,6 +101,34 @@ export function PostBody({
   );
 }
 
+/** An X thread (P6 W4): one numbered post per row, each with its own length; X shows them in this order. */
+function ThreadPosts({ posts, limit, why }: { posts: string[]; limit: number; why: string | null }) {
+  return (
+    <>
+      <ol className="v2-card-thread" aria-label={`Thread of ${posts.length} posts`} data-testid="thread-posts">
+        {posts.map((post, i) => {
+          const length = charCount(post);
+          return (
+            <li key={i}>
+              <span className="v2-card-thread-n" aria-hidden="true">
+                {i + 1}
+              </span>
+              <p className="v2-card-text">{post}</p>
+              <span className={`v2-chip ${length > limit ? "is-stuck" : "is-posted"}`}>
+                {length}/{limit}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="v2-card-meta">
+        <span>{posts.length} posts, posted as one thread on X.</span>
+        {why ? <span>Why: {why}</span> : null}
+      </div>
+    </>
+  );
+}
+
 /** The post as the platform shows it: what is past the "more" cut is set apart, so the hook is judged on its own. */
 function FoldedText({ text, fold }: { text: string; fold: number | null }) {
   const chars = Array.from(text);
@@ -139,6 +170,13 @@ export function ReplyBody({ body }: { body: Body<"reply"> }) {
             </div>
           ))}
         </dl>
+      ) : null}
+      {body.rule?.kind === "help_only" ? (
+        // Why the draft never names the product: the subreddit's rule, or the 1-in-10 mention limit.
+        <p className="v2-card-state is-help_only" data-testid="reply-help-only">
+          <b>Help only</b>
+          <span>{body.rule.text}</span>
+        </p>
       ) : null}
       <div className="v2-card-draft">{body.draft}</div>
       <div className="v2-card-meta">Rules: {body.rules}</div>
@@ -318,30 +356,123 @@ export function ShortsBody({ body, cardId, editable, onSaveCaption }: { body: Bo
   );
 }
 
+/** Saves one slide's words; resolves false when the save was refused (the reason is toasted). */
+export type SaveSlide = (index: number, heading: string, body: string) => Promise<boolean>;
+
+/**
+ * Slideshow: every slide as rendered (its PNG, or its words until the stills exist), the MP4, the PNG set, and a quick
+ * text edit per slide. `edited`: a slide's words were saved since the card was made, so the renders above are older.
+ */
 export function SlideshowBody({
   body,
   cardId,
-  firstSlide,
-  onFirstSlide,
+  editable,
+  edited,
+  onSaveSlide,
+  onSaveCaption,
 }: {
   body: Body<"slideshow">;
   cardId: string;
-  firstSlide: string;
-  onFirstSlide: (text: string) => void;
+  /** null when the words may be changed now, else why not. */
+  editable: string | null;
+  edited: boolean;
+  onSaveSlide: SaveSlide;
+  onSaveCaption: SaveCaption;
 }) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const [heading, setHeading] = useState("");
+  const [words, setWords] = useState("");
+  const [saving, setSaving] = useState(false);
+  const total = body.slides.reduce((sum, slide) => sum + slide.seconds, 0);
+  const problem = picked === null ? null : slideTextProblem(heading, words);
+  const unchanged = picked !== null && joinSlideText(heading, words) === body.slides[picked]?.text;
+
+  function pick(index: number) {
+    const parts = splitSlideText(body.slides[index]?.text ?? "");
+    setPicked(index);
+    setHeading(parts.heading);
+    setWords(parts.body);
+  }
+
   return (
     <>
-      <ul className="v2-card-slides">
-        {body.slides.slice(0, 3).map((slide, index) => (
-          <li key={index} className={index === 0 ? "is-cover" : undefined}>
-            {index === 0 ? firstSlide : slide}
+      <ol className="v2-card-slides is-strip" aria-label={`${body.slides.length} slides`} data-aspect={body.aspect ?? undefined}>
+        {body.slides.map((slide, index) => (
+          <li key={index} className={index === 0 ? "is-cover" : undefined} aria-current={picked === index || undefined}>
+            <button
+              type="button"
+              className="v2-card-slide"
+              aria-label={`Slide ${index + 1}, ${formatSeconds(slide.seconds)}: ${slide.text}. Edit its text`}
+              disabled={!!editable}
+              title={editable ?? undefined}
+              onClick={() => pick(index)}
+            >
+              {slide.stillUrl ? <img src={slide.stillUrl} alt="" loading="lazy" /> : <span>{slide.text}</span>}
+              <span className="v2-card-slide-n" aria-hidden="true">
+                {index + 1} · {formatSeconds(slide.seconds)}
+              </span>
+            </button>
           </li>
         ))}
-      </ul>
-      <label className="v2-field" htmlFor={`${cardId}-slide1`}>
-        Slide 1 text
-        <input id={`${cardId}-slide1`} className="v2-input is-compact" value={firstSlide} maxLength={300} onChange={(event) => onFirstSlide(event.target.value)} />
-      </label>
+      </ol>
+      {body.previewUrl ? (
+        <div className={`v2-card-player${body.aspect === "9:16" ? " is-tall" : ""}`}>
+          <video src={body.previewUrl} controls preload="metadata" playsInline aria-label="Slideshow MP4 preview" />
+        </div>
+      ) : null}
+      <div className="v2-card-meta">
+        {/* The head already names the slide count and the formats. */}
+        {formatSeconds(total)} in all
+        {body.pngSetUrl ? (
+          <>
+            {" · "}
+            <a href={body.pngSetUrl} download data-testid="slideshow-png-set">
+              Download PNG set
+            </a>
+          </>
+        ) : null}
+      </div>
+      {edited ? (
+        <p className="v2-card-state is-expired" data-testid="slideshow-edited">
+          <b>Rendering again</b>
+          <span>The MP4 and PNGs above show the old words. A new card with your changes replaces this one when it is ready.</span>
+        </p>
+      ) : null}
+      {body.captions?.length ? (
+        <CaptionList captions={body.captions} idBase={`${cardId}-captions`} heading="Captions" editable={editable} onSave={onSaveCaption} />
+      ) : null}
+      {picked !== null ? (
+        <form
+          className="v2-card-decline"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (problem || unchanged || saving) return;
+            setSaving(true);
+            void onSaveSlide(picked, heading, words).then((ok) => {
+              setSaving(false);
+              if (ok) setPicked(null);
+            });
+          }}
+        >
+          <label className="v2-field" htmlFor={`${cardId}-slide-heading`}>
+            Slide {picked + 1} heading
+            <input id={`${cardId}-slide-heading`} className="v2-input is-compact" value={heading} maxLength={200} autoFocus onChange={(event) => setHeading(event.target.value)} />
+          </label>
+          <label className="v2-field" htmlFor={`${cardId}-slide-body`}>
+            Slide {picked + 1} text under it (optional)
+            <textarea id={`${cardId}-slide-body`} className="v2-input" rows={2} value={words} maxLength={600} onChange={(event) => setWords(event.target.value)} />
+          </label>
+          {problem ? <p className="v2-card-meta" role="status">{problem}</p> : null}
+          <div className="v2-actions">
+            <Button type="submit" variant="primary" compact disabled={!!problem || unchanged || saving}>
+              Save slide {picked + 1}
+            </Button>
+            <Button variant="quiet" compact onClick={() => setPicked(null)}>
+              Keep it
+            </Button>
+          </div>
+        </form>
+      ) : null}
     </>
   );
 }

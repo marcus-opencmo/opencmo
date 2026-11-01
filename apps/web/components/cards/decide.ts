@@ -69,6 +69,7 @@ function withCaption(card: ApprovalCard, caption: Caption): ApprovalCard {
   const swap = (list: Caption[]) => list.map((c) => (c.id === caption.id ? caption : c));
   if (card.body.kind === "finished_video") return { ...card, body: { ...card.body, captions: swap(card.body.captions) } };
   if (card.body.kind === "shorts_batch") return { ...card, body: { ...card.body, shorts: card.body.shorts.map((s) => ({ ...s, captions: swap(s.captions) })) } };
+  if (card.body.kind === "slideshow") return { ...card, body: { ...card.body, captions: swap(card.body.captions ?? []) } };
   return card;
 }
 
@@ -85,7 +86,13 @@ export async function editCaption(card: ApprovalCard, caption: Caption, sample: 
     jsonBody({ action: CAPTION_ACTION, contentHash: card.contentHash, caption: caption.id, text: caption.text, ...(caption.title !== null ? { title: caption.title } : {}) }),
   );
   // The answer is not signed: keep this card's previews and take the new hash and the captions as saved.
-  const saved = (next.body.kind === "finished_video" ? next.body.captions : next.body.kind === "shorts_batch" ? next.body.shorts.flatMap((s) => s.captions) : []).find(
+  const saved = (
+    next.body.kind === "finished_video" || next.body.kind === "slideshow"
+      ? (next.body.captions ?? [])
+      : next.body.kind === "shorts_batch"
+        ? next.body.shorts.flatMap((s) => s.captions)
+        : []
+  ).find(
     (c) => c.id === caption.id,
   );
   return { ...withCaption(card, saved ?? caption), contentHash: next.contentHash };
@@ -139,6 +146,7 @@ export function decidedMessage(card: ApprovalCard, decision: Decision, sample: b
           : `Approved. On ${when} a card gives you the post to copy and open${suffix}.`;
       }
       if (card.body.kind === "shorts_batch") return `Approved ${card.body.shorts.length} shorts. They are ready to schedule${suffix}.`;
+      if (card.body.kind === "slideshow") return `Approved the slideshow. It is ready to schedule${suffix}.`;
       return `Approved${suffix}.`;
   }
 }

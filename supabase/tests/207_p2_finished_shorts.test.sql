@@ -6,7 +6,7 @@ create extension if not exists pgtap with schema extensions;
 begin;
 set search_path to public, extensions;
 
-select plan(55);
+select plan(56);
 
 select ok(has_function_privilege('authenticated', 'public.cut_shorts_order(uuid)', 'execute'), 'the founder''s Cut shorts button');
 select ok(has_function_privilege('authenticated', 'public.short_batch_create(uuid,text,uuid,jsonb)', 'execute'), 'the Builder under the founder''s session');
@@ -158,6 +158,11 @@ insert into public.tasks (id, user_id, kind, clip_id, job_id, status, request_id
 values ('e2075000-0000-4000-8000-00000000000c', 'e2070000-0000-4000-8000-00000000000a', 'render_document', 'e2072000-0000-4000-8000-00000000000c',
   'e2071000-0000-4000-8000-00000000000c', 'running', gen_random_uuid(), '{}', pg_temp.h('{"version":1,"stage":{"name":"ai"}}'), 60);
 update public.tasks set status = 'done', output_path = 'u/ai.mp4', finished_at = now() where id = 'e2075000-0000-4000-8000-00000000000c';
+-- P6 S4: the look check reads the export first; its pass raises card 3.
+select is((select count(*)::int from public.approvals where ref_kind = 'editor_project' and status = 'waiting'), 0,
+  'no card 3 while the look check runs');
+update public.tasks set status = 'done', output = '{"pass":true,"round":0,"note":"","files":[]}'
+where kind = 'look_check' and payload->>'ref_id' = 'e2072000-0000-4000-8000-00000000000c';
 select is((select snapshot->>'render_path' from public.approvals where ref_kind = 'editor_project' and status = 'waiting'), 'u/ai.mp4',
   'the render raises card 3 with the video');
 select is((select status from public.work_orders where id = (select id from t where name = 'video')), 'waiting_founder', 'the video order waits on you');
@@ -258,6 +263,8 @@ update public.editor_projects set document = '{"version":1,"stage":{"name":"ai v
 insert into public.tasks (user_id, kind, clip_id, job_id, status, request_id, payload, settings_hash, duration)
 values ('e2070000-0000-4000-8000-00000000000a', 'render_document', 'e2072000-0000-4000-8000-00000000000c', 'e2071000-0000-4000-8000-00000000000c', 'running', gen_random_uuid(), '{}', pg_temp.h('{"version":1,"stage":{"name":"ai v6"}}'), 60);
 update public.tasks set status = 'done', output_path = 'u/ai6.mp4', finished_at = now() where kind = 'render_document' and status = 'running' and clip_id = 'e2072000-0000-4000-8000-00000000000c';
+update public.tasks set status = 'done', output = '{"pass":true,"round":0,"note":"","files":[]}'
+where kind = 'look_check' and status = 'queued' and payload->>'ref_id' = 'e2072000-0000-4000-8000-00000000000c';
 set local role authenticated;
 set local request.jwt.claims = '{"sub":"e2070000-0000-4000-8000-00000000000a","role":"authenticated","opencmo_actor":"brain"}';
 select is((select public.approval_decide(id, 'send_back', jsonb_build_object('content_hash', content_hash, 'reason', 'Too slow'))

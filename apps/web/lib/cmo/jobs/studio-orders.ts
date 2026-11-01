@@ -10,6 +10,8 @@ import "server-only";
  *   approved step       → decide; keep `next` + `wait_for` → generations run         (waiting_order)
  *   generations done    → card 2 (plan, store), or the render of the long video; A3's rules raise card 3
  *   queued cut_shorts   → cutShorts(edit)                → short renders            (waiting_order)
+ *   queued build_slideshow → buildSlideshow(brief)       → MP4 and PNG set renders  (waiting_order); SQL raises the card
+ *   queued build_post_image → buildPostImage(brief)      → one still                (waiting_order); SQL writes the image
  *
  * The founder's decision on a card is recorded by `approval_decide`; this runner only carries it out. A step that
  * fails fails its order with the reason (the progress check replans from it).
@@ -21,8 +23,9 @@ import { ApiError } from "@/lib/api/errors";
 import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { studio } from "@/lib/departments/studio/adapter";
 import { finishVideo } from "@/lib/departments/studio/finish";
+import { runLookSendBacks } from "@/lib/departments/studio/look-redo";
 import { renderEdit } from "@/lib/departments/studio/render";
-import { VideoBriefSchema, type StudioAdapter, type StudioContext } from "@/lib/departments/studio/types";
+import { PostImageBriefSchema, SlideshowBriefSchema, VideoBriefSchema, type StudioAdapter, type StudioContext } from "@/lib/departments/studio/types";
 import type { LlmUsage } from "@/lib/cmo/jobs/llm";
 import { balance } from "@/lib/cmo/mcp/account";
 import { brainClientFor } from "@/lib/mcp/auth";
@@ -101,6 +104,20 @@ async function runOrder(admin: SupabaseClient, order: Order): Promise<void> {
       const built = await adapter.buildVideo(briefOf(order));
       if (built.kind === "invalid") return move(admin, order.id, "failed", "", { code: "invalid_brief", message: built.message });
       return move(admin, order.id, "waiting_founder", "The storyboard waits on you");
+    }
+    if (order.kind === "build_slideshow") {
+      const brief = SlideshowBriefSchema.safeParse(order.brief);
+      if (!brief.success) return move(admin, order.id, "failed", "", { code: "invalid_brief", message: "This slideshow has no slides to build." });
+      const built = await adapter.buildSlideshow(brief.data);
+      if (built.kind === "invalid") return move(admin, order.id, "failed", "", { code: "invalid_brief", message: built.message });
+      return move(admin, order.id, "waiting_order", "Rendering the slideshow");
+    }
+    if (order.kind === "build_post_image") {
+      const brief = PostImageBriefSchema.safeParse(order.brief);
+      if (!brief.success) return move(admin, order.id, "failed", "", { code: "invalid_brief", message: "This image has no post or title." });
+      const built = await adapter.buildPostImage(brief.data);
+      if (built.kind === "invalid") return move(admin, order.id, "failed", "", { code: "invalid_brief", message: built.message });
+      return move(admin, order.id, "waiting_order", "Rendering the image");
     }
     const clipId = typeof order.brief.clip_id === "string" ? order.brief.clip_id : "";
     const cut = await adapter.cutShorts(clipId);
@@ -229,7 +246,12 @@ export async function drainStudioOrders(admin: SupabaseClient, opts: { budgetMs?
     for (const step of steps) await runStep(admin, step);
     const ready = (await rpcOrThrow<Step[]>(admin, "studio_steps_ready", { p_limit: 5 })) ?? [];
     for (const step of ready) await runNext(admin, step);
-    const n = orders.length + steps.length + ready.length;
+    // P6 S4: a render the look check sent back gets its one redo (or its card, when nothing can be redone).
+    const sentBack = await runLookSendBacks(admin, (userId, orderId) => brainStudio(userId, orderId ?? "").ctx).catch((error: unknown) => {
+      console.error("[studio-orders] look send-backs", error);
+      return 0;
+    });
+    const n = orders.length + steps.length + ready.length + sentBack;
     if (!n) break;
     done += n;
   }

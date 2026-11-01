@@ -11,7 +11,7 @@ import type { ClipDocument } from "@opencmo/clip-doc";
 
 import type { ClipContext } from "@/lib/api/clips";
 import { saveDocument } from "@/lib/editor/document";
-import { ensureProject } from "@/lib/editor/project";
+import { ensureProject, startsEmpty } from "@/lib/editor/project";
 import { ApiError } from "@/lib/api/errors";
 import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { resolveMediaRefs } from "@/lib/generate/create";
@@ -213,7 +213,7 @@ export async function clipScope(
 
 /** A blank New edit gets the cut-by-words tools once a video on it has a transcript to cut by. */
 export const blankEdit = (context: ClipContext, document: ClipDocument): boolean =>
-  context.clip.kind === "blank" && !speechSources(document).length;
+  startsEmpty(context.clip.kind) && !speechSources(document).length;
 
 export async function clipScopeWith(supabase: SupabaseClient, context: ClipContext, clipId: string, host: ClipHost): Promise<Scope> {
   const workspace = dbWorkspace(supabase, context, clipId, host.checkpoint);

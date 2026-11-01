@@ -14,6 +14,8 @@ import { mediaCreditsShort } from "@/lib/cmo/mcp/account";
 
 import { markFinished, orderShorts } from "./finished";
 import { renderShort } from "./render";
+import { buildPostImage } from "./slideshow/post-image";
+import { buildSlideshow } from "./slideshow/build";
 import { cutShorts } from "./shorts/cut";
 import { raiseStep } from "./steps";
 import { buildVideo } from "./video";
@@ -157,6 +159,14 @@ export function studio(ctx: StudioContext, options: SessionOptions = {}): Studio
     async renderShort(shortClipId) {
       allow(ctx, "renderShort");
       return renderShort(ctx, shortClipId);
+    },
+    async buildSlideshow(brief) {
+      allow(ctx, "buildSlideshow");
+      return buildSlideshow(ctx, brief);
+    },
+    async buildPostImage(brief) {
+      allow(ctx, "buildPostImage");
+      return buildPostImage(ctx, brief);
     },
   };
   return adapter;

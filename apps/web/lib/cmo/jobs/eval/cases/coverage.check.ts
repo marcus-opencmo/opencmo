@@ -15,6 +15,8 @@ import { fakeJudge } from "../../judge";
 import { FIXTURES } from "../fixtures";
 import type { EvalEnv } from "../types";
 import { onboardingCase, onboardingIssues, SITES } from "./onboarding";
+import { BRAIN_PROFILES } from "../fixtures/profiles";
+import { planIssues } from "./brain";
 import { REDDIT_FIXTURES, replyIssues, salesCase } from "./sales";
 
 async function main() {
@@ -42,6 +44,17 @@ async function main() {
   assert.ok(onboardingIssues(site, drafts({ name: "Ledgerly" }), { prices: true }).some((i) => i.startsWith("name")));
   const hidden = SITES.find((s) => s.name === "pingly-hidden")!;
   assert.ok(onboardingIssues(hidden, { ...drafts({ name: "Pingly" }), product: { ...drafts({}).product, name: "Pingly", pricing: "Free forever" } }, { prices: false }).some((i) => i.includes("hidden text")));
+
+  // B4 plan code tier: shape, stage fit and invented numbers are caught before any judge.
+  const early = BRAIN_PROFILES.find((p) => p.stage === "pre_launch")!;
+  const day = (n: number) => `2026-11-0${n}`;
+  const ok = [1, 2, 3, 4, 5].map((n) => ({ department: "post" as const, platform: "x", day: day(n), idea: `Idea ${["one", "two", "three", "four", "five"][n - 1]}`, reason: "From the pillar" }));
+  assert.equal(BRAIN_PROFILES.length, 20, "about twenty profiles");
+  assert.deepEqual(planIssues(early, ok), []);
+  assert.ok(planIssues(early, [...ok.slice(0, 4), { ...ok[4]!, idea: "Share a customer story from a happy user" }]).some((i) => i.includes("needs customers")), "stage fit");
+  assert.ok(planIssues(early, ok.slice(0, 3)).includes("3 items"));
+  assert.ok(planIssues(early, [...ok.slice(0, 4), { ...ok[4]!, idea: "We saved founders 4,000 hours" }]).some((i) => i.includes("says 4,000")), "invented number");
+  assert.ok(planIssues(early, [...ok, { department: "video", platform: "x", day: day(6), idea: "A demo", reason: "Show it" }]).includes("a video nobody asked for"));
 
   // The whole path on the fake provider: every case that can pass today does.
   const env: EvalEnv = { drain: drainCmoQueue, provider: "fake", judge: fakeJudge(), epoch: 0, log: () => undefined, recordGen: () => undefined };

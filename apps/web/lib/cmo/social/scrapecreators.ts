@@ -23,9 +23,14 @@ export function scFakeAllowed(): boolean {
   return process.env.OPENCMO_AGENT_FAKE === "1" && !isProduction();
 }
 
+/** The provider key. `SCRAPE_CREATORS_API_KEY` is accepted too: it is the name the provider's own docs suggest. */
+function scKey(): string {
+  return process.env.SCRAPECREATORS_API_KEY || process.env.SCRAPE_CREATORS_API_KEY || "";
+}
+
 /** Đọc được mạng xã hội: có khoá thật, hoặc bản giả (CI/E2E). */
 export function socialReaderReady(): boolean {
-  return scFakeAllowed() || Boolean(process.env.SCRAPECREATORS_API_KEY);
+  return scFakeAllowed() || Boolean(scKey());
 }
 
 export type Platform = "reddit" | "x" | "tiktok" | "youtube" | "threads" | "instagram";
@@ -57,7 +62,7 @@ export class ScBudget {
 
 /** Lời gọi thô. `budget` trừ trước khi gọi — lỗi mạng vẫn tính, vì ScrapeCreators có thể đã tính. */
 export async function scGet(path: string, params: Record<string, string>, budget?: ScBudget): Promise<unknown> {
-  const key = process.env.SCRAPECREATORS_API_KEY;
+  const key = scKey();
   if (!key) throw new SocialReadError("Social research is not set up on this server yet.");
   budget?.take();
   const url = `${SC_BASE}${path}?${new URLSearchParams({ ...params, trim: "true" })}`;
@@ -111,6 +116,8 @@ export function itemsOf(json: unknown, keys: string[]): Obj[] {
   if (Array.isArray(json)) return json.filter(isObj);
   for (const key of keys) {
     const v = at(json, key);
+    // An empty list is not the answer when a later key has items: YouTube search returns `videos: []` beside `shorts`.
+    if (Array.isArray(v) && !v.length) continue;
     if (Array.isArray(v)) return v.map((x) => (isObj(x) && isObj(x.data) && "kind" in x ? x.data : x)).filter(isObj);
     if (isObj(v) && Array.isArray(v.children)) return v.children.map((c) => (isObj(c) && isObj(c.data) ? c.data : c)).filter(isObj);
   }
@@ -175,7 +182,10 @@ export function xPost(item: Obj, handle = ""): SocialPost | null {
 
 export function tiktokPost(item: Obj): SocialPost | null {
   const v = isObj(item.aweme_info) ? item.aweme_info : item;
-  const user = str(first(v, ["author.unique_id", "author.uniqueId", "author.username"]));
+  // The trimmed search answer may leave the author out; the share URL still names them (`/@user/video/id`).
+  const user =
+    str(first(v, ["author.unique_id", "author.uniqueId", "author.username"])) ||
+    (/^https:\/\/www\.tiktok\.com\/@([A-Za-z0-9._]{1,40})\/video\//.exec(str(first(v, ["share_url", "url"])))?.[1] ?? "");
   const id = str(first(v, ["aweme_id", "id"]));
   const url = safeUrl(str(first(v, ["share_url", "url"])) || (id && user ? `https://www.tiktok.com/@${user}/video/${id}` : ""), HOSTS.tiktok);
   if (!url) return null;
@@ -230,7 +240,8 @@ export function threadsPost(item: Obj): SocialPost | null {
   };
 }
 
-export type RedditComment = { author: string; text: string; score: number };
+/** `replies`: direct replies when the reader sends them (P6 R3); absent otherwise, never a guessed zero. */
+export type RedditComment = { author: string; text: string; score: number; replies?: number };
 
 export function redditPost(item: Obj): (SocialPost & { community: string; title: string }) | null {
   const permalink = str(item.permalink);

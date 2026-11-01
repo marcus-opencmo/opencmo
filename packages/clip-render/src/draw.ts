@@ -673,7 +673,10 @@ function gradeOverlays(ctx: Ctx2D, r: RNode): void {
         ctx.clip();
         ctx.translate(width / 2, height / 2);
         ctx.scale(1, ry / rx);
-        const gradient = ctx.createRadialGradient(0, 0, edge * (1 - 0.95 * feather), 0, 0, edge);
+        // Equal radii make a degenerate gradient that paints nothing (canvas spec; Chrome and Skia since
+        // @napi-rs/canvas 1.1.0), so feather 0 keeps a one-pixel ramp for its hard edge.
+        const inner = Math.max(0, Math.min(edge * (1 - 0.95 * feather), edge - 1));
+        const gradient = ctx.createRadialGradient(0, 0, inner, 0, 0, edge);
         gradient.addColorStop(0, 'rgba(0,0,0,0)');
         gradient.addColorStop(1, `rgba(0,0,0,${round4(0.85 * amount)})`);
         ctx.fillStyle = gradient;

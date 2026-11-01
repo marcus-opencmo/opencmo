@@ -67,6 +67,7 @@ function ResearchBody({ data }: { data: Data }) {
   const shown = data.insights.filter((i) => filter === "all" || i.scope === filter);
 
   return (
+    <>
     <div className="scr-split">
       <Panel id="research-this-week-s-insights"
         className="scr-main"
@@ -135,5 +136,49 @@ function ResearchBody({ data }: { data: Data }) {
         )}
       </Panel>
     </div>
+    <NicheVideo insights={data.insights.filter((i) => i.scope === "niche_video")} />
+    </>
+  );
+}
+
+type Insight = Data["insights"][number];
+
+const seconds = (value: number | null | undefined) => (value == null ? "—" : value < 60 ? `${Math.round(value)} s` : `${Math.floor(value / 60)}:${String(Math.round(value % 60)).padStart(2, "0")}`);
+
+/**
+ * What works on video in the founder's niche (P5 R2): the top shorts' hooks, length and format, each with the link it
+ * was read from. Only text and numbers are kept, never the video; Writer's video brief reads the same rows.
+ */
+function NicheVideo({ insights }: { insights: Insight[] }) {
+  return (
+    <Panel id="research-niche-video" className="scr-niche" title="What works on video in your niche" foot="Read from the top shorts on TikTok and YouTube Shorts. Only words, numbers and the link are kept.">
+      {insights.length ? (
+        <div className="scr-rows" data-testid="research-niche-video">
+          {insights.map((insight) => (
+            <article key={insight.id} className="scr-insight">
+              <span className="scr-mono is-small">
+                {[insight.platform, seconds(insight.video?.seconds), insight.video?.format].filter((part) => part && part !== "—").join(" · ")}
+              </span>
+              <div>
+                <b>{insight.text}</b>
+                <span className="scr-small scr-muted">
+                  {insight.video?.outlier != null ? `${insight.video.outlier.toFixed(1)}× the median views` : insight.evidence}
+                  {insight.video?.views != null ? ` · ${int(insight.video.views)} views` : ""}
+                </span>
+              </div>
+              <span className="scr-insight-sources">
+                {insight.sources.map((url, i) => (
+                  <a key={url} href={url} target="_blank" rel="noopener noreferrer" className="scr-mono-link">
+                    {insight.sources.length === 1 ? "Watch" : `Watch ${i + 1}`} ↗
+                  </a>
+                ))}
+              </span>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="v2-panel-body scr-muted">Nothing read yet. When the week plan has a video, Research reads the top shorts in your niche first.</p>
+      )}
+    </Panel>
   );
 }

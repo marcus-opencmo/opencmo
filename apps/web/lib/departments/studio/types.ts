@@ -9,15 +9,17 @@
  * behind an approval card. The team owns how a video is made; callers only say what they want.
  */
 
+import { z } from "zod";
+
 import type { SupabaseClient } from "@/lib/api/handler";
 import type { ToolOutcome } from "@/lib/agent/tools";
-import type { VideoBrief } from "@/lib/cmo/writer/types";
+import { BRIEF_ASPECTS, SlideSchema, type VideoBrief } from "@/lib/cmo/writer/types";
 
 /** Who calls Studio. `ui` is the founder's own buttons (Mark finished, Cut shorts) over `/api/v1/studio`. */
 export const STUDIO_CALLERS = ["brain", "assistant", "mcp", "ui"] as const;
 export type StudioCaller = (typeof STUDIO_CALLERS)[number];
 
-export const STUDIO_ENTRIES = ["plan", "decide", "buildVideo", "cutShorts", "markFinished", "renderShort"] as const;
+export const STUDIO_ENTRIES = ["plan", "decide", "buildVideo", "cutShorts", "markFinished", "renderShort", "buildSlideshow", "buildPostImage"] as const;
 export type StudioEntry = (typeof STUDIO_ENTRIES)[number];
 
 /**
@@ -35,6 +37,8 @@ export const STUDIO_ACCESS: Record<StudioEntry, readonly StudioCaller[]> = {
   cutShorts: ["brain", "ui"],
   markFinished: ["ui"],
   renderShort: ["brain"],
+  buildSlideshow: ["brain"],
+  buildPostImage: ["brain"],
 };
 
 export const mayCall = (caller: StudioCaller, entry: StudioEntry): boolean => STUDIO_ACCESS[entry].includes(caller);
@@ -138,6 +142,51 @@ export type MarkedFinished =
 export type RenderedShort = { kind: "queued"; taskId: string } | { kind: "refused"; message: string };
 
 /**
+ * The Slideshow squad's brief (P5 B0, `studio.md` §7). The squads spend no credits (owner, 2026-10-30): they use the
+ * founder's screenshots, captured pages and Brand Kit; an AI image is the founder's own `/image`, priced as always.
+ */
+export const SlideshowBriefSchema = z.object({
+  idea: z.string().trim().min(3).max(500),
+  /** Writer's `write_slides` output; SQL copies it into the order's brief. */
+  slides: z.array(SlideSchema).min(5).max(10),
+  aspect: z.enum(BRIEF_ASPECTS).default("9:16"),
+});
+export type SlideshowBrief = z.infer<typeof SlideshowBriefSchema>;
+
+/** The Post image squad's brief (`studio.md` §8). With no source, the title sits on the Brand Kit background. */
+export const PostImageBriefSchema = z.object({
+  /** The `content_item` the image is attached to. */
+  postId: z.string().uuid(),
+  title: z.string().trim().min(1).max(200),
+  platform: z.string().min(1).max(40),
+  source: z.union([z.object({ clipId: z.string().uuid(), time: z.number().min(0) }), z.object({ captureId: z.string().uuid() })]).optional(),
+});
+export type PostImageBrief = z.infer<typeof PostImageBriefSchema>;
+
+/** Both tasks render one revision, so the MP4 and the PNG set show the same document. */
+export type BuiltSlideshow =
+  | { kind: "rendering"; clipId: string; mp4TaskId: string; stillsTaskId: string }
+  | { kind: "invalid"; message: string };
+
+export type BuiltPostImage = { kind: "rendering"; clipId: string; stillsTaskId: string } | { kind: "invalid"; message: string };
+
+/**
+ * `render_stills` (worker `render_stills_task.py`): one PNG per slide, drawn at its midpoint with text kept, and a zip
+ * of the set. Objects stay at three path levels in `exports`: `<user>/<clip>/<task>-01.png`, `<user>/<clip>/<task>.zip`.
+ */
+export type RenderStillsInput = { editor_revision_id: string; source_hash: string; bucket: "exports"; object: string; still_prefix: string; manifest: unknown };
+export type RenderStillsOutput = {
+  stills: { index: number; object: string; bytes: number }[];
+  zip: { object: string; bytes: number };
+  /** The slide TikTok photo mode shows first; the hook. */
+  cover_index: number;
+  width: number;
+  height: number;
+  count: number;
+  manifest: Record<string, unknown>;
+};
+
+/**
  * Who drives the call. `orderId` ties planned steps, shorts and renders to the brain's work order;
  * absent for the Assistant, MCP and the founder's buttons.
  */
@@ -164,4 +213,8 @@ export interface StudioAdapter {
   markFinished(clipId: string, hash: string): Promise<MarkedFinished>;
   /** Queue `render_document` for a short's own edit, with no editor open and no founder session. */
   renderShort(shortClipId: string): Promise<RenderedShort>;
+  /** Brain only: a slideshow edit from Writer's slides, its MP4 and PNG set queued; the card comes when both are done. */
+  buildSlideshow(brief: SlideshowBrief): Promise<BuiltSlideshow>;
+  /** Brain only: an image for a post, from a frame or a captured page; SQL writes the deliverable when it is rendered. */
+  buildPostImage(brief: PostImageBrief): Promise<BuiltPostImage>;
 }

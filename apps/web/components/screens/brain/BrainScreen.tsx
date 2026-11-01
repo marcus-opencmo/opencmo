@@ -3,7 +3,7 @@
 import { Fragment, useState } from "react";
 
 import { Button, ButtonLink, Chip, TableWrap, Tabs, type ChipTone } from "@/components/ui";
-import type { BrainScreen as Data, Learned, OrderRow } from "@/lib/screens/brain";
+import type { BrainScreen as Data, Learned, Measure, OrderRow } from "@/lib/screens/brain";
 import { DEPARTMENT_LABEL } from "@/lib/screens/common";
 
 import { shortDate } from "../format";
@@ -98,9 +98,14 @@ function BrainBody({ data, tab }: { data: Data; tab: Tab }) {
             <p className="v2-panel-body scr-muted">No orders yet. The Brain plans the week on Monday, or when you set a goal.</p>
           )}
         </Panel>
-        <Panel id="brain-learned-lately" className="scr-side" title="Learned lately" sub="Each note shows where it came from. Delete any.">
-          <MemoryList notes={learned.slice(0, 4)} onForget={forget} />
-        </Panel>
+        <div className="scr-side">
+          <Panel id="brain-measures" title="Measures" sub="This week, against last week. A dash: nothing to count yet.">
+            <MeasureList measures={data.measures} />
+          </Panel>
+          <Panel id="brain-learned-lately" title="Learned lately" sub="Each note shows where it came from. Delete any.">
+            <MemoryList notes={learned.slice(0, 4)} onForget={forget} />
+          </Panel>
+        </div>
       </div>
     );
   }
@@ -244,6 +249,52 @@ function MemoryList({ notes, onForget }: { notes: Learned[]; onForget: (id: stri
           )}
         </div>
       ))}
+    </div>
+  );
+}
+
+const MEASURE_LABEL: Record<Measure["key"], string> = {
+  plan_accepted: "Plans accepted as is",
+  drafts_as_is: "Drafts approved as is",
+  orders_on_time: "Orders on time",
+  credits_per_approved: "Credits per approved",
+  replans: "Replans",
+};
+
+function measureValue(m: Measure): string | null {
+  if (m.value === null) return null;
+  return m.unit === "percent" ? `${m.value}%` : m.unit === "credits" ? m.value.toFixed(1) : String(m.value);
+}
+
+/** Up is good for every measure but credits and replans, where falling is the target. */
+function measureDelta(m: Measure): { label: string; direction: "up" | "down" | "flat" } | null {
+  if (m.change === null) return null;
+  const sign = m.change > 0 ? "+" : m.change < 0 ? "−" : "±";
+  const size = Math.abs(m.change);
+  const label = `${sign}${m.unit === "percent" ? `${size} pts` : m.unit === "credits" ? size.toFixed(1) : size} vs last week`;
+  const better = m.key === "credits_per_approved" || m.key === "replans" ? m.change < 0 : m.change > 0;
+  return { label, direction: m.change === 0 ? "flat" : better ? "up" : "down" };
+}
+
+function MeasureList({ measures }: { measures: Measure[] }) {
+  return (
+    <div className="scr-rows" data-testid="brain-measures">
+      {measures.map((m) => {
+        const delta = measureDelta(m);
+        return (
+          <div key={m.key} className="scr-row">
+            <span className="scr-mono">{MEASURE_LABEL[m.key]}</span>
+            <span>
+              <b>{measureValue(m) ?? "–"}</b>
+              {m.note ? <span className="scr-small scr-muted"> · {m.note}</span> : null}
+            </span>
+            <span className="scr-small scr-muted">
+              {delta ? <span className={`v2-kpi-delta is-${delta.direction}`}>{delta.label}</span> : null}
+              {delta ? " · " : ""}Target: {m.target.toLowerCase()}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

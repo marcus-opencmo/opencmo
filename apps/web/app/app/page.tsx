@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import { CmoView } from "@/components/cmo/CmoView";
 import { CmoWorkspace } from "@/components/cmo/workspace/CmoWorkspace";
 import { Dashboard } from "@/components/dashboard/Dashboard";
-import { agentChatProvider } from "@/lib/agent/model";
 import { UI_V2 } from "@/lib/screens/flag";
 import { loadWorkspace } from "@/lib/cmo/load-workspace";
 import { loadCmoState } from "@/lib/cmo/state";
@@ -36,7 +35,7 @@ export default async function CmoHome({ searchParams }: { searchParams: Promise<
   // Dashboard reads its own data client-side.
   if (UI_V2) {
     if (Object.keys(state.documents).length === 0) redirect(site ? `/app/setup?site=${encodeURIComponent(site)}` : "/app/setup");
-    return <Dashboard chatLive={agentChatProvider("cmo") !== null} />;
+    return <Dashboard />;
   }
 
   if (Object.keys(state.documents).length === 0) return <CmoView initial={state} site={site} />;

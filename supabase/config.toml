@@ -146,7 +146,7 @@ file_size_limit = "2GiB"
 [storage.buckets.exports]
 public = false
 file_size_limit = "2GiB"
-allowed_mime_types = ["video/*"]
+allowed_mime_types = ["video/*", "image/png", "application/zip"]
 
 # Allow connections via S3 compatible clients
 [storage.s3_protocol]

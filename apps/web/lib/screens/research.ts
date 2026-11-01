@@ -19,6 +19,16 @@ export const InsightSchema = z.object({
   usedIn: z.string().max(120).nullable(),
   /** Every insight points to the post it came from; one without a link is dropped, never shown. */
   sources: z.array(z.url()).min(1),
+  /** Niche video insights (P5 R2): the short's numbers as read; never the video itself. */
+  video: z
+    .object({
+      views: z.number().int().min(0).nullable(),
+      /** Views over the median of the same search: why it counts as an outlier. */
+      outlier: z.number().min(0).nullable(),
+      seconds: z.number().positive().nullable(),
+      format: z.string().max(60).nullable(),
+    })
+    .optional(),
 });
 
 export const ResearchScreenSchema = z.object({

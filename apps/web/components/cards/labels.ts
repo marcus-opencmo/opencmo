@@ -61,7 +61,7 @@ export function headNote(card: ApprovalCard, now = Date.now()): string | null {
     case "shorts_batch":
       return `${body.shorts.length} × 9:16`;
     case "slideshow":
-      return `${body.slides.length} slides · ${body.formats.map((f) => f.toUpperCase()).join(" + ")}`;
+      return `${body.slides.length} slides · ${[body.previewUrl && "MP4", body.pngSetUrl && "PNG"].filter(Boolean).join(" + ") || "rendering"}`;
     case "schedule":
       return card.expiresAt ? untilLabel(card.expiresAt, now) : null;
     case "correction":

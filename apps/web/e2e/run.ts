@@ -95,6 +95,13 @@ function readEnv(): NodeJS.ProcessEnv {
     // mcp.spec starts the MCP server on this port; Settings shows it in the Claude Code command.
     OPENCMO_MCP_URL: "http://127.0.0.1:8787/mcp",
     E2E_INBUCKET_URL: values.INBUCKET_URL,
+    // P6 C0: the digest goes to this stack's own mail catcher; Resend is never called.
+    OPENCMO_DIGEST_LOCAL_MAIL: "1",
+    OPENCMO_LOCAL_MAIL_URL: values.INBUCKET_URL,
+    RESEND_API_KEY: "",
+    OPENCMO_EMAIL_LIVE: "",
+    NEXT_PUBLIC_VAPID_PUBLIC_KEY: "",
+    VAPID_PRIVATE_KEY: "",
     // P4: posting goes through the fake Zernio (connect, creator info, publish); a real key never posts from E2E.
     OPENCMO_PUBLISH_FAKE: "1",
     OPENCMO_PUBLISH_LIVE: "",

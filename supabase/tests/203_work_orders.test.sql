@@ -32,6 +32,9 @@ select is(array[public.cmo_job_price('plan_week'), public.cmo_job_price('post_dr
   public.cmo_job_price('competitor_research')], array[1, 1, 5, 2], 'order prices match the app''s JOB_PRICES');
 
 -- plan_week: the calendar and its tree.
+-- P5 A2: fresh niche research, so the week plan orders none and the briefs start at once, as this test expects.
+insert into public.cmo_insights (user_id, kind, body) values
+  ('e2030000-0000-4000-8000-00000000000a', 'niche_video', '{}');
 with r as (insert into public.cmo_runs (user_id, kind, status) values ('e2030000-0000-4000-8000-00000000000a', 'plan_week', 'running') returning id)
 insert into t select 'plan', id from r;
 select is(public.cmo_plan_week('e2030000-0000-4000-8000-00000000000a', pg_temp.id('plan'), jsonb_build_array(

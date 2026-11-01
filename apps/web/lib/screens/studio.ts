@@ -57,7 +57,7 @@ export const StudioScreenSchema = z.object({
    * on the page, so their finished state comes from here, by clip id.
    */
   editStates: z.array(
-    z.object({ clipId: z.string(), documentHash: z.string().regex(/^[0-9a-f]{64}$/), finishedAt: iso.nullable(), kind: z.enum(["full", "blank", "short"]) }),
+    z.object({ clipId: z.string(), documentHash: z.string().regex(/^[0-9a-f]{64}$/), finishedAt: iso.nullable(), kind: z.enum(["full", "blank", "short", "slideshow"]) }),
   ),
 });
 export type StudioScreen = z.infer<typeof StudioScreenSchema>;

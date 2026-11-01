@@ -9,6 +9,7 @@ import { blankEdit, clipToolSpecs } from "@/lib/agent/scope";
 import { slashCommandsFor } from "@/lib/agent/slash";
 import { sessionView, type SessionRow } from "@/lib/agent/view";
 import { readEditorProject } from "@/lib/editor/apply";
+import { startsEmpty } from "@/lib/editor/project";
 import { availableModels as generationModels } from "@/lib/generate/models";
 
 export const dynamic = "force-dynamic";
@@ -64,7 +65,7 @@ export const GET = withApi({}, async ({ supabase, request }) => {
   } else if (clipId !== null) {
     if (!UUID.test(clipId)) throw new ApiError(422, "clip_id: Invalid");
     const context = await clipContext(supabase, clipId);
-    blank = context.clip.kind === "blank";
+    blank = startsEmpty(context.clip.kind);
     // No editor document yet: nothing on the clip has a transcript, as `blankEdit` reads it.
     const document = await readEditorProject(supabase, clipId).then((project) => project.document, () => null);
     const tools = clipToolSpecs({ blank: document ? blankEdit(context, document) : blank }).map((tool) => tool.name);

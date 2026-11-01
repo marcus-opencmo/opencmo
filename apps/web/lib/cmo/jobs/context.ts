@@ -1,7 +1,8 @@
 /** Chữ đưa vào prompt: document, trí nhớ, bài gần đây. Gom một chỗ để W1/W2 (và chat) nói cùng một thứ. */
 
 import { DOCUMENTS } from "../documents";
-import type { CmoStore, CompetitorInsight, Documents, Goal, ItemRow, Lesson, MemoryTopic } from "./types";
+import { escapeAttribute, escapeForTag } from "../untrusted";
+import type { CmoStore, CompetitorInsight, Documents, Goal, ItemRow, Lesson, MemoryTopic, NicheVideoInsight } from "./types";
 
 const DOC_ORDER = ["product", "strategy", "content_strategy", "competitors"] as const;
 
@@ -65,6 +66,18 @@ export function insightBlock(insight: CompetitorInsight | null): string {
   const hooks = insight.hooks.map((h) => `- ${h.pattern} (${h.lift}x, e.g. "${h.example}") ${h.url}`).join("\n");
   const ideas = insight.ideas.map((i) => `- ${i.idea} (from ${i.inspired_by})`).join("\n");
   return `<what_works_now source="competitor research ${insight.measured_at.slice(0, 10)}">\nHooks:\n${hooks}\nFormats: ${insight.formats.join("; ")}\nIdeas:\n${ideas}\n</what_works_now>`;
+}
+
+/**
+ * Niche video research for the video brief (P5 R2): each standout short with its hook, format, lift and URL. Outside
+ * text, so it goes in its own tag as data; stale after three weeks like competitor research.
+ */
+export function nicheBlock(insight: NicheVideoInsight | null): string {
+  if (!insight || !insight.videos.length || Date.now() - new Date(insight.measured_at).getTime() > 21 * 86_400_000) return "";
+  const videos = insight.videos
+    .map((v) => `- ${v.platform === "tiktok" ? "TikTok" : "YouTube"} · ${escapeForTag(v.format)} · ${v.lift}x the median · hook: "${escapeForTag(v.hook)}" · why: ${escapeForTag(v.why)} · ${v.url}`)
+    .join("\n");
+  return `<what_works_on_video source="niche video research ${insight.measured_at.slice(0, 10)}" topics="${escapeAttribute(insight.topics.join(", "))}">\n${videos}\nFormats: ${escapeForTag(insight.formats.join("; "))}\n</what_works_on_video>`;
 }
 
 export function postText(item: ItemRow): string {

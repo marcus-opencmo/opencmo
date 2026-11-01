@@ -422,15 +422,9 @@ def process(store: Any, task: Task) -> None:
     run_task(store, task, name="document", failed=RENDER_FAILED, body=_run, quiet=(ExportCancelled,))
 
 
-def _run(ctx: TaskContext) -> None:
-    store, task = ctx.store, ctx.task
-    if task.kind != "render_document" or not task.clip_id or not task.job_id:
-        raise ValueError("Invalid render_document task")
-    bucket, object_name = _canonical(task)
+def owned_revision(store: Any, task: Task) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The task's job and the document of its immutable revision, after every ownership check."""
     payload = task.payload or {}
-    resolution = int(payload.get("resolution") or 1080)
-    if resolution not in (720, 1080):
-        raise ValueError("Invalid resolution")
     clip = store.get_clip(task.clip_id)
     if not clip or clip.get("job_id") != task.job_id:
         raise ValueError("Clip ownership mismatch")
@@ -443,10 +437,23 @@ def _run(ctx: TaskContext) -> None:
     document = revision.get("document")
     if not isinstance(document, dict):
         raise TypeError("Editor revision has no document")
-    # Task trỏ đúng bản đã chụp: `source_hash` của task là vân tay document
-    # lúc bấm Export (C3: tên cột giữ, nghĩa đổi), revision bất biến.
+    # The task points at the snapshot it was made from: its `source_hash` is the document's fingerprint when
+    # Export was pressed (C3: the column kept its name, not its meaning), and a revision never changes.
     if payload.get("source_hash") != revision.get("source_hash"):
         raise ValueError("Editor revision hash mismatch")
+    return job, document
+
+
+def _run(ctx: TaskContext) -> None:
+    store, task = ctx.store, ctx.task
+    if task.kind != "render_document" or not task.clip_id or not task.job_id:
+        raise ValueError("Invalid render_document task")
+    bucket, object_name = _canonical(task)
+    payload = task.payload or {}
+    resolution = int(payload.get("resolution") or 1080)
+    if resolution not in (720, 1080):
+        raise ValueError("Invalid resolution")
+    job, document = owned_revision(store, task)
 
     root = ctx.root
     planned = root / "document.json"

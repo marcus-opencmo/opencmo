@@ -19,7 +19,12 @@ import type { RenderedShort, StudioContext } from "./types";
  * revision snapshot is reused for the same hash), never a second render.
  */
 export function renderRequestId(clipId: string, documentHash: string): string {
-  const hex = createHash("sha256").update(`render_edit:${clipId}:${documentHash}`).digest("hex");
+  return requestIdFrom("render_edit", clipId, documentHash);
+}
+
+/** A stable request id (UUID-shaped, version 5 bits) for one kind of render of one document. */
+export function requestIdFrom(namespace: string, clipId: string, documentHash: string): string {
+  const hex = createHash("sha256").update(`${namespace}:${clipId}:${documentHash}`).digest("hex");
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${((parseInt(hex[16]!, 16) & 0x3) | 0x8).toString(16)}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
 }
 

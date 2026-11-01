@@ -117,10 +117,25 @@ export function platformData(deliverable: PublishDeliverable, slot: PublishSlot)
 
 /** The body of `POST /v1/posts` for one slot. `metadata.opencmoSlotId` comes back on every webhook. */
 export function postBody(deliverable: PublishDeliverable, slot: PublishSlot): Json {
+  const media = deliverable.media.map((m) => ({ url: m.url, type: m.contentType.startsWith("video/") ? "video" : "image" }));
+  // An X thread (P6 W4): Zernio chains `threadItems` as replies, item 0 the root; the top-level content is then only
+  // for display and search, so the media goes on the root post, once.
+  if (deliverable.thread && slot.platform === "x") {
+    return {
+      content: deliverable.text,
+      platforms: [{
+        platform: SLUG[slot.platform],
+        accountId: slot.zernioAccountId,
+        platformSpecificData: { threadItems: deliverable.thread.map((content, i) => ({ content, ...(i === 0 && media.length ? { mediaItems: media } : {}) })) },
+      }],
+      publishNow: true,
+      metadata: { opencmoSlotId: slot.id, opencmoDeliverableId: deliverable.id },
+    };
+  }
   const data = platformData(deliverable, slot);
   return {
     ...(deliverable.text.trim() ? { content: deliverable.text } : {}),
-    mediaItems: deliverable.media.map((m) => ({ url: m.url, type: m.contentType.startsWith("video/") ? "video" : "image" })),
+    mediaItems: media,
     platforms: [{ platform: SLUG[slot.platform], accountId: slot.zernioAccountId, ...(data ? { platformSpecificData: data } : {}) }],
     publishNow: true,
     metadata: { opencmoSlotId: slot.id, opencmoDeliverableId: deliverable.id },

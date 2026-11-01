@@ -73,7 +73,14 @@ const digest = buildDigest({
   stuck: [{ title: "2 Reddit replies", department: "sales", reason: "Over budget." }],
 });
 assert.equal(digest.subject, "1 thing waits on you · Thursday 29 Oct");
-assert.ok(digest.text.includes("https://opencmo.io/app/inbox/card-1"), "links open the card");
+const links = digest.text.match(/https?:\/\/\S+/g) ?? [];
+assert.ok(
+  links.some((link) => {
+    const url = new URL(link);
+    return url.origin === "https://opencmo.io" && url.pathname === "/app/inbox/card-1";
+  }),
+  "links open the card",
+);
 assert.ok(digest.html.includes("&lt;stop&gt;") && !digest.html.includes("<stop>"), "titles are escaped");
 assert.ok(!/approve/i.test(digest.html.replace("until you approve it", "")), "no approve button in an email");
 assert.equal(buildDigest({ appUrl: "x", dateLabel: "d", waiting: [], wentOut: [], stuck: [] }).empty, true);

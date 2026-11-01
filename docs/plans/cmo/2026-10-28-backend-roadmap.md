@@ -1,6 +1,7 @@
 # Backend roadmap after wave 1: five phases, one PR each
 
-Status: **proposed** (2026-10-28). Owner decision: keep building the new OpenCMO on `cmo-build`, do not merge it to
+Status: **P2–P5 merged into `cmo-build`** (#124, #125, #126, #127; 2026-10-29 → 10-31); **P6 ready** (#128). Real
+posting through Zernio still waits on the owner gates of P4 (owner, 2026-10-30: its own phase). Written 2026-10-28. Owner decision: keep building the new OpenCMO on `cmo-build`, do not merge it to
 `main` yet, and build the remaining backend in phases, one PR per phase. Each phase branch is cut from `cmo-build`,
 its PR targets `cmo-build`, and it merges there when its acceptance passes. `cmo-build` goes to `main` only when the
 owner says so.

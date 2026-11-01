@@ -3,6 +3,7 @@
  *   clip-export plan <document.json> [720|1080]   # JSON: nguồn cần tải + cỡ khung
  *   clip-export run <job.json>               # xuất; in JSON kết quả ra stdout
  *   clip-export look <look.json>             # frames for capture_frame / inspect_color / grab (look.ts)
+ *   clip-export stills <stills.json>         # one PNG per slide into `out_dir` (look.ts)
  *
  * `plan` chạy trước khi tải gì: worker biết phải lấy file nào, và dựng watermark
  * theo đúng chiều cao bản xuất (filter ffmpeg của nó tính cỡ chữ theo chiều cao).
@@ -14,7 +15,7 @@ import { validate } from '@opencmo/clip-doc';
 import { mediaSources, outputSize, pickScene } from '@opencmo/clip-render';
 
 import { exportJob } from './export.ts';
-import { lookJob, readLookJob } from './look.ts';
+import { lookJob, readLookJob, stillsJob } from './look.ts';
 import { sourceKey } from './job.ts';
 
 const [command, file, resolution] = process.argv.slice(2);
@@ -33,8 +34,10 @@ try {
     process.stdout.write(`${JSON.stringify(result)}\n`);
   } else if (command === 'look' && file) {
     process.stdout.write(`${JSON.stringify(await lookJob(readLookJob(file)))}\n`);
+  } else if (command === 'stills' && file) {
+    process.stdout.write(`${JSON.stringify(await stillsJob(readLookJob(file)))}\n`);
   } else {
-    process.stderr.write('dùng: clip-export plan <document.json> [720|1080] | clip-export run <job.json> | clip-export look <look.json>\n');
+    process.stderr.write('dùng: clip-export plan <document.json> [720|1080] | clip-export run <job.json> | clip-export look <look.json> | clip-export stills <stills.json>\n');
     process.exit(2);
   }
 } catch (error) {

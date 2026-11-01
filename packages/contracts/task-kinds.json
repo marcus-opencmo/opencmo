@@ -6,7 +6,9 @@
     { "kind": "transcribe_media", "handler": "opencmo.worker.transcribe_media_task:process" },
     { "kind": "transcribe_asset", "handler": "opencmo.worker.transcribe_asset_task:process" },
     { "kind": "render_document", "handler": "opencmo.worker.render_document_task:process" },
+    { "kind": "render_stills", "handler": "opencmo.worker.render_stills_task:process" },
     { "kind": "capture_page", "handler": "opencmo.worker.capture_page_task:process" },
+    { "kind": "look_check", "handler": "opencmo.worker.look_check_task:process" },
     { "kind": "publish_media", "handler": "opencmo.worker.publish_media_task:process" }
   ]
 }

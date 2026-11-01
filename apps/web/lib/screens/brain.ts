@@ -66,6 +66,23 @@ export const PastWeekSchema = z.object({
   credits: CreditsSchema,
 });
 
+/** The brain's measures (`brain.md` §10; P6 A4). Each starts with no number until there is data for it. */
+export const MEASURE_KEYS = ["plan_accepted", "drafts_as_is", "orders_on_time", "credits_per_approved", "replans"] as const;
+
+export const MeasureSchema = z.object({
+  key: z.enum(MEASURE_KEYS),
+  /** This week; null = no data yet (drawn as a dash, never zero). `percent` is 0 to 100. */
+  value: z.number().min(0).nullable(),
+  unit: z.enum(["percent", "credits", "count"]),
+  /** Against last week, in the same unit (points for a percent); null when either week has no data. */
+  change: z.number().nullable(),
+  /** The starting target from `brain.md` §10: "Half of plans", "Falling week over week". */
+  target: z.string().max(60),
+  /** What the number counts: "4 of 7 plans", "12 approved, 44 credits". */
+  note: z.string().max(80).nullable(),
+});
+export type Measure = z.infer<typeof MeasureSchema>;
+
 export const BrainScreenSchema = z.object({
   cmo: CmoStateSchema,
   week: z.object({
@@ -81,5 +98,7 @@ export const BrainScreenSchema = z.object({
   learned: z.array(LearnedSchema),
   corrections: z.array(CorrectionRowSchema),
   pastWeeks: z.array(PastWeekSchema),
+  /** One per `MEASURE_KEYS`, in that order. */
+  measures: z.array(MeasureSchema).length(MEASURE_KEYS.length),
 });
 export type BrainScreen = z.infer<typeof BrainScreenSchema>;

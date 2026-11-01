@@ -14,7 +14,7 @@
  */
 
 import { CAPTION_WRITERS, POST_WRITERS, type AgentId } from "../agents/registry";
-import { insightBlock } from "../jobs/context";
+import { insightBlock, nicheBlock } from "../jobs/context";
 import { genModel } from "../jobs/edit-taxonomy";
 import { fakeAllowed, LlmError } from "../jobs/llm";
 import type { JobContext, JobOutput } from "../jobs/runner";
@@ -51,12 +51,24 @@ function runWriter(ctx: JobContext, labelSuffix = "") {
   return { writer: createWriter(deps), gen: (kind: WriterKind) => ({ model: genModel(seen.model, ctx.brain, fakeAllowed()), prompt_version: writerPromptVersion(kind) }) };
 }
 
-async function readContext(ctx: JobContext, topic: "post" | "video", withInsight: boolean): Promise<WriterContext> {
+async function readContext(ctx: JobContext, topic: "post" | "video", withInsight: boolean, withNiche = false): Promise<WriterContext> {
   const { store, run } = ctx;
   return ctx.step("read_doc", "Read your strategy and how you write", async () => {
-    const [documents, memory, insight] = await Promise.all([store.documents(run.user_id), writerMemory(store, run.user_id, topic), withInsight ? store.latestInsight(run.user_id) : null]);
+    const [documents, memory, insight, niche] = await Promise.all([
+      store.documents(run.user_id),
+      writerMemory(store, run.user_id, topic),
+      withInsight ? store.latestInsight(run.user_id) : null,
+      withNiche ? store.latestNicheInsight(run.user_id) : null,
+    ]);
     const research = withInsight ? insightBlock(insight) : "";
-    return { documents, ...memory, recent: [], ...(research ? { insight: research } : {}) };
+    const video = nicheBlock(niche);
+    return {
+      documents,
+      ...memory,
+      recent: [],
+      ...(research ? { insight: research } : {}),
+      ...(video ? { niche: video, nicheUrls: niche!.videos.map((v) => v.url) } : {}),
+    };
   });
 }
 
@@ -67,7 +79,7 @@ export async function writeVideoBrief(ctx: JobContext): Promise<JobOutput> {
   const seconds = typeof input.seconds === "number" && Number.isFinite(input.seconds) ? Math.min(90, Math.max(5, Math.round(input.seconds))) : undefined;
   const aspect = (BRIEF_ASPECTS as readonly unknown[]).includes(input.aspect) ? (input.aspect as (typeof BRIEF_ASPECTS)[number]) : undefined;
   const reason = text(input.reason, 300);
-  const context = await readContext(ctx, "video", true);
+  const context = await readContext(ctx, "video", true, true);
   const { writer } = runWriter(ctx);
   const out = await ctx.step(
     "write_brief",
@@ -75,7 +87,10 @@ export async function writeVideoBrief(ctx: JobContext): Promise<JobOutput> {
     () => writer.draft("video_brief", null, { idea, ...(reason ? { reason } : {}), ...(seconds ? { seconds } : {}), ...(aspect ? { aspect } : {}) }, context),
     (done) => `Brief: ${done.brief.hooks.length} hooks, ${done.brief.seconds} s, ${done.brief.aspect}`,
   );
-  return { brief: out.brief, reason: out.rationale };
+  // Only links the research read: a URL the model wrote itself is dropped (P5 F8). SQL copies them into the video order.
+  const known = new Set(context.nicheUrls ?? []);
+  const sources = [...new Set(out.learnedFrom.filter((url) => known.has(url)))].slice(0, 6);
+  return { brief: out.brief, reason: out.rationale, sources };
 }
 
 export async function writeSlides(ctx: JobContext): Promise<JobOutput> {

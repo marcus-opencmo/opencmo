@@ -6,7 +6,8 @@ import { rpcOrThrow, withApi } from "@/lib/api/handler";
 export const dynamic = "force-dynamic";
 
 const body = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("replied") }),
+  // The reply the founder actually posted, when they changed the draft: whether it names the product is read from it.
+  z.object({ action: z.literal("replied"), text: z.string().trim().min(1).max(3000).optional() }),
   z.object({ action: z.literal("dismissed"), reason: z.string().trim().max(400).optional() }),
 ]);
 
@@ -23,6 +24,7 @@ export const POST = withApi(
       p_id: id,
       p_action: body.action,
       p_reason: body.action === "dismissed" ? (body.reason ?? null) : null,
+      p_text: body.action === "replied" ? (body.text ?? null) : null,
     });
   },
 );

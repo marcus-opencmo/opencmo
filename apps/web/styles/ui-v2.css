@@ -114,6 +114,9 @@ html[data-ui="v2"] {
 
 /* KPI strip: tiles separated by 1 px rules */
 .v2-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 1px; background: var(--v2-line); border: 1px solid var(--v2-line); border-radius: var(--v2-radius); overflow: hidden; }
+/* Lines drawn by the tiles, not by the gap: a short last row then ends in the tile colour, not a bare grey strip. */
+.v2-kpis { gap: 0; background: var(--v2-paper2); }
+.v2-kpis > * { box-shadow: 1px 0 0 var(--v2-line), 0 1px 0 var(--v2-line); }
 .v2-kpi { padding: 14px 18px; background: var(--v2-paper2); display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .v2-kpi-value { font: 500 24px var(--v2-mono); }
 .v2-kpi-value.is-text { font: 500 15px var(--v2-sans); }
@@ -352,6 +355,18 @@ html[data-ui="v2"] body { background: var(--v2-paper); }
 .v2-card-strong { font-weight: 600; }
 .v2-card-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--v2-ink2); }
+/* A link inside a sentence must not rely on colour alone (WCAG 1.4.1). */
+.v2-card-meta a { text-decoration: underline; text-underline-offset: 2px; }
+/* An X thread (P6 W4): number, post, its length chip; the chip drops under the text on a phone. */
+.v2-card-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.v2-card-thread li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: start; padding: 10px 0; }
+.v2-card-thread li + li { border-top: 1px solid var(--v2-line); }
+.v2-card-thread .v2-card-text { margin: 0; }
+.v2-card-thread-n { font: 500 11px var(--v2-mono); color: var(--v2-ink2); padding-top: 3px; }
+@media (max-width: 480px) {
+  .v2-card-thread li { grid-template-columns: 24px 1fr; }
+  .v2-card-thread li > .v2-chip { grid-column: 2; justify-self: start; }
+}
 .v2-card-versions { display: inline-flex; align-items: center; gap: 8px; }
 .v2-card-link { min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--v2-brand-deep); font: 500 12px var(--v2-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .v2-card-link:disabled { color: var(--v2-ink2); cursor: not-allowed; }
@@ -457,12 +472,132 @@ html[data-ui="v2"] body { background: var(--v2-paper); }
 }
 .v2 .v2-card-state.is-needs_credits a { color: var(--v2-waiting); text-decoration: underline; text-underline-offset: 2px; }
 
-/* Ask your CMO: the chat in a sheet on the right (desktop) or from the bottom (phone) */
-.v2-ask { margin: 0 0 0 auto; width: min(480px, 100vw); max-width: none; height: 100vh; max-height: none; padding: 0; border: 0; border-left: 1px solid var(--v2-line); background: var(--v2-paper2); color: var(--v2-ink); }
-.v2-ask::backdrop { background: rgb(43 39 35 / .4); }
-.v2-ask-body { height: 100%; display: flex; flex-direction: column; }
-.v2-ask-head { display: flex; align-items: center; justify-content: space-between; padding: 8px 8px 8px 16px; border-bottom: 1px solid var(--v2-line); }
-.v2-ask-body > .cmo-chat { flex: 1; min-height: 0; }
-@media (max-width: 760px) {
-  .v2-ask { margin: auto 0 0; width: 100vw; height: 88vh; border-left: 0; border-top: 1px solid var(--v2-line); }
+/* Three-column shell (docs/plans/cmo/2026-10-30-three-column-shell-plan.md): rail · CMO chat · tab panel.
+   Widths come from --v2-col-rail / --v2-col-chat, set before the first frame by COLUMNS_BOOT (components/shell-v2/columns.ts).
+   Later in the file than the S1 shell rules, so these win where both apply. */
+.v2-shell.is-cols {
+  display: grid; height: 100vh; min-height: 0; overflow: hidden;
+  grid-template-columns: var(--v2-col-rail, 216px) 1px var(--v2-col-chat, 400px) 1px minmax(480px, 1fr);
 }
+.v2-shell.is-cols[data-panel="hidden"] { grid-template-columns: var(--v2-col-rail, 216px) 1px minmax(0, 1fr); }
+.v2-shell.is-cols[data-panel="hidden"] .v2-main,
+.v2-shell.is-cols[data-panel="hidden"] .v2-sash + .v2-chatcol + .v2-sash { display: none; }
+.v2-shell.is-cols .v2-rail { position: static; height: 100vh; min-width: 0; padding: 14px 10px; gap: 14px; }
+.v2-shell.is-cols .v2-main { display: flex; flex-direction: column; height: 100vh; min-width: 0; border-left: 0; }
+.v2-main-body { flex: 1; min-height: 0; overflow: auto; }
+
+/* the border between two columns: 1 px line, 8 px hit area, brand colour while it is the one moving */
+.v2-sash { position: relative; z-index: 2; background: var(--v2-line); cursor: col-resize; touch-action: none; }
+.v2-sash::before { content: ""; position: absolute; inset: 0 -4px; }
+.v2-sash:hover, .v2-sash:focus-visible, :root[data-v2-resizing] .v2-sash:active { background: var(--v2-brand); }
+.v2 .v2-sash:focus-visible { outline: 2px solid var(--v2-brand-deep); outline-offset: 0; }
+:root[data-v2-resizing], :root[data-v2-resizing] * { cursor: col-resize !important; user-select: none; }
+
+/* rail: two lines per item, the status under the title */
+.v2-rail-top { display: flex; align-items: center; gap: 4px; }
+.v2-rail-top .v2-rail-brand { flex: 1; min-width: 0; }
+.v2 .v2-rail-toggle { display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; padding: 0; border: 0; border-radius: var(--v2-radius); background: transparent; color: var(--v2-ink2); cursor: pointer; }
+.v2 .v2-rail-toggle:hover { background: var(--v2-paper3); color: var(--v2-ink); }
+.v2-shell.is-cols .v2-rail-item { align-items: flex-start; padding: 7px 10px; min-height: 40px; }
+.v2-rail-icon { display: none; flex: none; }
+.v2-rail-text { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.v2-rail-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.v2-rail-status { display: flex; align-items: center; gap: 6px; font: 500 10.5px/1.5 var(--v2-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--v2-ink2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v2-rail-status.is-waiting { color: var(--v2-brand-deep); }
+.v2-rail-status.is-stuck { color: var(--v2-stuck); }
+.v2-rail-status.is-stuck::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--v2-stuck); }
+.v2-rail-status.is-live::before { content: ""; width: 6px; height: 6px; flex: none; background: var(--v2-brand); animation: v2-pulse 1.6s steps(2) infinite; }
+.v2-rail-item[aria-current="page"] .v2-rail-status { color: var(--v2-char-mute); }
+
+/* the 56 px strip: icon and a corner square; the status lives in the link's name and title */
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail { padding: 14px 8px; align-items: center; }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols :is(.v2-rail-brand > span, .v2-rail-heading, .v2-rail-text, .v2-rail-credits, .v2-rail-account) { display: none; }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail-top { flex-direction: column; }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail-item { position: relative; justify-content: center; width: 40px; padding: 0; align-items: center; }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail-icon { display: block; }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail-item[data-flag]::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; background: var(--v2-brand); }
+:root[data-v2-rail="collapsed"] .v2-shell.is-cols .v2-rail-item[data-flag="stuck"]::after { background: var(--v2-stuck); }
+
+/* column 2: the CMO chat */
+.v2-chatcol { display: flex; flex-direction: column; min-width: 0; height: 100vh; background: var(--v2-paper2); }
+.v2-chatcol > .cmo-chat { flex: 1; min-height: 0; }
+.v2-chatcol-head { display: none; justify-content: flex-end; padding: 4px 8px; border-bottom: 1px solid var(--v2-line); }
+.v2-chat-scrim { display: none; }
+
+/* the editor in column 3 (step S4): it is `position: fixed` over the whole window in the classic shell; here it fills
+   the panel under the tab strip. Its Assistant is portaled into column 2, replacing the CMO chat (kept, hidden). */
+.v2-main-body { position: relative; }
+.v2-shell.is-cols .v2-main-body .ed2 { position: absolute; inset: 0; z-index: auto; grid-template-columns: minmax(0, 1fr); }
+/* The editor's grid sized itself to its top bar's full width; in a column it must fit the column instead. */
+.v2-shell.is-cols .v2-main-body .ed2-top { min-width: 0; overflow-x: auto; }
+.v2-shell.is-cols .v2-main-body:has(.ed2) { overflow: hidden; }
+/* The frame already shows the credits (rail) and the theme follows the app: the editor's top bar keeps room for Export. */
+.v2-shell.is-cols .v2-main-body .ed2-top :is(.ed2-theme, .ed2-credits) { display: none; }
+.v2-chatcol[data-clip] > .cmo-chat { display: none; }
+.v2-clip-slot { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.v2-clip-slot > .ed2-agent.is-shell { flex: 1; width: auto; border-right: 0; color: var(--ds-text); font-family: var(--ds-font-sans); }
+
+/* column 3's strip: the screens opened this session */
+.v2-tabstrip { display: flex; align-items: center; gap: 4px; flex: none; height: 52px; padding: 0 8px 0 10px; border-bottom: 1px solid var(--v2-line); background: var(--v2-paper); }
+.v2-tabstrip-tabs { display: flex; align-items: center; gap: 2px; flex: 1; min-width: 0; overflow-x: auto; }
+.v2-tab { display: flex; align-items: center; flex: none; height: 36px; border: 1px solid transparent; border-radius: var(--v2-radius); }
+.v2-tab[data-current] { border-color: var(--v2-line); background: var(--v2-card); }
+.v2 .v2-tab-link { display: flex; align-items: center; gap: 8px; height: 100%; padding: 0 12px; color: var(--v2-ink2); text-decoration: none; font-size: 13.5px; }
+.v2 .v2-tab[data-current] .v2-tab-link { color: var(--v2-ink); font-weight: 500; }
+.v2 :is(.v2-tab-close, .v2-tabstrip-hide, .v2-tabstrip-chat) { display: flex; align-items: center; justify-content: center; flex: none; border: 0; background: transparent; color: var(--v2-ink2); cursor: pointer; }
+.v2 .v2-tab-close { width: 28px; height: 100%; margin-left: -8px; }
+.v2 .v2-tabstrip-hide { width: 36px; height: 36px; border-radius: var(--v2-radius); }
+.v2 :is(.v2-tab-close, .v2-tabstrip-hide):hover { color: var(--v2-ink); }
+.v2 .v2-tabstrip-chat { display: none; gap: 8px; height: 36px; padding: 0 12px; border: 1px solid var(--v2-line2); border-radius: var(--v2-pill); color: var(--v2-ink); font: 500 11px var(--v2-mono); letter-spacing: .08em; text-transform: uppercase; }
+
+/* compact (below 1100 px, COMPACT_BELOW): rail as the strip, chat as a drawer from the strip's "Chat" button */
+@media (min-width: 761px) and (max-width: 1099px) {
+  .v2-shell.is-cols, .v2-shell.is-cols[data-panel="hidden"] { grid-template-columns: 56px minmax(0, 1fr); }
+  .v2-shell.is-cols .v2-sash { display: none; }
+  .v2-shell.is-cols[data-panel="hidden"] .v2-main { display: flex; }
+  .v2-shell.is-cols .v2-rail { padding: 14px 8px; align-items: center; border-right: 1px solid var(--v2-line); }
+  .v2-shell.is-cols :is(.v2-rail-brand > span, .v2-rail-heading, .v2-rail-text, .v2-rail-credits, .v2-rail-account, .v2-rail-toggle) { display: none; }
+  .v2-shell.is-cols .v2-rail-item { position: relative; justify-content: center; width: 40px; padding: 0; align-items: center; }
+  .v2-shell.is-cols .v2-rail-icon { display: block; }
+  .v2-shell.is-cols .v2-rail-item[data-flag]::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; background: var(--v2-brand); }
+  .v2-shell.is-cols .v2-rail-item[data-flag="stuck"]::after { background: var(--v2-stuck); }
+  .v2-shell.is-cols .v2-chatcol { display: none; }
+  .v2-shell.is-cols[data-chat="open"] .v2-chatcol { display: flex; position: fixed; z-index: 30; top: 0; bottom: 0; left: 57px; width: min(400px, calc(100vw - 57px)); border-right: 1px solid var(--v2-ink); }
+  .v2-shell.is-cols[data-chat="open"] .v2-chatcol-head { display: flex; }
+  .v2-shell.is-cols[data-chat="open"] .v2-chat-scrim { display: block; position: fixed; z-index: 29; inset: 0 0 0 57px; background: rgb(43 39 35 / .4); }
+  .v2 .v2-tabstrip-chat { display: flex; }
+  .v2 .v2-tabstrip-hide { display: none; }
+}
+
+/* phone: the S1 layout (page scrolls, tab bar at the bottom); the chat is a full-screen sheet */
+@media (max-width: 760px) {
+  .v2-shell.is-cols { display: block; height: auto; overflow: visible; }
+  .v2-shell.is-cols :is(.v2-sash, .v2-tabstrip, .v2-chatcol) { display: none; }
+  .v2-shell.is-cols[data-panel="hidden"] .v2-main { display: block; }
+  .v2-shell.is-cols .v2-main { display: block; height: auto; }
+  .v2-main-body { overflow: visible; }
+  .v2-shell.is-cols[data-chat="open"] .v2-chatcol { display: flex; position: fixed; z-index: 40; inset: 0; height: auto; }
+  .v2-shell.is-cols[data-chat="open"] .v2-chatcol-head { display: flex; }
+}
+
+/* P5 C0: the slideshow card's strip. Every slide is a button that opens its quick text edit. */
+.v2-card-slides.is-strip { display: flex; overflow-x: auto; scroll-snap-type: x proximity; padding-bottom: 4px; }
+.v2-card-slides.is-strip li { flex: 0 0 96px; padding: 0; scroll-snap-align: start; }
+.v2-card-slides.is-strip li[aria-current] { outline: 2px solid var(--v2-brand); outline-offset: 1px; }
+.v2-card-slide { all: unset; box-sizing: border-box; position: relative; width: 100%; height: 100%; padding: 8px; display: flex; align-items: flex-end; cursor: pointer; overflow: hidden; overflow-wrap: anywhere; }
+.v2-card-slide:focus-visible { outline: 2px solid currentColor; outline-offset: -4px; }
+.v2-card-slide[disabled] { cursor: default; }
+.v2-card-slide img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.v2-card-slide-n { position: absolute; top: 4px; left: 4px; padding: 0 4px; font: 500 10px var(--v2-mono); background: var(--v2-paper); color: var(--v2-ink); }
+.v2-card-slides.is-strip[data-aspect="16:9"] li { flex-basis: 160px; aspect-ratio: 16 / 9; }
+.v2-card-slides.is-strip[data-aspect="1:1"] li { flex-basis: 112px; aspect-ratio: 1; }
+.v2-card-state.is-help_only { background: var(--v2-brand-soft); color: var(--v2-waiting); }
+
+/* P5 C1: "New" offers a video or a slideshow. */
+.v2-new { position: relative; }
+.v2-new-choices { position: absolute; right: 0; top: calc(100% + 6px); z-index: 20; width: min(320px, calc(100vw - 32px)); display: flex; flex-direction: column; background: var(--v2-card); border: 1px solid var(--v2-line); box-shadow: 0 8px 24px rgb(0 0 0 / 0.08); }
+.v2-new-choices button { all: unset; box-sizing: border-box; min-height: var(--v2-target); padding: 10px 14px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; font-size: 14px; }
+.v2-new-choices button + button { border-top: 1px solid var(--v2-line); }
+.v2-new-choices button span { color: var(--v2-ink2); font-size: 12px; }
+.v2-new-choices button:hover, .v2-new-choices button:focus-visible { background: var(--v2-paper2); outline: none; }
+.v2-new-choices button:focus-visible { box-shadow: inset 0 0 0 2px var(--v2-ink); }

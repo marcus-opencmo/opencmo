@@ -126,6 +126,8 @@ export const ENTRY_NAME: Record<StudioEntry, string> = {
   cutShorts: "cut_shorts",
   markFinished: "mark_finished",
   renderShort: "render_short",
+  buildSlideshow: "build_slideshow",
+  buildPostImage: "build_post_image",
 };
 
 const source = (...path: string[]) => readFileSync(join(ROOT, ...path), "utf8");

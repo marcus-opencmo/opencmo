@@ -21,6 +21,7 @@ import {
   xTopPosts,
   youtubeSearch,
 } from "@/lib/cmo/social/research";
+import { HnBudget, HnReadError, searchHn } from "@/lib/cmo/social/hn";
 import { outliers, type ScBudget, SocialReadError, type SocialPost } from "@/lib/cmo/social/scrapecreators";
 
 import type { ToolOutcome, ToolSpec } from "./tools";
@@ -36,6 +37,12 @@ export const RESEARCH_TOOL_SPECS: ToolSpec[] = [
     name: "search_reddit",
     description: "Search public Reddit posts. Use it to find people describing a problem, asking for a tool, or comparing alternatives. Returns up to 10 posts with community, title, snippet, score, comment count and URL.",
     schema: obj({ query, sort: { type: "string", enum: ["relevance", "new", "top"] }, timeframe: { type: "string", enum: ["day", "week", "month", "year", "all"] } }, ["query"]),
+    strict: false,
+  },
+  {
+    name: "search_hackernews",
+    description: "Search Hacker News stories (Ask HN, Show HN, links). Use it to find developers and founders describing a problem or comparing tools. Returns up to 10 stories with title, text, points, comment count and the discussion URL.",
+    schema: obj({ query, recent: { type: "boolean", description: "true: newest first, from the last 30 days. Default: most relevant." } }, ["query"]),
     strict: false,
   },
   {
@@ -92,6 +99,7 @@ export const RESEARCH_TOOLS = new Set(RESEARCH_TOOL_SPECS.map((tool) => tool.nam
 
 const inputs = {
   search_reddit: z.object({ query: z.string().trim().min(2).max(120), sort: z.enum(["relevance", "new", "top"]).optional(), timeframe: z.enum(["day", "week", "month", "year", "all"]).optional() }),
+  search_hackernews: z.object({ query: z.string().trim().min(2).max(120), recent: z.boolean().optional() }),
   subreddit_posts: z.object({ subreddit: z.string().trim().min(2).max(60), sort: z.enum(["hot", "new", "top"]).optional() }),
   reddit_thread: z.object({ url: z.string().trim().url().max(500) }),
   x_profile: z.object({ handle: z.string().trim().min(1).max(80) }),
@@ -116,6 +124,13 @@ export async function runResearchTool(name: string, raw: unknown, budget: ScBudg
       case "search_reddit": {
         const posts = (await redditSearch(input.query!, budget, { sort: input.sort, timeframe: input.timeframe })).slice(0, 10);
         return { ok: true, content: data(posts.map((p) => ({ url: p.url, community: p.community, title: p.title, snippet: p.text.slice(0, 300), score: p.likes, comments: p.replies, posted_at: p.postedAt }))), summary: `Searched Reddit for “${input.query}” (${posts.length})` };
+      }
+      case "search_hackernews": {
+        // Free and keyless, but it still counts toward the turn's lookups so the model cannot loop on it.
+        budget.take();
+        const recent = (parsed.data as { recent?: boolean }).recent === true;
+        const stories = (await searchHn(input.query!, new HnBudget(1), recent ? { recentDays: 30 } : {})).slice(0, 10);
+        return { ok: true, content: data(stories.map((t) => ({ url: t.url, title: t.title, snippet: t.text.slice(0, 300), points: t.points, comments: t.comments, posted_at: t.postedAt }))), summary: `Searched Hacker News for “${input.query}” (${stories.length})` };
       }
       case "subreddit_posts": {
         const posts = (await subredditPosts(input.subreddit!, budget, input.sort ?? "hot")).slice(0, 10);
@@ -160,8 +175,9 @@ export async function runResearchTool(name: string, raw: unknown, budget: ScBudg
       }
     }
   } catch (error) {
-    const message = error instanceof SocialReadError ? error.message : "Social research failed. Try again in a minute.";
-    if (!(error instanceof SocialReadError)) console.error(`[cmo] tool ${name}:`, error);
+    const known = error instanceof SocialReadError || error instanceof HnReadError;
+    const message = known ? error.message : "Social research failed. Try again in a minute.";
+    if (!known) console.error(`[cmo] tool ${name}:`, error);
     return { ok: false, content: JSON.stringify({ error: message }), summary: message };
   }
 }
