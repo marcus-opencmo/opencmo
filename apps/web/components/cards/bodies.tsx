@@ -50,6 +50,8 @@ export function PostBody({
   const limit = current?.limit ?? 0;
   const fold = current?.visibleBeforeMore ?? null;
 
+  if (current?.thread) return <ThreadPosts posts={current.thread} limit={limit || 280} why={body.why} />;
+
   return (
     <>
       {tabbed ? (
@@ -94,6 +96,34 @@ export function PostBody({
         ) : null}
         {body.why ? <span>Why: {body.why}</span> : null}
         {fold ? <span>The first {fold} characters show before “more” on a phone.</span> : null}
+      </div>
+    </>
+  );
+}
+
+/** An X thread (P6 W4): one numbered post per row, each with its own length; X shows them in this order. */
+function ThreadPosts({ posts, limit, why }: { posts: string[]; limit: number; why: string | null }) {
+  return (
+    <>
+      <ol className="v2-card-thread" aria-label={`Thread of ${posts.length} posts`} data-testid="thread-posts">
+        {posts.map((post, i) => {
+          const length = charCount(post);
+          return (
+            <li key={i}>
+              <span className="v2-card-thread-n" aria-hidden="true">
+                {i + 1}
+              </span>
+              <p className="v2-card-text">{post}</p>
+              <span className={`v2-chip ${length > limit ? "is-stuck" : "is-posted"}`}>
+                {length}/{limit}
+              </span>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="v2-card-meta">
+        <span>{posts.length} posts, posted as one thread on X.</span>
+        {why ? <span>Why: {why}</span> : null}
       </div>
     </>
   );

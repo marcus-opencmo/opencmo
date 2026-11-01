@@ -122,6 +122,27 @@ export const PostDraftSchema = z.object({
 });
 export type PostDraft = z.infer<typeof PostDraftSchema>;
 
+/**
+ * An X thread (P6 W4, `writer.md` §8): a hook post that makes a promise, one step per post, no recap at
+ * the end. 5–8 posts, each within X's 280 (counted by code point, as `checkPost` counts). Stored on
+ * `content_items.body.thread` with `text` = the first post, so single-post readers still see the hook.
+ */
+export const THREAD_MIN_POSTS = 5;
+export const THREAD_MAX_POSTS = 8;
+export const THREAD_POST_LIMIT = 280;
+
+export const ThreadDraftSchema = z.object({
+  posts: z
+    .array(z.string().describe("One post of the thread, ready to publish as is"))
+    .describe(`${THREAD_MIN_POSTS} to ${THREAD_MAX_POSTS} posts: the first is the hook with the promise, then one step each, no recap post at the end`),
+  angle,
+  rationale: z.string().describe("One sentence: why this thread now, citing the strategy or calendar item"),
+});
+export type ThreadDraft = z.infer<typeof ThreadDraftSchema>;
+
+/** The stored body of a thread draft (what `cmo_save_draft` keeps once A's request 3 lands). */
+export type ThreadBody = { text: string; thread: string[]; rationale: string; gen?: unknown };
+
 /** A caption for one platform; hashtags are kept apart from the text so code can count them per profile. */
 export const CaptionDraftSchema = z.object({
   text: z.string().describe("The caption without hashtags, hook in the first line"),

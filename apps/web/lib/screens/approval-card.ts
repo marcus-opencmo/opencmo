@@ -28,7 +28,8 @@ export const CardKindSchema = z.enum(CARD_KINDS);
 export type CardKind = z.infer<typeof CardKindSchema>;
 
 /** Same values as `approvals.status` (brain plan W1-2). */
-export const CARD_STATUSES = ["waiting", "approved", "edited", "skipped", "expired", "cancelled"] as const;
+/** `held`: past the daily card budget, waiting for a later day (P6 A4); never in the queue. */
+export const CARD_STATUSES = ["waiting", "held", "approved", "edited", "skipped", "expired", "cancelled"] as const;
 export const CardStatusSchema = z.enum(CARD_STATUSES);
 
 /**
@@ -54,6 +55,9 @@ const PostBody = z.object({
         limit: z.number().int().positive(),
         /** Characters shown before the platform's "more" on a phone (LinkedIn); null when the whole post shows. */
         visibleBeforeMore: z.number().int().positive().nullable(),
+        // --- thread field (P6, owner A) ---
+        /** An X thread (P6 W4): 5 to 8 posts, the first being `versions[0]`; absent for a single post. */
+        thread: z.array(z.string().max(280)).min(5).max(8).optional(),
       }),
     )
     .min(1),
@@ -79,6 +83,8 @@ const ReplyBody = z.object({
    * P5. A skipped thread has no card (it shows on the Sales screen only).
    */
   rule: SalesRuleSchema.optional(),
+  /** Where the thread is (P6 R4): absent for Reddit, so cards raised before P6 parse as they did. */
+  platform: z.literal("hn").optional(),
 });
 
 const GoalBody = z.object({
@@ -159,6 +165,9 @@ export const PriceSnapshotSchema = z.object({
 });
 
 /** One slide on a slideshow card: its text layer, its still (PNG) once rendered, and how long it shows. */
+/** What `approval_snapshot` (SQL, 20270101100000) adds when the look check still found a problem on this render. */
+export const LookSnapshotSchema = z.object({ pass: z.literal(false), round: z.number().int().min(0).max(1), note: z.string().max(200) });
+
 export const SlideSnapshotSchema = z.object({
   text: z.string().max(300),
   /** `exports` bucket path of the slide's PNG from `render_stills`; null until the stills are rendered. */
@@ -183,6 +192,7 @@ export const SlideshowSnapshotSchema = z.object({
   png_set_path: z.string().max(500).nullable(),
   /** P5 A3: captions per platform, ordered when the card is raised and approved with it, as a finished video's. */
   captions: z.array(CaptionSnapshotSchema).max(12).optional(),
+  look: LookSnapshotSchema.optional(),
 });
 
 /** Card 3: the render of the edit as it is now (`ref_kind = 'editor_project'`, `ref_id` = clip id). */
@@ -197,6 +207,7 @@ export const FinishedVideoSnapshotSchema = z.object({
   render_path: z.string().max(500).nullable(),
   seconds: z.number().positive().nullable(),
   captions: z.array(CaptionSnapshotSchema).max(12).optional(),
+  look: LookSnapshotSchema.optional(),
 });
 
 /** Card 4: the shorts cut from one finished edit, approved together (`ref_kind = 'short_batch'`). */
@@ -221,6 +232,7 @@ export const ShortsBatchSnapshotSchema = z.object({
     .max(3),
   /** Captions of every short in the batch (`clip_id` = the short's own edit). */
   captions: z.array(CaptionSnapshotSchema).max(36).optional(),
+  look: LookSnapshotSchema.optional(),
 });
 
 export const StudioSnapshotSchema = z.discriminatedUnion("kind", [
@@ -285,6 +297,9 @@ const FinishedVideoBody = z.object({
   frameAt: z.number().min(0),
   /** One per platform profile: captions and the YouTube title and description. */
   captions: z.array(CaptionSchema).max(12),
+  // --- look-note field (P6, owner A) ---
+  /** P6 S4: what the look check still found after one send-back (`snapshot.look.note`); absent when it passed or did not run. */
+  lookNote: z.string().max(200).optional(),
 });
 
 const ShortsBatchBody = z.object({
@@ -307,6 +322,9 @@ const ShortsBatchBody = z.object({
     )
     .min(1)
     .max(3),
+  // --- look-note field (P6, owner A) ---
+  /** P6 S4: what the look check still found after one send-back (`snapshot.look.note`); absent when it passed or did not run. */
+  lookNote: z.string().max(200).optional(),
 });
 
 const SlideshowBody = z.object({
@@ -326,6 +344,9 @@ const SlideshowBody = z.object({
   pngSetUrl: z.url().nullable(),
   /** P5 A3: one per platform it will be posted to, editable before approving (`edit_caption`), as on a finished video. */
   captions: z.array(CaptionSchema).max(12).optional(),
+  // --- look-note field (P6, owner A) ---
+  /** P6 S4: what the look check still found after one send-back (`snapshot.look.note`); absent when it passed or did not run. */
+  lookNote: z.string().max(200).optional(),
 });
 
 /**
@@ -380,6 +401,8 @@ export const ScheduleSnapshotSchema = z.object({
    * posts without an image keep the hash they had.
    */
   image: z.object({ clip_id: z.string(), object: z.string().max(500), bytes: z.number().int().positive().nullable() }).optional(),
+  /** An X thread (P6 W4): its 5 to 8 posts, the first being `text`; part of `content_hash`. Absent for a single post. */
+  thread: z.array(z.string().max(280)).min(5).max(8).optional(),
 });
 export type ScheduleSnapshot = z.infer<typeof ScheduleSnapshotSchema>;
 

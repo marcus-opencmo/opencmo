@@ -201,7 +201,7 @@ async function progressOf(supabase: SupabaseClient, metric: GoalView["metric"], 
   if (metric === "views") {
     const { data } = await supabase.from("post_metrics").select("item_id, views").gte("measured_at", since).limit(1000);
     const best = new Map<string, number>();
-    for (const row of (data ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+    for (const row of (data ?? []) as { item_id: string; views: number | null }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
     return [...best.values()].reduce((a, b) => a + b, 0);
   }
   const table = { posts: "content_items", replies: "opportunities" }[metric];
@@ -243,7 +243,8 @@ async function loadMetrics(supabase: SupabaseClient): Promise<Metrics | null> {
     .gte("measured_at", since)
     .order("measured_at", { ascending: false })
     .limit(500);
-  type Row = { item_id: string; views: number; likes: number; replies: number; reposts: number; content_items: { final_text: string | null; body: Record<string, unknown>; published_at: string | null } | null };
+  // A count may be null (not reported); Number(null) is 0, which is what these sums want.
+  type Row = { item_id: string; views: number | null; likes: number | null; replies: number | null; reposts: number | null; content_items: { final_text: string | null; body: Record<string, unknown>; published_at: string | null } | null };
   const latest = new Map<string, Row>();
   for (const row of (data ?? []) as unknown as Row[]) if (!latest.has(row.item_id)) latest.set(row.item_id, row);
   const rows = [...latest.values()];

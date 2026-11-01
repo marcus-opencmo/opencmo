@@ -23,6 +23,7 @@ import { ApiError } from "@/lib/api/errors";
 import { rpcOrThrow, type SupabaseClient } from "@/lib/api/handler";
 import { studio } from "@/lib/departments/studio/adapter";
 import { finishVideo } from "@/lib/departments/studio/finish";
+import { runLookSendBacks } from "@/lib/departments/studio/look-redo";
 import { renderEdit } from "@/lib/departments/studio/render";
 import { PostImageBriefSchema, SlideshowBriefSchema, VideoBriefSchema, type StudioAdapter, type StudioContext } from "@/lib/departments/studio/types";
 import type { LlmUsage } from "@/lib/cmo/jobs/llm";
@@ -245,7 +246,12 @@ export async function drainStudioOrders(admin: SupabaseClient, opts: { budgetMs?
     for (const step of steps) await runStep(admin, step);
     const ready = (await rpcOrThrow<Step[]>(admin, "studio_steps_ready", { p_limit: 5 })) ?? [];
     for (const step of ready) await runNext(admin, step);
-    const n = orders.length + steps.length + ready.length;
+    // P6 S4: a render the look check sent back gets its one redo (or its card, when nothing can be redone).
+    const sentBack = await runLookSendBacks(admin, (userId, orderId) => brainStudio(userId, orderId ?? "").ctx).catch((error: unknown) => {
+      console.error("[studio-orders] look send-backs", error);
+      return 0;
+    });
+    const n = orders.length + steps.length + ready.length + sentBack;
     if (!n) break;
     done += n;
   }

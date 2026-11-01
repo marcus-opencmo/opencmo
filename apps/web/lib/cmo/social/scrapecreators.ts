@@ -240,7 +240,8 @@ export function threadsPost(item: Obj): SocialPost | null {
   };
 }
 
-export type RedditComment = { author: string; text: string; score: number };
+/** `replies`: direct replies when the reader sends them (P6 R3); absent otherwise, never a guessed zero. */
+export type RedditComment = { author: string; text: string; score: number; replies?: number };
 
 export function redditPost(item: Obj): (SocialPost & { community: string; title: string }) | null {
   const permalink = str(item.permalink);

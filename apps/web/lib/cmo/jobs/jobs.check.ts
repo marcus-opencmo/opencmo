@@ -153,10 +153,13 @@ async function main() {
   const w4 = mem3.enqueue("sales_scan");
   await drainCmoQueue(mem3.store);
   assert.equal(w4.status, "done", `W4 xong (${w4.error})`);
-  assert.deepEqual(w4.steps.map((s) => s.tool), ["read_doc", "make_queries", "reddit_search", "score_thread", "check_rules", "draft_reply", "create_card"]);
+  assert.deepEqual(w4.steps.map((s) => s.tool), ["read_doc", "make_queries", "reddit_search", "hn_search", "score_thread", "check_rules", "draft_reply", "create_card"]);
   assert.ok(mem3.opps.length > 0 && mem3.opps.length <= 5, `1–5 thẻ (${mem3.opps.length})`);
   assert.ok(mem3.opps.every((o) => o.score >= PASS_SCORE && o.reply.length > 0 && o.score_parts.length === 5), "thẻ đủ điểm, có trả lời");
-  assert.ok(mem3.opps.every((o) => new URL(o.url).hostname === "www.reddit.com"), "chỉ link reddit.com");
+  assert.ok(mem3.opps.every((o) => (o.platform === "hn" ? new URL(o.url).hostname === "news.ycombinator.com" : new URL(o.url).hostname === "www.reddit.com")), "only reddit.com or HN discussion links");
+  // P6 R4: the fake HN story is scored with the rest; on HN a reply only helps (no product mention).
+  const hn = mem3.opps.filter((o) => o.platform === "hn");
+  assert.ok(hn.length === 1 && hn[0]!.community === "Hacker News" && hn[0]!.rule === "help_only", "one HN card, help only");
   assert.ok(mem3.opps.every((o) => o.gen?.model === "fake" && /^[0-9a-f]{12}$/.test(o.gen.prompt_version)), "replies record model and prompt");
   assert.equal((w4.output as { refund: boolean }).refund, false);
 
@@ -198,7 +201,7 @@ async function main() {
   const memEx = memoryStore({ ...docs, strategy: { ...docs.strategy, pains: ["late invoice payments"] } });
   memEx.salesSettings.excluded.push("freelance", "smallbusiness");
   memEx.enqueue("sales_scan");
-  await drainCmoQueue(memEx.store);
+  await drainCmoQueue(memEx.store, { searchHn: async () => [] });
   assert.equal(memEx.opps.length, 0, "every thread was in an excluded subreddit");
 
   // Không thread mới nào: lượt vẫn xong và được hoàn credit.
@@ -219,7 +222,7 @@ async function main() {
   const queried: string[] = [];
   const memInj = memoryStore(docs);
   const inj = memInj.enqueue("sales_scan");
-  await drainCmoQueue(memInj.store, { searchReddit: async (query) => (queried.push(query), [injected(1), injected(2)]) });
+  await drainCmoQueue(memInj.store, { searchReddit: async (query) => (queried.push(query), [injected(1), injected(2)]), searchHn: async () => [] });
   assert.equal(inj.status, "done", `W4 with an injected search (${inj.error})`);
   assert.ok(queried.length > 0, "the injected search was asked");
   assert.deepEqual(memInj.opps.map((o) => o.url).sort(), [injected(1).url, injected(2).url], "only injected threads become cards");

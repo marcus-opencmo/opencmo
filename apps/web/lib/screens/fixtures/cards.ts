@@ -393,6 +393,42 @@ export const CORRECTION_CARD: ApprovalCard = {
   },
 };
 
+/** P6: an X thread (W4) and a video whose look check still found a problem (S4). */
+export const P6_CARDS: ApprovalCard[] = [
+  {
+    ...POST_CARD,
+    id: "card-thread",
+    title: "How we cut a product demo in ten minutes.",
+    meta: "1 thread · X · you approve when it posts",
+    body: {
+      kind: "post",
+      platforms: [
+        {
+          platform: "x",
+          versions: ["How we cut a product demo in ten minutes, without a timeline. Here is the whole path."],
+          limit: 280,
+          visibleBeforeMore: null,
+          thread: [
+            "How we cut a product demo in ten minutes, without a timeline. Here is the whole path.",
+            "First, record the demo in one take. Mistakes included: they are easy to cut later.",
+            "Then open the transcript and delete the words you do not want. The video follows the words.",
+            "Ask for B-roll on the line you mean. It lands on those words, not at the end.",
+            "Captions come from the same words, so they stay in sync after every cut.",
+            "Export once you like it. The whole edit took about ten minutes.",
+          ],
+        },
+      ],
+      checks: ["no links", "every post under 280"],
+      why: "You asked for a thread about the editor",
+    },
+  },
+  {
+    ...FINISHED_CARD,
+    id: "card-finished-look",
+    body: { ...(FINISHED_CARD.body as Extract<ApprovalCard["body"], { kind: "finished_video" }>), lookNote: "Look check: captions run past the frame's right edge at 0:12." },
+  },
+];
+
 /** The four states every card has, on copies of real kinds. */
 export const STATE_CARDS: ApprovalCard[] = [
   { ...SCHEDULE_CARD, id: "card-expired", status: "expired", problem: { kind: "expired", text: "The slot passed. Pick a new time." } },
@@ -423,7 +459,7 @@ export const ALL_KINDS: ApprovalCard[] = [
 ];
 
 /** Every sample card `/app/inbox/[id]` can open outside production: each kind, the P3 platforms, the states. */
-export const SAMPLE_CARDS: ApprovalCard[] = [...ALL_KINDS, THREADS_POST_CARD, LINKEDIN_POST_CARD, ...STATE_CARDS, ...SCHEDULE_STATE_CARDS];
+export const SAMPLE_CARDS: ApprovalCard[] = [...ALL_KINDS, THREADS_POST_CARD, LINKEDIN_POST_CARD, ...P6_CARDS, ...STATE_CARDS, ...SCHEDULE_STATE_CARDS];
 
 /**
  * One snapshot per Studio kind, as `approval_snapshot` writes it. The script one is the exact output asserted in

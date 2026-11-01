@@ -72,7 +72,8 @@ async function runFixture(fixture: RedditFixture, env: EvalEnv): Promise<CaseRes
   const mem = memoryStore(fixture.docs, []);
   const run = mem.enqueue("sales_scan", {});
   // Every query finds the same threads: the job dedupes by URL, so each is scored once.
-  await env.drain(mem.store, { runId: run.id, budgetMs: 240_000, searchReddit: async () => threads });
+  // Reddit only, so rows stay comparable with runs before HN joined the scan (P6 R4).
+  await env.drain(mem.store, { runId: run.id, budgetMs: 240_000, searchReddit: async () => threads, searchHn: async () => [] });
   const state = mem.runs.find((r) => r.id === run.id);
   const id = (output: string) => `w4:${fixture.name}:${output}`;
   if (state?.status !== "done") return [{ id: id("run"), epoch: env.epoch, pass: false, decided_by: "error", notes: [state?.error ?? "the scan did not finish"] }];

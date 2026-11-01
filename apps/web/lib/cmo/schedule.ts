@@ -70,6 +70,20 @@ export async function enqueueDueLoops(admin: SupabaseClient): Promise<{ users: n
   const { data: published } = await admin.from("content_items").select("user_id").eq("status", "published").eq("department", "post").gte("published_at", since);
   const publishedBy = new Map<string, number>();
   for (const p of (published ?? []) as { user_id: string }[]) publishedBy.set(p.user_id, (publishedBy.get(p.user_id) ?? 0) + 1);
+  // P6: Zernio measures connected accounts without the social reader; replies are checked three days on (A1, A3).
+  const { data: connected } = await admin.from("social_accounts").select("user_id").eq("status", "connected");
+  const connectedBy = new Map<string, number>();
+  for (const c of (connected ?? []) as { user_id: string }[]) connectedBy.set(c.user_id, (connectedBy.get(c.user_id) ?? 0) + 1);
+  const { data: replied } = await admin
+    .from("cmo_draft_outcomes")
+    .select("user_id")
+    .eq("department", "sales")
+    .eq("action", "replied")
+    .is("outcome_checked_at", null)
+    .lte("decided_at", new Date(Date.now() - 3 * 86_400_000).toISOString())
+    .limit(5000);
+  const repliesBy = new Map<string, number>();
+  for (const r of (replied ?? []) as { user_id: string }[]) repliesBy.set(r.user_id, (repliesBy.get(r.user_id) ?? 0) + 1);
   const socialReader = socialReaderReady();
   const modes = await brainModes(admin, users);
 
@@ -90,6 +104,8 @@ export async function enqueueDueLoops(admin: SupabaseClient): Promise<{ users: n
       dueSales: firstDue("sales"),
       competitorHandles: handles.get(user) ?? 0,
       publishedRecently: publishedBy.get(user) ?? 0,
+      connectedAccounts: connectedBy.get(user) ?? 0,
+      repliesDue: repliesBy.get(user) ?? 0,
       socialReader,
     };
     // Mode B: the run reads what it needs, then waits in the founder's inbox for their Claude.

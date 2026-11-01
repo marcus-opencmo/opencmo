@@ -3,6 +3,8 @@
 import Link from "next/link";
 import type { MouseEvent, ReactNode } from "react";
 
+import { nextPostText, type RailStatus } from "@/lib/screens/rail";
+
 import { Logo } from "./Logo";
 import { NavIcon } from "./NavIcon";
 import { NAV_DEPARTMENTS, NAV_MAIN, NAV_MAKE, NAV_SETTINGS, isCurrent, type DepartmentName, type NavEntry } from "./nav";
@@ -14,6 +16,8 @@ export type RailProps = {
   stuck: DepartmentName[];
   /** Uploads being processed: shown on Studio, where they land. */
   processing: number;
+  /** Schedule's next post and Analytics' connected accounts (P6 F14); null until loaded or where it cannot be read. */
+  status?: RailStatus | null;
   credits: number | null;
   email: string | null;
   collapsed: boolean;
@@ -22,13 +26,19 @@ export type RailProps = {
   onCurrent: () => void;
 };
 
-type Status = { text: string; tone: "waiting" | "stuck" | "live" };
+type Status = { text: string; tone: "waiting" | "stuck" | "live" | "info" };
+
 
 /** A status line only from numbers the shell already has; no line rather than a guessed one. */
 function statusOf(entry: NavEntry, props: RailProps): Status | null {
   if (entry.screen === "dashboard" && props.pending) return { text: `${props.pending} waiting on you`, tone: "waiting" };
   if (entry.department && props.stuck.includes(entry.department)) return { text: "Stuck", tone: "stuck" };
   if (entry.department === "studio" && props.processing > 0) return { text: `${props.processing} processing`, tone: "live" };
+  if (entry.screen === "schedule" && props.status?.nextPostAt) return { text: nextPostText(props.status.nextPostAt, props.status.timezone), tone: "info" };
+  if (entry.screen === "analytics" && props.status?.connectedAccounts) {
+    const n = props.status.connectedAccounts;
+    return { text: `${n} account${n === 1 ? "" : "s"}`, tone: "info" };
+  }
   return null;
 }
 

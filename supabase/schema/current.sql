@@ -1520,7 +1520,7 @@ begin
       decided_at = now(),
       decided_via = case when p_status in ('approved', 'edited', 'skipped')
         then coalesce(nullif(current_setting('opencmo.decided_via', true), ''), 'app') end
-  where ref_kind = p_ref_kind and ref_id = p_ref_id and status = 'waiting';
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held');
 end;
 $$;
 
@@ -1547,16 +1547,19 @@ CREATE TABLE public.approvals (
     decided_at timestamp with time zone,
     decided_via text,
     reason text,
+    held_until timestamp with time zone,
+    released_at timestamp with time zone,
     CONSTRAINT approvals_account_check CHECK ((char_length(account) <= 100)),
     CONSTRAINT approvals_content_hash_check CHECK ((content_hash ~ '^[0-9a-f]{64}$'::text)),
     CONSTRAINT approvals_decided_via_check CHECK ((decided_via = ANY (ARRAY['app'::text, 'email'::text, 'push'::text, 'mcp'::text]))),
     CONSTRAINT approvals_department_check CHECK ((department = ANY (ARRAY['brain'::text, 'research'::text, 'writer'::text, 'studio'::text, 'sales'::text, 'schedule'::text, 'publish'::text]))),
+    CONSTRAINT approvals_held_until CHECK (((status <> 'held'::text) OR (held_until IS NOT NULL))),
     CONSTRAINT approvals_kind_check CHECK ((kind = ANY (ARRAY['post'::text, 'reply'::text, 'goal'::text, 'script'::text, 'price'::text, 'finished_video'::text, 'shorts_batch'::text, 'slideshow'::text, 'schedule'::text, 'correction'::text]))),
     CONSTRAINT approvals_price_credits_check CHECK ((price_credits >= 0)),
     CONSTRAINT approvals_reason_check CHECK ((char_length(reason) <= 400)),
     CONSTRAINT approvals_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['content_item'::text, 'opportunity'::text, 'goal'::text, 'correction'::text, 'studio_step'::text, 'editor_project'::text, 'short_batch'::text, 'schedule_slot'::text]))),
     CONSTRAINT approvals_snapshot_check CHECK (((jsonb_typeof(snapshot) = 'object'::text) AND (octet_length((snapshot)::text) <= 32768))),
-    CONSTRAINT approvals_status_check CHECK ((status = ANY (ARRAY['waiting'::text, 'approved'::text, 'edited'::text, 'skipped'::text, 'expired'::text, 'cancelled'::text])))
+    CONSTRAINT approvals_status_check CHECK ((status = ANY (ARRAY['waiting'::text, 'held'::text, 'approved'::text, 'edited'::text, 'skipped'::text, 'expired'::text, 'cancelled'::text])))
 );
 
 
@@ -1865,17 +1868,22 @@ declare
   v_kind text;
   v_id uuid;
   v_expires timestamptz;
+  v_prev public.approvals;
+  v_status text := 'waiting';
+  v_held_until timestamptz;
 begin
   if v_snapshot is null then
     return;
   end if;
   v_hash := public.approval_hash(v_snapshot);
   if exists (select 1 from public.approvals
-             where ref_kind = p_ref_kind and ref_id = p_ref_id and status = 'waiting' and content_hash = v_hash) then
+             where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held') and content_hash = v_hash) then
     return;
   end if;
+  select * into v_prev from public.approvals
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held') for update;
   update public.approvals set status = 'cancelled', decided_at = now()
-  where ref_kind = p_ref_kind and ref_id = p_ref_id and status = 'waiting';
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held');
   v_kind := v_snapshot->>'kind';
   -- A failure card (it carries the last error) stays open while the slot's window lasts, so Retry can still post
   -- at the approved time; any other schedule card expires at its time.
@@ -1883,9 +1891,17 @@ begin
     select case when s.error is not null then s.window_ends_at else s.publish_at end into v_expires
     from public.schedule_slots s where s.id = p_ref_id;
   end if;
+  if v_prev.id is not null then
+    -- A replacement keeps its place: not counted again, still held if the old one was.
+    v_status := case when v_prev.status = 'held' and v_expires is null then 'held' else 'waiting' end;
+    v_held_until := case when v_status = 'held' then v_prev.held_until end;
+  elsif not public.card_budget_take(p_user, v_expires is not null) then
+    v_status := 'held';
+    v_held_until := public.card_budget_next_day(p_user);
+  end if;
   -- A schedule card carries its time and account in the foot and expires when its time comes (rule 4).
   insert into public.approvals (user_id, kind, department, ref_kind, ref_id, snapshot, content_hash, price_credits,
-    post_at, account, expires_at)
+    post_at, account, expires_at, status, held_until)
   values (p_user, v_kind,
     case v_kind when 'post' then 'writer' when 'reply' then 'sales'
       when 'script' then 'studio' when 'price' then 'studio' when 'finished_video' then 'studio'
@@ -1894,7 +1910,7 @@ begin
     case when v_kind in ('script', 'price') then (v_snapshot->>'price_credits')::integer end,
     case when v_kind = 'schedule' then (v_snapshot->>'publish_at')::timestamptz end,
     case when v_kind = 'schedule' then left(v_snapshot->>'handle', 100) end,
-    v_expires)
+    v_expires, v_status, v_held_until)
   returning id into v_id;
   if v_kind = 'schedule' then
     update public.schedule_slots set approval_id = v_id, updated_at = now() where id = p_ref_id;
@@ -1918,8 +1934,38 @@ begin
     return;
   end if;
   update public.approvals set snapshot = v_snapshot, content_hash = public.approval_hash(v_snapshot)
-  where ref_kind = p_ref_kind and ref_id = p_ref_id and status = 'waiting'
+  where ref_kind = p_ref_kind and ref_id = p_ref_id and status in ('waiting', 'held')
     and content_hash is distinct from public.approval_hash(v_snapshot);
+end;
+$$;
+
+
+--
+-- Name: approval_release_held(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.approval_release_held(p_limit integer DEFAULT 500) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_card public.approvals;
+  v_n integer := 0;
+begin
+  for v_card in
+    select * from public.approvals where status = 'held' and held_until <= now()
+    order by user_id, created_at limit greatest(1, least(p_limit, 5000))
+    for update skip locked
+  loop
+    if public.card_budget_take(v_card.user_id, false) then
+      update public.approvals set status = 'waiting', held_until = null, released_at = now() where id = v_card.id;
+      v_n := v_n + 1;
+    else
+      -- `card_budget_take` counted it as held again on today's row; it tries tomorrow.
+      update public.approvals set held_until = public.card_budget_next_day(v_card.user_id) where id = v_card.id;
+    end if;
+  end loop;
+  return v_n;
 end;
 $$;
 
@@ -1929,6 +1975,48 @@ $$;
 --
 
 CREATE FUNCTION public.approval_snapshot(p_ref_kind text, p_ref_id uuid) RETURNS jsonb
+    LANGUAGE plpgsql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v jsonb := public.approval_snapshot_base(p_ref_kind, p_ref_id);
+  v_look public.look_checks;
+  v_extra jsonb;
+begin
+  if v is null then
+    return v;
+  end if;
+  if p_ref_kind = 'content_item' then
+    select case when public.thread_valid(body) then jsonb_build_object('thread', body->'thread') end into v_extra
+    from public.content_items where id = p_ref_id;
+    return v || coalesce(v_extra, '{}'::jsonb);
+  end if;
+  if p_ref_kind = 'opportunity' then
+    select case when platform <> 'reddit' then jsonb_build_object('platform', platform) end into v_extra
+    from public.opportunities where id = p_ref_id;
+    return v || coalesce(v_extra, '{}'::jsonb);
+  end if;
+  if p_ref_kind not in ('editor_project', 'short_batch', 'studio_step') then
+    return v;
+  end if;
+  select * into v_look from public.look_checks c
+  where c.ref_kind = p_ref_kind and c.ref_id = p_ref_id and c.status = 'failed'
+    and c.doc_key = coalesce(v->>'document_hash', v->>'parent_hash')
+  order by c.round desc, c.created_at desc limit 1;
+  if found and coalesce(v_look.result->>'note', '') <> '' then
+    v := v || jsonb_build_object('look', jsonb_build_object('pass', false, 'round', v_look.round,
+      'note', left(v_look.result->>'note', 200)));
+  end if;
+  return v;
+end;
+$$;
+
+
+--
+-- Name: approval_snapshot_base(text, uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.approval_snapshot_base(p_ref_kind text, p_ref_id uuid) RETURNS jsonb
     LANGUAGE plpgsql STABLE SECURITY DEFINER
     SET search_path TO 'public'
     AS $$
@@ -2225,6 +2313,68 @@ CREATE FUNCTION public.auto_transcript_daily_seconds() RETURNS numeric
 
 
 --
+-- Name: best_slots_refresh(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.best_slots_refresh(p_user uuid) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_rules jsonb := public.best_time_rules();
+  v_n integer;
+begin
+  delete from public.best_slots where user_id = p_user;
+  insert into public.best_slots (user_id, platform, hour, median_views_per_hour, posts, computed_at)
+  select p_user, b.platform, b.hour, percentile_cont(0.5) within group (order by b.views_per_hour), count(*), now()
+  from public.best_time_posts(p_user) b
+  where b.platform in (
+    select platform from public.best_time_posts(p_user) group by platform having count(*) >= (v_rules->>'minPosts')::integer)
+  group by b.platform, b.hour
+  having count(*) >= (v_rules->>'minPostsPerHour')::integer;
+  get diagnostics v_n = row_count;
+  return v_n;
+end;
+$$;
+
+
+--
+-- Name: best_time_posts(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.best_time_posts(p_user uuid) RETURNS TABLE(item_id uuid, platform text, hour smallint, views_per_hour double precision)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  with r as (select public.best_time_rules() as j),
+  latest as (
+    select distinct on (m.item_id) m.item_id, greatest(m.views, m.impressions) as views, m.measured_at
+    from public.post_metrics m
+    where m.user_id = p_user
+    order by m.item_id, m.measured_at desc
+  )
+  select p.item_id, public.slot_platform_of(p.platform),
+    extract(hour from p.published_at at time zone public.schedule_timezone(p_user))::smallint,
+    l.views / greatest(1.0, extract(epoch from l.measured_at - p.published_at) / 3600.0)
+  from r, public.published_items(p_user, now() - make_interval(days => (r.j->>'windowDays')::integer)) p
+  join latest l on l.item_id = p.item_id
+  where l.views is not null
+    and public.slot_platform_of(p.platform) in ('x', 'threads', 'linkedin', 'tiktok', 'youtube', 'instagram')
+    and p.published_at <= now() - make_interval(hours => (r.j->>'settleHours')::integer)
+$$;
+
+
+--
+-- Name: best_time_rules(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.best_time_rules() RETURNS jsonb
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$ select '{"minPosts": 10, "minPostsPerHour": 2, "windowDays": 90, "settleHours": 24}'::jsonb $$;
+
+
+--
 -- Name: brand_check_kit(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2302,7 +2452,7 @@ CREATE TABLE public.tasks (
     finished_at timestamp with time zone,
     editor_revision_id uuid,
     progress real,
-    CONSTRAINT tasks_kind_check CHECK ((kind = ANY (ARRAY['probe_media'::text, 'generate'::text, 'render_document'::text, 'render_stills'::text, 'transcribe_media'::text, 'transcribe_asset'::text, 'capture_page'::text, 'publish_media'::text]))),
+    CONSTRAINT tasks_kind_check CHECK ((kind = ANY (ARRAY['probe_media'::text, 'generate'::text, 'render_document'::text, 'render_stills'::text, 'transcribe_media'::text, 'transcribe_asset'::text, 'capture_page'::text, 'publish_media'::text, 'look_check'::text]))),
     CONSTRAINT tasks_progress_check CHECK (((progress IS NULL) OR ((progress >= (0)::double precision) AND (progress <= (1)::double precision)))),
     CONSTRAINT tasks_status_check CHECK ((status = ANY (ARRAY['awaiting_upload'::text, 'awaiting_input'::text, 'queued'::text, 'running'::text, 'done'::text, 'failed'::text, 'cancelled'::text])))
 );
@@ -2696,6 +2846,52 @@ $$;
 CREATE FUNCTION public.capture_daily_limit() RETURNS integer
     LANGUAGE sql IMMUTABLE
     AS $$ select 30 $$;
+
+
+--
+-- Name: card_budget_next_day(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.card_budget_next_day(p_user uuid) RETURNS timestamp with time zone
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select (((now() at time zone public.schedule_timezone(p_user))::date + 1)::timestamp) at time zone public.schedule_timezone(p_user)
+$$;
+
+
+--
+-- Name: card_budget_rules(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.card_budget_rules() RETURNS jsonb
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$ select '{"perDay": 10}'::jsonb $$;
+
+
+--
+-- Name: card_budget_take(uuid, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.card_budget_take(p_user uuid, p_force boolean) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_day date := (now() at time zone public.schedule_timezone(p_user))::date;
+  v_raised integer;
+begin
+  insert into public.card_budget (user_id, day) values (p_user, v_day) on conflict (user_id, day) do nothing;
+  select raised into v_raised from public.card_budget where user_id = p_user and day = v_day for update;
+  if p_force or v_raised < (public.card_budget_rules()->>'perDay')::integer then
+    update public.card_budget set raised = raised + 1 where user_id = p_user and day = v_day;
+    return true;
+  end if;
+  update public.card_budget set held = held + 1 where user_id = p_user and day = v_day;
+  return false;
+end;
+$$;
 
 
 --
@@ -3291,7 +3487,7 @@ CREATE TABLE public.opportunities (
     CONSTRAINT opportunities_comments_check CHECK ((comments >= 0)),
     CONSTRAINT opportunities_community_check CHECK ((char_length(community) <= 100)),
     CONSTRAINT opportunities_gen_check CHECK (((jsonb_typeof(gen) = 'object'::text) AND (octet_length((gen)::text) <= 256))),
-    CONSTRAINT opportunities_platform_check CHECK ((platform = 'reddit'::text)),
+    CONSTRAINT opportunities_platform_check CHECK ((platform = ANY (ARRAY['reddit'::text, 'hn'::text]))),
     CONSTRAINT opportunities_priority_check CHECK ((priority = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text]))),
     CONSTRAINT opportunities_reply_check CHECK (((char_length(reply) >= 1) AND (char_length(reply) <= 3000))),
     CONSTRAINT opportunities_reply_or_skip CHECK (((reply IS NOT NULL) OR (rule = 'skip'::text))),
@@ -3302,7 +3498,7 @@ CREATE TABLE public.opportunities (
     CONSTRAINT opportunities_snippet_check CHECK ((char_length(snippet) <= 1200)),
     CONSTRAINT opportunities_status_check CHECK ((status = ANY (ARRAY['in_review'::text, 'replied'::text, 'dismissed'::text]))),
     CONSTRAINT opportunities_title_check CHECK (((char_length(title) >= 1) AND (char_length(title) <= 400))),
-    CONSTRAINT opportunities_url_check CHECK (((url ~ '^https://(www\.|old\.)?reddit\.com/'::text) AND (char_length(url) <= 500)))
+    CONSTRAINT opportunities_url_check CHECK (((char_length(url) <= 500) AND (((platform = 'reddit'::text) AND (url ~ '^https://(www\.|old\.)?reddit\.com/'::text)) OR ((platform = 'hn'::text) AND (url ~ '^https://news\.ycombinator\.com/item\?id=[0-9]{1,12}$'::text)))))
 );
 
 
@@ -4133,6 +4329,24 @@ $$;
 
 
 --
+-- Name: cmo_reply_outcomes_due(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_reply_outcomes_due(p_user uuid, p_limit integer) RETURNS TABLE(outcome_id uuid, opportunity_id uuid, platform text, url text, community text, reply text, outcome_url text)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select o.id, p.id, p.platform, p.url, p.community, p.reply, o.outcome_url
+  from public.cmo_draft_outcomes o
+  join public.opportunities p on p.id = o.item_id and p.user_id = o.user_id
+  where o.user_id = p_user and o.department = 'sales' and o.action = 'replied' and o.outcome_checked_at is null
+    and o.decided_at <= now() - interval '3 days' and p.reply is not null
+  order by o.decided_at desc
+  limit greatest(1, least(coalesce(p_limit, 10), 50));
+$$;
+
+
+--
 -- Name: cmo_resume(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -4167,6 +4381,45 @@ begin
   return found;
 end;
 $$;
+
+
+--
+-- Name: cmo_save_account_metrics(uuid, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_save_account_metrics(p_user uuid, p_rows jsonb) RETURNS integer
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  v_row jsonb;
+  v_account public.social_accounts;
+  v_count integer := 0;
+begin
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 1000 then
+    raise exception 'These numbers are not valid.' using errcode = '22023';
+  end if;
+  for v_row in select * from jsonb_array_elements(p_rows) loop
+    select * into v_account from public.social_accounts
+    where id = (v_row->>'social_account_id')::uuid and user_id = p_user;
+    if not found or coalesce(v_row->>'day', '') !~ '^\d{4}-\d{2}-\d{2}$' then
+      continue;
+    end if;
+    insert into public.account_metrics (user_id, social_account_id, platform, handle, day, followers, impressions,
+      engagements, video_views, posts, measured_at)
+    values (p_user, v_account.id, v_account.platform, v_account.handle, (v_row->>'day')::date,
+      public.nonneg((v_row->>'followers')::bigint), public.nonneg((v_row->>'impressions')::bigint),
+      public.nonneg((v_row->>'engagements')::bigint), public.nonneg((v_row->>'video_views')::bigint),
+      public.nonneg((v_row->>'posts')::bigint)::integer, now())
+    on conflict (user_id, platform, handle, day) do update
+      set social_account_id = excluded.social_account_id, followers = coalesce(excluded.followers, account_metrics.followers),
+          impressions = excluded.impressions, engagements = excluded.engagements, video_views = excluded.video_views,
+          posts = excluded.posts, measured_at = now();
+    v_count := v_count + 1;
+  end loop;
+  return v_count;
+end;
+$_$;
 
 
 --
@@ -4225,6 +4478,15 @@ declare
 begin
   if p_body is null or jsonb_typeof(p_body) <> 'object' or coalesce(p_body->>'text', '') = '' then
     raise exception 'This draft is not valid.' using errcode = '22023';
+  end if;
+  if p_body ? 'thread' then
+    if not public.thread_valid(p_body) then
+      raise exception 'A thread has 5 to 8 posts of at most 280 characters, the first being the post.' using errcode = '22023';
+    end if;
+    if coalesce(public.platform_profile_id(case when p_item is not null
+         then (select platform from public.content_items where id = p_item and user_id = p_user) else v_platform end), 'x') <> 'x' then
+      raise exception 'Only an X post can be a thread.' using errcode = '22023';
+    end if;
   end if;
   if p_item is not null then
     update public.content_items
@@ -4329,17 +4591,35 @@ CREATE FUNCTION public.cmo_save_metrics(p_user uuid, p_rows jsonb) RETURNS integ
 declare
   v_row jsonb;
   v_count integer := 0;
+  v_source text;
+  v_item uuid;
+  v_zernio uuid[];
 begin
-  if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 50 then
+  if p_rows is null or jsonb_typeof(p_rows) <> 'array' or jsonb_array_length(p_rows) > 200 then
     raise exception 'These numbers are not valid.' using errcode = '22023';
   end if;
+  -- Once per save, not per row.
+  if exists (select 1 from jsonb_array_elements(p_rows) r where r->>'source' = 'zernio') then
+    v_zernio := array(select z.item_id from public.cmo_zernio_posts_all(p_user, '-infinity') z where z.item_id is not null);
+  end if;
   for v_row in select * from jsonb_array_elements(p_rows) loop
-    -- Chỉ bài ĐÃ ĐĂNG của chính người dùng: worker không ghi nhầm sang tài khoản khác.
-    if exists (select 1 from public.content_items i where i.id = (v_row->>'item_id')::uuid and i.user_id = p_user and i.status = 'published') then
-      insert into public.post_metrics (user_id, item_id, url, views, likes, replies, reposts)
-      values (p_user, (v_row->>'item_id')::uuid, left(v_row->>'url', 500),
-        greatest(0, coalesce((v_row->>'views')::bigint, 0)), greatest(0, coalesce((v_row->>'likes')::bigint, 0)),
-        greatest(0, coalesce((v_row->>'replies')::bigint, 0)), greatest(0, coalesce((v_row->>'reposts')::bigint, 0)));
+    v_source := coalesce(v_row->>'source', 'public');
+    if v_source not in ('public', 'zernio') then
+      raise exception 'These numbers are not valid.' using errcode = '22023';
+    end if;
+    v_item := (v_row->>'item_id')::uuid;
+    -- Only the founder's own published posts: the job never writes numbers onto someone else's.
+    if (v_source = 'public' and exists (select 1 from public.content_items i
+          where i.id = v_item and i.user_id = p_user and i.status = 'published'))
+       or (v_source = 'zernio' and v_item = any(v_zernio)) then
+      if coalesce(v_row->>'views', v_row->>'impressions', v_row->>'likes', v_row->>'replies', v_row->>'reposts', v_row->>'engagements') is null then
+        continue;
+      end if;
+      insert into public.post_metrics (user_id, item_id, url, views, likes, replies, reposts, source, impressions, engagements)
+      values (p_user, v_item, left(coalesce(v_row->>'url', ''), 500),
+        public.nonneg((v_row->>'views')::bigint), public.nonneg((v_row->>'likes')::bigint),
+        public.nonneg((v_row->>'replies')::bigint), public.nonneg((v_row->>'reposts')::bigint),
+        v_source, public.nonneg((v_row->>'impressions')::bigint), public.nonneg((v_row->>'engagements')::bigint));
       v_count := v_count + 1;
     end if;
   end loop;
@@ -4376,11 +4656,15 @@ begin
     if v_rule is distinct from 'skip' and coalesce(v_item->>'reply', '') = '' then
       continue;
     end if;
+    if coalesce(v_item->>'platform', 'reddit') not in ('reddit', 'hn') then
+      raise exception 'A conversation comes from Reddit or Hacker News.' using errcode = '22023';
+    end if;
     insert into public.opportunities (
-      user_id, run_id, url, community, title, author, snippet, posted_at, comments, score, score_parts, reply, priority, gen,
-      rule, rule_why
+      user_id, run_id, platform, url, community, title, author, snippet, posted_at, comments, score, score_parts, reply,
+      priority, gen, rule, rule_why
     ) values (
-      p_user, p_run, v_item->>'url', left(coalesce(v_item->>'community', ''), 100), left(v_item->>'title', 400),
+      p_user, p_run, coalesce(v_item->>'platform', 'reddit'), v_item->>'url', left(coalesce(v_item->>'community', ''), 100),
+      left(v_item->>'title', 400),
       left(coalesce(v_item->>'author', ''), 100), left(coalesce(v_item->>'snippet', ''), 1200),
       nullif(v_item->>'posted_at', '')::timestamptz, greatest(0, coalesce((v_item->>'comments')::integer, 0)),
       v_score, coalesce(v_item->'score_parts', '[]'::jsonb),
@@ -4398,6 +4682,47 @@ begin
   return v_count;
 end;
 $$;
+
+
+--
+-- Name: cmo_save_reply_outcome(uuid, uuid, text, integer, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_save_reply_outcome(p_user uuid, p_outcome uuid, p_status text, p_votes integer, p_replies integer) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  v_row public.cmo_draft_outcomes;
+  v_opp public.opportunities;
+  v_where text;
+begin
+  if p_status is null or p_status not in ('found', 'not_found', 'gone')
+     or (p_status = 'found' and p_votes is null and p_replies is null)
+     or (p_status <> 'found' and (p_votes is not null or p_replies is not null)) then
+    raise exception 'This reply check is not valid.' using errcode = '22023';
+  end if;
+  update public.cmo_draft_outcomes
+  set outcome_status = p_status, outcome_votes = p_votes, outcome_replies = case when p_replies is null then null else greatest(0, p_replies) end, outcome_checked_at = now()
+  where id = p_outcome and user_id = p_user and department = 'sales' and action = 'replied' and outcome_checked_at is null
+  returning * into v_row;
+  if not found then
+    return false;
+  end if;
+  if p_status = 'found' then
+    select * into v_opp from public.opportunities where id = v_row.item_id;
+    v_where := case when v_opp.platform = 'hn' then 'on Hacker News'
+                    when coalesce(v_opp.community, '') ~ '^r/[A-Za-z0-9_]{1,40}$' then 'in ' || v_opp.community
+                    else 'on Reddit' end;
+    insert into public.cmo_memories (user_id, type, body)
+    values (p_user, 'feedback', left(format('A reply %s %s got %s and %s three days later.', v_where,
+      case when v_row.mentioned_product then 'that named the product' else 'that only helped' end,
+      case when p_votes is null then 'no vote count' when p_votes = 1 then '1 vote' else p_votes || ' votes' end,
+      case when p_replies is null then 'no reply count' when p_replies = 1 then '1 reply' else p_replies || ' replies' end), 600));
+  end if;
+  return true;
+end;
+$_$;
 
 
 --
@@ -4480,6 +4805,43 @@ begin
   end if;
   return v_row;
 end;
+$$;
+
+
+--
+-- Name: cmo_zernio_posts(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_zernio_posts(p_user uuid, p_since timestamp with time zone) RETURNS TABLE(item_id uuid, external_id text, external_url text, platform text, social_account_id uuid, zernio_account_id text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select * from public.cmo_zernio_posts_all(p_user, p_since) limit 200;
+$$;
+
+
+--
+-- Name: cmo_zernio_posts_all(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.cmo_zernio_posts_all(p_user uuid, p_since timestamp with time zone) RETURNS TABLE(item_id uuid, external_id text, external_url text, platform text, social_account_id uuid, zernio_account_id text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select coalesce(case when d.ref_kind = 'content_item' then d.ref_id end, cap.id) as item_id,
+    s.external_id, s.external_url, s.platform, s.account_id, a.zernio_account_id, s.publish_at
+  from public.schedule_slots s
+  join public.deliverables d on d.id = s.deliverable_id
+  left join public.social_accounts a on a.id = s.account_id
+  left join lateral (
+    select i.id from public.content_items i
+    where d.ref_kind = 'clip' and i.user_id = p_user and i.clip_id = d.ref_id and i.department = 'video'
+      and i.platform = public.platform_profile_id(s.platform)
+    order by i.updated_at desc limit 1
+  ) cap on true
+  where s.user_id = p_user and s.status = 'published' and s.mode = 'publish' and s.external_id is not null
+    and s.publish_at >= p_since
+  order by s.publish_at desc;
 $$;
 
 
@@ -6029,6 +6391,87 @@ $$;
 
 
 --
+-- Name: email_log_claim(uuid, text, uuid[]); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_log_claim(p_user uuid, p_kind text, p_approval_ids uuid[]) RETURNS TABLE(log_id uuid, approval_ids uuid[])
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_day date := (now() at time zone public.schedule_timezone(p_user))::date;
+  v_ids uuid[];
+  v_id uuid;
+begin
+  if p_kind not in ('digest', 'expiring') then
+    raise exception 'Unknown email kind.' using errcode = '22023';
+  end if;
+  perform pg_advisory_xact_lock(hashtextextended('email_log:' || p_user::text, 0));
+  if exists (select 1 from public.notify_settings n where n.user_id = p_user and not n.email_digest) then
+    return;
+  end if;
+  -- Only the founder's own cards that still wait.
+  select coalesce(array_agg(a.id order by a.created_at), '{}') into v_ids
+  from public.approvals a
+  where a.id = any(coalesce(p_approval_ids, '{}')) and a.user_id = p_user and a.status = 'waiting';
+  if p_kind = 'expiring' then
+    select coalesce(array_agg(i order by i), '{}') into v_ids from unnest(v_ids) i
+    where not exists (select 1 from public.email_log l
+                      where l.user_id = p_user and l.kind = 'expiring' and l.status <> 'failed' and i = any(l.approval_ids));
+  end if;
+  if cardinality(v_ids) = 0 then
+    return;
+  end if;
+  v_ids := v_ids[1:50];
+  insert into public.email_log (user_id, kind, day, approval_ids)
+  values (p_user, p_kind, v_day, v_ids)
+  on conflict do nothing
+  returning id into v_id;
+  if v_id is null then
+    return;
+  end if;
+  return query select v_id, v_ids;
+end;
+$$;
+
+
+--
+-- Name: email_log_done(uuid, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_log_done(p_log uuid, p_provider_id text, p_error text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  if p_error is null then
+    update public.email_log set status = 'sent', provider_id = left(p_provider_id, 100), sent_at = now() where id = p_log;
+  else
+    update public.email_log set status = 'failed', error = left(p_error, 500) where id = p_log;
+    delete from public.email_log where id = p_log and kind = 'digest';
+  end if;
+end;
+$$;
+
+
+--
+-- Name: email_unsubscribe(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.email_unsubscribe(p_token uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  update public.notify_settings
+  set email_digest = false, unsubscribed_at = coalesce(unsubscribed_at, now()), updated_at = now()
+  where unsubscribe_token = p_token;
+  return true;
+end;
+$$;
+
+
+--
 -- Name: enforce_write_budget(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6782,6 +7225,140 @@ $$;
 
 
 --
+-- Name: look_check_begin(uuid, text, uuid, uuid, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.look_check_begin(p_user uuid, p_ref_kind text, p_ref_id uuid, p_order uuid, p_doc_key text, p_files jsonb) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_round smallint;
+  v_prior public.look_checks;
+  v_task uuid;
+begin
+  if p_files is null or jsonb_typeof(p_files) <> 'array' or jsonb_array_length(p_files) not between 1 and 20
+     or p_doc_key is null
+     or exists (select 1 from jsonb_array_elements(p_files) f where coalesce(f->>'path', '') = '' or coalesce(f->>'clip_id', '') = '') then
+    return false;
+  end if;
+  select * into v_prior from public.look_checks
+  where ref_kind = p_ref_kind and coalesce(order_id, ref_id) = coalesce(p_order, p_ref_id) and status <> 'superseded'
+  order by round desc limit 1 for update;
+  if not found then
+    v_round := 0;
+  elsif v_prior.status = 'checking' then
+    if v_prior.ref_id = p_ref_id and v_prior.doc_key = p_doc_key then
+      return true;  -- the same render, already being checked
+    end if;
+    -- A newer render (an edit made during the check): the old check could only raise a card for a render that is no
+    -- longer current, so this one takes its place at the same round. A running task that finishes later finds no
+    -- `checking` row and changes nothing.
+    update public.look_checks set status = 'superseded', settled_at = now() where id = v_prior.id;
+    update public.tasks set status = 'cancelled' where id = v_prior.task_id and status = 'queued';
+    v_round := v_prior.round;
+  elsif v_prior.round = 0 and v_prior.status in ('sent_back', 'claimed') then
+    v_round := 1;
+  else
+    -- Passed, failed in round 1, or could not run: a later render of the same order is not checked again.
+    return false;
+  end if;
+  insert into public.tasks (user_id, kind, payload, status, request_id)
+  values (p_user, 'look_check',
+    jsonb_build_object('ref_kind', p_ref_kind, 'ref_id', p_ref_id, 'round', v_round, 'files', p_files),
+    'queued', gen_random_uuid())
+  returning id into v_task;
+  insert into public.look_checks (user_id, ref_kind, ref_id, order_id, round, doc_key, task_id)
+  values (p_user, p_ref_kind, p_ref_id, p_order, v_round, p_doc_key, v_task);
+  return true;
+end;
+$$;
+
+
+--
+-- Name: look_checks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.look_checks (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    ref_kind text NOT NULL,
+    ref_id uuid NOT NULL,
+    order_id uuid,
+    round smallint NOT NULL,
+    doc_key text NOT NULL,
+    task_id uuid,
+    status text DEFAULT 'checking'::text NOT NULL,
+    result jsonb,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    settled_at timestamp with time zone,
+    claimed_at timestamp with time zone,
+    raised_at timestamp with time zone,
+    CONSTRAINT look_checks_doc_key_check CHECK ((char_length(doc_key) <= 100)),
+    CONSTRAINT look_checks_ref_kind_check CHECK ((ref_kind = ANY (ARRAY['editor_project'::text, 'short_batch'::text, 'studio_step'::text]))),
+    CONSTRAINT look_checks_result_check CHECK (((result IS NULL) OR ((jsonb_typeof(result) = 'object'::text) AND (octet_length((result)::text) <= 65536)))),
+    CONSTRAINT look_checks_round_check CHECK ((round = ANY (ARRAY[0, 1]))),
+    CONSTRAINT look_checks_status_check CHECK ((status = ANY (ARRAY['checking'::text, 'passed'::text, 'failed'::text, 'sent_back'::text, 'claimed'::text, 'error'::text, 'superseded'::text])))
+);
+
+
+--
+-- Name: look_check_raise(public.look_checks); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.look_check_raise(p_check public.look_checks) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  case p_check.ref_kind
+    when 'editor_project' then
+      -- Only for the edit that was rendered: an edit made during the check gets its own render and card.
+      if p_check.doc_key = (select public.editor_document_hash(document) from public.editor_projects where clip_id = p_check.ref_id) then
+        perform public.approval_raise(p_check.user_id, 'editor_project', p_check.ref_id);
+        if p_check.order_id is not null then
+          perform public.work_order_wait_founder(p_check.order_id, 'Your video is rendered');
+        end if;
+      end if;
+    when 'short_batch' then
+      update public.short_batches set status = 'waiting_founder' where id = p_check.ref_id and status = 'rendering';
+      if found then
+        perform public.approval_raise(p_check.user_id, 'short_batch', p_check.ref_id);
+        if p_check.order_id is not null then
+          perform public.work_order_wait_founder(p_check.order_id, 'Shorts are ready for you');
+        end if;
+      end if;
+    when 'studio_step' then
+      -- `studio_steps_sync` raises the card when the step turns `waiting`.
+      update public.studio_steps set status = 'waiting' where id = p_check.ref_id and status = 'running';
+      if found and p_check.order_id is not null then
+        perform public.work_order_wait_founder(p_check.order_id, 'Your slideshow is rendered');
+      end if;
+  end case;
+  update public.look_checks set raised_at = now() where id = p_check.id;
+end;
+$$;
+
+
+--
+-- Name: look_check_raise_safe(public.look_checks); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.look_check_raise_safe(p_check public.look_checks) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  perform public.look_check_raise(p_check);
+  return true;
+exception when others then
+  raise warning 'look check % could not raise its card: %', p_check.id, sqlerrm;
+  return false;
+end;
+$$;
+
+
+--
 -- Name: mark_finished(uuid, text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -6952,6 +7529,28 @@ $$;
 
 
 --
+-- Name: my_published_items(timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.my_published_items(p_since timestamp with time zone) RETURNS TABLE(item_id uuid, platform text, idea text, final_text text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select * from public.published_items(public.require_user(), p_since) order by published_at desc limit 500
+$$;
+
+
+--
+-- Name: nonneg(bigint); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.nonneg(p bigint) RETURNS bigint
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$ select case when p is null then null else greatest(0, p) end $$;
+
+
+--
 -- Name: normalize_capture_url(text); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7017,6 +7616,96 @@ begin
     raise exception 'That address is not allowed.' using errcode = '22023';
   end if;
   return v_scheme || '://' || v_host || v_rest;
+end;
+$_$;
+
+
+--
+-- Name: notify_settings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notify_settings (
+    user_id uuid NOT NULL,
+    email_digest boolean DEFAULT true NOT NULL,
+    push boolean DEFAULT true NOT NULL,
+    unsubscribe_token uuid DEFAULT gen_random_uuid() NOT NULL,
+    unsubscribed_at timestamp with time zone,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: notify_settings_for(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notify_settings_for(p_user uuid) RETURNS public.notify_settings
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_row public.notify_settings;
+begin
+  insert into public.notify_settings (user_id) values (p_user) on conflict (user_id) do nothing;
+  select * into v_row from public.notify_settings where user_id = p_user;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: notify_settings_save(boolean, boolean); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.notify_settings_save(p_email_digest boolean, p_push boolean) RETURNS public.notify_settings
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+  v_row public.notify_settings;
+begin
+  if p_email_digest is null or p_push is null then
+    raise exception 'Choose on or off for email and push.' using errcode = '22023';
+  end if;
+  insert into public.notify_settings (user_id, email_digest, push, unsubscribed_at, updated_at)
+  values (v_user, p_email_digest, p_push, case when not p_email_digest then now() end, now())
+  on conflict (user_id) do update
+    set email_digest = excluded.email_digest, push = excluded.push,
+        unsubscribed_at = case when excluded.email_digest then null else coalesce(notify_settings.unsubscribed_at, now()) end,
+        updated_at = now()
+  returning * into v_row;
+  return v_row;
+end;
+$$;
+
+
+--
+-- Name: opportunity_reply_url(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.opportunity_reply_url(p_id uuid, p_url text) RETURNS void
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  v_user uuid := public.require_user();
+  v_opp public.opportunities;
+  v_url text := trim(coalesce(p_url, ''));
+  v_base text;
+begin
+  select * into v_opp from public.opportunities where id = p_id and user_id = v_user and status = 'replied';
+  if not found then
+    raise exception 'Conversation not found.' using errcode = 'P0002';
+  end if;
+  v_base := regexp_replace(v_opp.url, '^https://(www\.|old\.)?reddit\.com', '');
+  if char_length(v_url) > 500
+     or not ((v_opp.platform = 'hn' and v_url ~ '^https://news\.ycombinator\.com/item\?id=[0-9]{1,12}$')
+          or (v_opp.platform = 'reddit' and v_url ~ '^https://(www\.|old\.)?reddit\.com/r/'
+              and position(rtrim(v_base, '/') || '/' in regexp_replace(v_url, '^https://(www\.|old\.)?reddit\.com', '')) = 1)) then
+    raise exception 'Paste the link to your reply in this thread.' using errcode = '22023';
+  end if;
+  update public.cmo_draft_outcomes set outcome_url = v_url
+  where user_id = v_user and department = 'sales' and item_id = p_id and action = 'replied';
 end;
 $_$;
 
@@ -7689,6 +8378,30 @@ $$;
 
 
 --
+-- Name: published_items(uuid, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.published_items(p_user uuid, p_since timestamp with time zone) RETURNS TABLE(item_id uuid, platform text, idea text, final_text text, published_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select p.id, p.platform, p.idea, p.final_text, p.at
+  from (
+    select i.id, i.platform, i.idea, i.final_text, i.status, coalesce(i.published_at, (
+        select max(coalesce(s.published_at, s.publish_at)) from public.schedule_slots s
+        join public.deliverables d on d.id = s.deliverable_id
+        where s.user_id = p_user and s.status = 'published'
+          and ((d.ref_kind = 'content_item' and d.ref_id = i.id)
+            or (d.ref_kind = 'clip' and d.ref_id = i.clip_id and s.platform = public.slot_platform_of(i.platform)))
+      )) as at
+    from public.content_items i
+    where i.user_id = p_user and (i.status = 'published' or (i.department = 'video' and i.clip_id is not null))
+  ) p
+  where p.at is not null and p.at >= p_since
+$$;
+
+
+--
 -- Name: purge_expired_jobs(uuid[]); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -7784,6 +8497,110 @@ begin
       );
     return next v_user;
   end loop;
+end;
+$$;
+
+
+--
+-- Name: push_done(uuid, integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.push_done(p_subscription uuid, p_status integer) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+begin
+  if p_status in (404, 410) then
+    delete from public.push_subscriptions where id = p_subscription;
+    return false;
+  end if;
+  update public.push_subscriptions
+  set last_pushed_at = case when p_status between 200 and 299 then now() else last_pushed_at end,
+      failed_at = case when p_status between 200 and 299 then null else now() end
+  where id = p_subscription;
+  return true;
+end;
+$$;
+
+
+--
+-- Name: push_due(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.push_due(p_limit integer) RETURNS TABLE(subscription_id uuid, user_id uuid, endpoint text, waiting integer)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  select s.id, s.user_id, s.endpoint,
+    (select count(*)::integer from public.approvals a where a.user_id = s.user_id and a.status = 'waiting')
+  from public.push_subscriptions s
+  where public.push_endpoint_allowed(s.endpoint)
+    and not exists (select 1 from public.notify_settings n where n.user_id = s.user_id and not n.push)
+    and exists (select 1 from public.approvals a where a.user_id = s.user_id and a.status = 'waiting'
+                and coalesce(a.released_at, a.created_at) > coalesce(s.last_pushed_at, s.created_at))
+  order by s.user_id
+  limit greatest(1, least(coalesce(p_limit, 200), 1000));
+$$;
+
+
+--
+-- Name: push_endpoint_allowed(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.push_endpoint_allowed(p_endpoint text) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $_$
+  select p_endpoint is not null and char_length(p_endpoint) <= 1000
+    and p_endpoint ~ '^https://(fcm\.googleapis\.com|updates\.push\.services\.mozilla\.com|web\.push\.apple\.com|[a-z0-9-]+\.notify\.windows\.com)/[^\s]+$';
+$_$;
+
+
+--
+-- Name: push_subscribe(text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.push_subscribe(p_endpoint text, p_p256dh text, p_auth text, p_user_agent text) RETURNS uuid
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $_$
+declare
+  v_user uuid := public.require_user();
+  v_id uuid;
+begin
+  if not public.push_endpoint_allowed(p_endpoint) then
+    raise exception 'This browser''s push service is not supported.' using errcode = '22023';
+  end if;
+  if p_p256dh is null or p_p256dh !~ '^[A-Za-z0-9_-]{20,200}={0,2}$' or p_auth is null or p_auth !~ '^[A-Za-z0-9_-]{8,100}={0,2}$' then
+    raise exception 'The push keys are not valid.' using errcode = '22023';
+  end if;
+  if (select count(*) from public.push_subscriptions where user_id = v_user and endpoint <> p_endpoint) >= 10 then
+    raise exception 'Push is on in 10 browsers already. Turn it off in one first.' using errcode = 'P0001';
+  end if;
+  insert into public.push_subscriptions (user_id, endpoint, p256dh, auth, user_agent)
+  values (v_user, p_endpoint, p_p256dh, p_auth, left(p_user_agent, 300))
+  on conflict (endpoint) do update
+    set user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth,
+        user_agent = excluded.user_agent, failed_at = null
+  returning id into v_id;
+  return v_id;
+end;
+$_$;
+
+
+--
+-- Name: push_unsubscribe(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.push_unsubscribe(p_endpoint text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_user uuid := public.require_user();
+begin
+  delete from public.push_subscriptions where endpoint = p_endpoint and user_id = v_user;
+  return found;
 end;
 $$;
 
@@ -9517,6 +10334,32 @@ $$;
 
 
 --
+-- Name: schedule_candidate_times(uuid, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.schedule_candidate_times(p_user uuid, p_platform text) RETURNS text[]
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+  with defaults as (
+    select t, n from jsonb_array_elements_text(public.schedule_rules()->'platforms'->p_platform->'times') with ordinality d(t, n)
+  ),
+  best as (
+    select to_char(make_time(b.hour, 0, 0), 'HH24:MI') as t, row_number() over (order by b.median_views_per_hour desc, b.hour) as n
+    from public.best_slots b where b.user_id = p_user and b.platform = p_platform
+  ),
+  merged as (
+    select t, 0 as pass, n from best
+    union all
+    select t, 1, n from defaults where t not in (select t from best)
+  )
+  select array_agg(t order by pass, n) from (
+    select t, pass, n from merged order by pass, n limit greatest(1, (select count(*) from defaults))
+  ) m
+$$;
+
+
+--
 -- Name: schedule_change(uuid, text, jsonb); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -9713,13 +10556,15 @@ declare
   v_doc text;
   v_image_clip uuid;
   v_image jsonb;
+  v_thread jsonb;
 begin
   select * into v_d from public.deliverables where id = p_deliverable;
   if not found then
     return null;
   end if;
   if v_d.ref_kind = 'content_item' then
-    select coalesce(body->>'text', '') into v_text from public.content_items where id = v_d.ref_id;
+    select coalesce(body->>'text', ''), case when public.thread_valid(body) then body->'thread' end
+    into v_text, v_thread from public.content_items where id = v_d.ref_id;
     -- The post's newest image (P5 B4), as its cover still of the image's document as it is now. Only a post with an
     -- image carries the key, so the hash of a post without one is what it was before P5.
     select i.ref_id into v_image_clip from public.deliverables i
@@ -9739,8 +10584,10 @@ begin
     end if;
     return jsonb_build_object('clip_id', null, 'text', v_text, 'title', null,
       'content_hash', public.approval_hash(jsonb_build_object('text', v_text)
-        || case when v_image is not null then jsonb_build_object('image', v_image->>'object') else '{}'::jsonb end))
-      || case when v_image is not null then jsonb_build_object('image', v_image) else '{}'::jsonb end;
+        || case when v_image is not null then jsonb_build_object('image', v_image->>'object') else '{}'::jsonb end
+        || case when v_thread is not null then jsonb_build_object('thread', v_thread) else '{}'::jsonb end))
+      || case when v_image is not null then jsonb_build_object('image', v_image) else '{}'::jsonb end
+      || case when v_thread is not null then jsonb_build_object('thread', v_thread) else '{}'::jsonb end;
   elsif v_d.ref_kind = 'clip' then
     select public.editor_document_hash(document) into v_doc from public.editor_projects where clip_id = v_d.ref_id;
     select body->>'text', body->>'title' into v_text, v_title
@@ -10006,6 +10853,7 @@ declare
   v_earliest timestamptz := now() + make_interval(mins => (v_rules->>'leadMinutes')::integer);
   v_cap integer := (v_rules->'platforms'->p_platform->>'dailyCap')::integer;
   v_today date := (now() at time zone v_tz)::date;
+  v_times text[] := public.schedule_candidate_times(p_user, p_platform);
   v_parent uuid;
   v_day integer;
   v_time text;
@@ -10018,7 +10866,7 @@ begin
   from public.deliverables d join public.clips c on c.id = d.ref_id
   where d.id = p_deliverable and d.ref_kind = 'clip';
   for v_day in 0 .. (v_rules->>'horizonDays')::integer loop
-    for v_time in select jsonb_array_elements_text(v_rules->'platforms'->p_platform->'times') loop
+    foreach v_time in array v_times loop
       v_at := ((v_today + v_day) + v_time::time) at time zone v_tz;
       continue when v_at < v_earliest;
       continue when exists (select 1 from public.schedule_slots
@@ -10415,6 +11263,7 @@ CREATE FUNCTION public.short_batch_settle(p_batch_id uuid) RETURNS void
     AS $$
 declare
   v_batch public.short_batches;
+  v_files jsonb;
 begin
   select * into v_batch from public.short_batches where id = p_batch_id for update;
   if not found or v_batch.status <> 'rendering' or exists (
@@ -10422,6 +11271,21 @@ begin
     return;
   end if;
   if exists (select 1 from public.shorts where batch_id = v_batch.id and status = 'ready') then
+    -- P6 S4: each ready short's full-size render of its edit as it is now; the batch stays `rendering` while checked.
+    select jsonb_agg(jsonb_build_object('path', r.output_path, 'clip_id', s.short_clip_id) order by s.source_start, s.id)
+    into v_files
+    from public.shorts s
+    left join public.editor_projects p on p.clip_id = s.short_clip_id
+    left join lateral (
+      select t.output_path from public.tasks t
+      where t.clip_id = s.short_clip_id and t.kind = 'render_document' and t.status = 'done'
+        and t.settings_hash = public.editor_document_hash(p.document)
+      order by t.finished_at desc nulls last, t.created_at desc limit 1
+    ) r on true
+    where s.batch_id = v_batch.id and s.status = 'ready';
+    if public.look_check_begin(v_batch.user_id, 'short_batch', v_batch.id, v_batch.order_id, v_batch.parent_hash, v_files) then
+      return;
+    end if;
     update public.short_batches set status = 'waiting_founder' where id = v_batch.id;
     perform public.approval_raise(v_batch.user_id, 'short_batch', v_batch.id);
     if v_batch.order_id is not null then
@@ -10500,6 +11364,16 @@ CREATE FUNCTION public.slice_transcript(p_body jsonb, p_in numeric, p_out numeri
     where kept.n > 0
   ) parts;
 $$;
+
+
+--
+-- Name: slot_platform_of(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.slot_platform_of(p_label text) RETURNS text
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$ select replace(public.platform_profile_id(p_label), '_caption', '') $$;
 
 
 --
@@ -10791,6 +11665,86 @@ CREATE FUNCTION public.studio_brain_call() RETURNS boolean
     AS $$
 begin
   return coalesce(auth.jwt()->>'opencmo_actor', '') = 'brain';
+end;
+$$;
+
+
+--
+-- Name: studio_look_sendback_unchanged(uuid); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.studio_look_sendback_unchanged(p_check uuid) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_check public.look_checks;
+begin
+  update public.look_checks set status = 'failed', settled_at = now()
+  where id = p_check and status = 'claimed'
+  returning * into v_check;
+  if not found then
+    return false;
+  end if;
+  perform public.look_check_raise(v_check);
+  return true;
+end;
+$$;
+
+
+--
+-- Name: studio_look_sendbacks_claim(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.studio_look_sendbacks_claim(p_limit integer) RETURNS TABLE(check_id uuid, ref_kind text, ref_id uuid, user_id uuid, order_id uuid, look jsonb)
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_stale public.look_checks;
+begin
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status = 'claimed' and c.claimed_at < now() - interval '1 hour'
+      and not exists (select 1 from public.look_checks r where r.ref_kind = c.ref_kind
+                      and coalesce(r.order_id, r.ref_id) = coalesce(c.order_id, c.ref_id) and r.round = 1
+                      and r.status <> 'superseded')
+    for update skip locked
+  loop
+    update public.look_checks set status = 'failed', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  -- Five minutes of grace, so a settle still in flight is never raced.
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status = 'checking' and c.created_at < now() - interval '5 minutes'
+      and (c.task_id is null or exists (select 1 from public.tasks t where t.id = c.task_id
+                                        and t.status in ('done', 'failed', 'cancelled')))
+    order by c.created_at limit 50
+    for update skip locked
+  loop
+    update public.look_checks set status = 'error', settled_at = now() where id = v_stale.id returning * into v_stale;
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  for v_stale in
+    select c.* from public.look_checks c
+    where c.status in ('passed', 'failed', 'error') and c.raised_at is null and c.settled_at < now() - interval '5 minutes'
+    order by c.settled_at limit 50
+    for update skip locked
+  loop
+    perform public.look_check_raise_safe(v_stale);
+  end loop;
+  return query
+  with picked as (
+    select c.id from public.look_checks c
+    where c.status = 'sent_back'
+    order by c.created_at
+    limit greatest(1, least(coalesce(p_limit, 10), 50))
+    for update skip locked
+  )
+  update public.look_checks c set status = 'claimed', claimed_at = now()
+  from picked where c.id = picked.id
+  returning c.id, c.ref_kind, c.ref_id, c.user_id, c.order_id, c.result;
 end;
 $$;
 
@@ -11188,6 +12142,11 @@ begin
       perform public.work_order_move(v_step.order_id, 'failed', null, jsonb_build_object('code', 'document_changed',
         'message', 'The slideshow changed while it was rendering.', 'retryable', true));
     end if;
+    return;
+  end if;
+  -- P6 S4: the look check reads the MP4 first; `look_check_raise` turns the step `waiting` when it is done.
+  if public.look_check_begin(v_step.user_id, 'studio_step', v_step.id, v_step.order_id, v_hash,
+      jsonb_build_array(jsonb_build_object('path', v_mp4.output_path, 'clip_id', v_step.clip_id))) then
     return;
   end if;
   -- `studio_steps_sync` raises the card when the step turns `waiting`.
@@ -11648,6 +12607,42 @@ $$;
 
 
 --
+-- Name: tasks_look_check_settle(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.tasks_look_check_settle() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public'
+    AS $$
+declare
+  v_check public.look_checks;
+  v_pass boolean;
+begin
+  if new.kind <> 'look_check' or new.status not in ('done', 'failed', 'cancelled') or old.status = new.status then
+    return new;
+  end if;
+  select * into v_check from public.look_checks where task_id = new.id and status = 'checking' for update;
+  if not found then
+    return new;
+  end if;
+  -- The status settles outside the raise's subtransaction: a failed raise must not leave the check `checking`.
+  v_pass := case when new.status = 'done' and jsonb_typeof(new.output->'pass') = 'boolean' then (new.output->>'pass')::boolean end;
+  update public.look_checks
+  set status = case when v_pass is null then 'error' when v_pass then 'passed' when round = 0 then 'sent_back' else 'failed' end,
+      result = case when new.status = 'done' and jsonb_typeof(new.output) = 'object' and octet_length(new.output::text) <= 65536
+                    then new.output end,
+      settled_at = now()
+  where id = v_check.id
+  returning * into v_check;
+  if v_check.status <> 'sent_back' then
+    perform public.look_check_raise_safe(v_check);
+  end if;
+  return new;
+end;
+$$;
+
+
+--
 -- Name: tasks_studio_rules(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -11709,8 +12704,12 @@ begin
     end if;
     if new.status = 'done' then
       if new.settings_hash = (select public.editor_document_hash(document) from public.editor_projects where clip_id = new.clip_id) then
-        perform public.approval_raise(v_user, 'editor_project', new.clip_id);
-        perform public.work_order_wait_founder(v_order, 'Your video is rendered');
+        -- P6 S4: the look check reads the full-size export first; it raises card 3 when it is done.
+        if not public.look_check_begin(v_user, 'editor_project', new.clip_id, v_order, new.settings_hash,
+            jsonb_build_array(jsonb_build_object('path', new.output_path, 'clip_id', new.clip_id))) then
+          perform public.approval_raise(v_user, 'editor_project', new.clip_id);
+          perform public.work_order_wait_founder(v_order, 'Your video is rendered');
+        end if;
       end if;
     else
       perform public.work_order_move(v_order, 'failed', null, jsonb_build_object('code', 'render_failed',
@@ -11721,6 +12720,22 @@ begin
   end;
   return new;
 end;
+$$;
+
+
+--
+-- Name: thread_valid(jsonb); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.thread_valid(p_body jsonb) RETURNS boolean
+    LANGUAGE sql IMMUTABLE
+    SET search_path TO 'public'
+    AS $$
+  select jsonb_typeof(p_body->'thread') = 'array'
+    and jsonb_array_length(p_body->'thread') between 5 and 8
+    and not exists (select 1 from jsonb_array_elements(p_body->'thread') p
+                    where jsonb_typeof(p) <> 'string' or char_length(p #>> '{}') not between 1 and 280)
+    and p_body->'thread'->>0 = p_body->>'text';
 $$;
 
 
@@ -12509,7 +13524,7 @@ declare
   v_order public.work_orders;
   v_ref_kind text := case new.ref_kind when 'content_item' then 'content_item' when 'opportunity' then 'opportunity' end;
 begin
-  if old.status <> 'waiting' or new.status = 'waiting' or v_ref_kind is null then
+  if old.status not in ('waiting', 'held') or new.status in ('waiting', 'held') or v_ref_kind is null then
     return new;
   end if;
   -- A cancelled card is not a decision. `approval_raise` cancels the old card before it inserts the new one, so a
@@ -12835,6 +13850,33 @@ $$;
 
 
 --
+-- Name: account_metrics; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account_metrics (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    social_account_id uuid,
+    platform text NOT NULL,
+    handle text NOT NULL,
+    day date NOT NULL,
+    followers bigint,
+    impressions bigint,
+    engagements bigint,
+    video_views bigint,
+    posts integer,
+    measured_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT account_metrics_engagements_check CHECK ((engagements >= 0)),
+    CONSTRAINT account_metrics_followers_check CHECK ((followers >= 0)),
+    CONSTRAINT account_metrics_handle_check CHECK (((char_length(handle) >= 1) AND (char_length(handle) <= 100))),
+    CONSTRAINT account_metrics_impressions_check CHECK ((impressions >= 0)),
+    CONSTRAINT account_metrics_platform_check CHECK ((platform = ANY (ARRAY['x'::text, 'threads'::text, 'linkedin'::text, 'tiktok'::text, 'youtube'::text, 'instagram'::text]))),
+    CONSTRAINT account_metrics_posts_check CHECK ((posts >= 0)),
+    CONSTRAINT account_metrics_video_views_check CHECK ((video_views >= 0))
+);
+
+
+--
 -- Name: agent_messages; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12912,6 +13954,24 @@ CREATE TABLE public.api_keys (
 
 
 --
+-- Name: best_slots; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.best_slots (
+    user_id uuid NOT NULL,
+    platform text NOT NULL,
+    hour smallint NOT NULL,
+    median_views_per_hour double precision NOT NULL,
+    posts integer NOT NULL,
+    computed_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT best_slots_hour_check CHECK (((hour >= 0) AND (hour <= 23))),
+    CONSTRAINT best_slots_median_views_per_hour_check CHECK ((median_views_per_hour >= (0)::double precision)),
+    CONSTRAINT best_slots_platform_check CHECK ((platform = ANY (ARRAY['x'::text, 'threads'::text, 'linkedin'::text, 'tiktok'::text, 'youtube'::text, 'instagram'::text]))),
+    CONSTRAINT best_slots_posts_check CHECK ((posts >= 1))
+);
+
+
+--
 -- Name: caption_translations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -12926,6 +13986,20 @@ CREATE TABLE public.caption_translations (
     CONSTRAINT caption_translations_credits_check CHECK ((credits > 0)),
     CONSTRAINT caption_translations_hash_check CHECK (((hash IS NULL) OR (hash ~ '^[0-9a-f]{64}$'::text))),
     CONSTRAINT caption_translations_status_check CHECK ((status = ANY (ARRAY['charged'::text, 'done'::text, 'refunded'::text])))
+);
+
+
+--
+-- Name: card_budget; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.card_budget (
+    user_id uuid NOT NULL,
+    day date NOT NULL,
+    raised integer DEFAULT 0 NOT NULL,
+    held integer DEFAULT 0 NOT NULL,
+    CONSTRAINT card_budget_held_check CHECK ((held >= 0)),
+    CONSTRAINT card_budget_raised_check CHECK ((raised >= 0))
 );
 
 
@@ -12949,11 +14023,20 @@ CREATE TABLE public.cmo_draft_outcomes (
     platform text,
     voice_note_deleted_at timestamp with time zone,
     mentioned_product boolean,
+    outcome_url text,
+    outcome_votes integer,
+    outcome_replies integer,
+    outcome_checked_at timestamp with time zone,
+    outcome_status text,
     CONSTRAINT cmo_draft_outcomes_action_check CHECK ((action = ANY (ARRAY['approve'::text, 'skip'::text, 'replied'::text, 'dismissed'::text]))),
     CONSTRAINT cmo_draft_outcomes_chosen_version_check CHECK (((chosen_version >= 0) AND (chosen_version <= 2))),
     CONSTRAINT cmo_draft_outcomes_department_check CHECK ((department = ANY (ARRAY['post'::text, 'sales'::text]))),
     CONSTRAINT cmo_draft_outcomes_edit_mode_check CHECK ((edit_mode = ANY (ARRAY['NO_MEANINGFUL_EDIT'::text, 'TOO_SALESY'::text, 'WRONG_VOICE'::text, 'INVENTED_CLAIM'::text, 'TOO_LONG'::text, 'HOOK_REWRITTEN'::text, 'CTA_REMOVED'::text, 'FULL_REWRITE'::text]))),
     CONSTRAINT cmo_draft_outcomes_model_check CHECK ((char_length(model) <= 100)),
+    CONSTRAINT cmo_draft_outcomes_outcome_replies_check CHECK (((outcome_replies >= 0) AND (outcome_replies <= 1000000))),
+    CONSTRAINT cmo_draft_outcomes_outcome_status_check CHECK ((outcome_status = ANY (ARRAY['found'::text, 'not_found'::text, 'gone'::text]))),
+    CONSTRAINT cmo_draft_outcomes_outcome_url_check CHECK (((outcome_url ~ '^https://'::text) AND (char_length(outcome_url) <= 500))),
+    CONSTRAINT cmo_draft_outcomes_outcome_votes_check CHECK (((outcome_votes >= '-100000'::integer) AND (outcome_votes <= 10000000))),
     CONSTRAINT cmo_draft_outcomes_platform_check CHECK (((platform IS NULL) OR (public.platform_profile(platform) IS NOT NULL))),
     CONSTRAINT cmo_draft_outcomes_prompt_version_check CHECK ((char_length(prompt_version) <= 40)),
     CONSTRAINT cmo_draft_outcomes_similarity_check CHECK (((similarity >= (0)::double precision) AND (similarity <= (1)::double precision)))
@@ -13096,6 +14179,29 @@ CREATE TABLE public.editor_transcripts (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT editor_transcripts_body_check CHECK ((octet_length(body) < 524288)),
     CONSTRAINT editor_transcripts_hash_check CHECK ((hash ~ '^[0-9a-f]{64}$'::text))
+);
+
+
+--
+-- Name: email_log; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.email_log (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    kind text NOT NULL,
+    day date NOT NULL,
+    approval_ids uuid[] NOT NULL,
+    status text DEFAULT 'claimed'::text NOT NULL,
+    provider_id text,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    sent_at timestamp with time zone,
+    CONSTRAINT email_log_approval_ids_check CHECK (((cardinality(approval_ids) >= 1) AND (cardinality(approval_ids) <= 50))),
+    CONSTRAINT email_log_error_check CHECK ((char_length(error) <= 500)),
+    CONSTRAINT email_log_kind_check CHECK ((kind = ANY (ARRAY['digest'::text, 'expiring'::text]))),
+    CONSTRAINT email_log_provider_id_check CHECK ((char_length(provider_id) <= 100)),
+    CONSTRAINT email_log_status_check CHECK ((status = ANY (ARRAY['claimed'::text, 'sent'::text, 'failed'::text])))
 );
 
 
@@ -13322,14 +14428,20 @@ CREATE TABLE public.post_metrics (
     user_id uuid NOT NULL,
     item_id uuid NOT NULL,
     url text NOT NULL,
-    views bigint DEFAULT 0 NOT NULL,
-    likes bigint DEFAULT 0 NOT NULL,
-    replies bigint DEFAULT 0 NOT NULL,
-    reposts bigint DEFAULT 0 NOT NULL,
+    views bigint,
+    likes bigint,
+    replies bigint,
+    reposts bigint,
     measured_at timestamp with time zone DEFAULT now() NOT NULL,
+    source text DEFAULT 'public'::text NOT NULL,
+    impressions bigint,
+    engagements bigint,
+    CONSTRAINT post_metrics_engagements_check CHECK ((engagements >= 0)),
+    CONSTRAINT post_metrics_impressions_check CHECK ((impressions >= 0)),
     CONSTRAINT post_metrics_likes_check CHECK ((likes >= 0)),
     CONSTRAINT post_metrics_replies_check CHECK ((replies >= 0)),
     CONSTRAINT post_metrics_reposts_check CHECK ((reposts >= 0)),
+    CONSTRAINT post_metrics_source_check CHECK ((source = ANY (ARRAY['public'::text, 'zernio'::text]))),
     CONSTRAINT post_metrics_url_check CHECK ((char_length(url) <= 500)),
     CONSTRAINT post_metrics_views_check CHECK ((views >= 0))
 );
@@ -13369,6 +14481,27 @@ CREATE TABLE public.projects (
     kind text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT projects_kind_check CHECK ((kind = ANY (ARRAY['clip'::text, 'edit'::text])))
+);
+
+
+--
+-- Name: push_subscriptions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.push_subscriptions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    user_id uuid NOT NULL,
+    endpoint text NOT NULL,
+    p256dh text NOT NULL,
+    auth text NOT NULL,
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    failed_at timestamp with time zone,
+    last_pushed_at timestamp with time zone,
+    CONSTRAINT push_subscriptions_auth_check CHECK ((auth ~ '^[A-Za-z0-9_-]{8,100}={0,2}$'::text)),
+    CONSTRAINT push_subscriptions_endpoint_check CHECK (public.push_endpoint_allowed(endpoint)),
+    CONSTRAINT push_subscriptions_p256dh_check CHECK ((p256dh ~ '^[A-Za-z0-9_-]{20,200}={0,2}$'::text)),
+    CONSTRAINT push_subscriptions_user_agent_check CHECK ((char_length(user_agent) <= 300))
 );
 
 
@@ -13638,6 +14771,22 @@ ALTER TABLE ONLY public.storage_deletions ALTER COLUMN id SET DEFAULT nextval('p
 
 
 --
+-- Name: account_metrics account_metrics_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_metrics
+    ADD CONSTRAINT account_metrics_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: account_metrics account_metrics_user_id_platform_handle_day_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_metrics
+    ADD CONSTRAINT account_metrics_user_id_platform_handle_day_key UNIQUE (user_id, platform, handle, day);
+
+
+--
 -- Name: agent_messages agent_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13742,6 +14891,14 @@ ALTER TABLE ONLY public.artifacts
 
 
 --
+-- Name: best_slots best_slots_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.best_slots
+    ADD CONSTRAINT best_slots_pkey PRIMARY KEY (user_id, platform, hour);
+
+
+--
 -- Name: brand_kits brand_kits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13755,6 +14912,14 @@ ALTER TABLE ONLY public.brand_kits
 
 ALTER TABLE ONLY public.caption_translations
     ADD CONSTRAINT caption_translations_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: card_budget card_budget_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.card_budget
+    ADD CONSTRAINT card_budget_pkey PRIMARY KEY (user_id, day);
 
 
 --
@@ -13950,6 +15115,14 @@ ALTER TABLE ONLY public.editor_transcripts
 
 
 --
+-- Name: email_log email_log_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_log
+    ADD CONSTRAINT email_log_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: generations generations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -13963,6 +15136,14 @@ ALTER TABLE ONLY public.generations
 
 ALTER TABLE ONLY public.jobs
     ADD CONSTRAINT jobs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: look_checks look_checks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.look_checks
+    ADD CONSTRAINT look_checks_pkey PRIMARY KEY (id);
 
 
 --
@@ -14019,6 +15200,22 @@ ALTER TABLE ONLY public.media_assets
 
 ALTER TABLE ONLY public.media_transcripts
     ADD CONSTRAINT media_transcripts_pkey PRIMARY KEY (asset_id);
+
+
+--
+-- Name: notify_settings notify_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notify_settings
+    ADD CONSTRAINT notify_settings_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: notify_settings notify_settings_unsubscribe_token_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notify_settings
+    ADD CONSTRAINT notify_settings_unsubscribe_token_key UNIQUE (unsubscribe_token);
 
 
 --
@@ -14131,6 +15328,22 @@ ALTER TABLE ONLY public.projects
 
 ALTER TABLE ONLY public.projects
     ADD CONSTRAINT projects_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: push_subscriptions push_subscriptions_endpoint_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.push_subscriptions
+    ADD CONSTRAINT push_subscriptions_endpoint_key UNIQUE (endpoint);
+
+
+--
+-- Name: push_subscriptions push_subscriptions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.push_subscriptions
+    ADD CONSTRAINT push_subscriptions_pkey PRIMARY KEY (id);
 
 
 --
@@ -14350,6 +15563,13 @@ ALTER TABLE ONLY public.zernio_receipts
 
 
 --
+-- Name: account_metrics_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX account_metrics_user_idx ON public.account_metrics USING btree (user_id, day DESC);
+
+
+--
 -- Name: agent_sessions_clip_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -14378,10 +15598,17 @@ CREATE INDEX api_keys_user_idx ON public.api_keys USING btree (user_id, created_
 
 
 --
+-- Name: approvals_held_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX approvals_held_idx ON public.approvals USING btree (held_until) WHERE (status = 'held'::text);
+
+
+--
 -- Name: approvals_one_waiting; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE UNIQUE INDEX approvals_one_waiting ON public.approvals USING btree (ref_kind, ref_id) WHERE (status = 'waiting'::text);
+CREATE UNIQUE INDEX approvals_one_waiting ON public.approvals USING btree (ref_kind, ref_id) WHERE (status = ANY (ARRAY['waiting'::text, 'held'::text]));
 
 
 --
@@ -14623,6 +15850,20 @@ CREATE INDEX editor_transcripts_clip_created_idx ON public.editor_transcripts US
 
 
 --
+-- Name: email_log_one_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX email_log_one_digest ON public.email_log USING btree (user_id, day) WHERE (kind = 'digest'::text);
+
+
+--
+-- Name: email_log_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_log_user_idx ON public.email_log USING btree (user_id, created_at DESC);
+
+
+--
 -- Name: generations_after_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -14690,6 +15931,27 @@ CREATE INDEX jobs_user_created_idx ON public.jobs USING btree (user_id, created_
 --
 
 CREATE INDEX jobs_user_keyset_idx ON public.jobs USING btree (user_id, created_at DESC, id DESC);
+
+
+--
+-- Name: look_checks_one_round; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX look_checks_one_round ON public.look_checks USING btree (ref_kind, COALESCE(order_id, ref_id), round) WHERE (status <> 'superseded'::text);
+
+
+--
+-- Name: look_checks_sent_back_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX look_checks_sent_back_idx ON public.look_checks USING btree (created_at) WHERE (status = ANY (ARRAY['sent_back'::text, 'claimed'::text]));
+
+
+--
+-- Name: look_checks_task_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX look_checks_task_idx ON public.look_checks USING btree (task_id);
 
 
 --
@@ -14795,6 +16057,13 @@ CREATE UNIQUE INDEX profiles_polar_customer_unique ON public.profiles USING btre
 --
 
 CREATE INDEX projects_user_created_idx ON public.projects USING btree (user_id, created_at DESC, id DESC);
+
+
+--
+-- Name: push_subscriptions_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX push_subscriptions_user_idx ON public.push_subscriptions USING btree (user_id);
 
 
 --
@@ -15183,6 +16452,13 @@ CREATE TRIGGER studio_steps_sync AFTER INSERT OR DELETE OR UPDATE ON public.stud
 
 
 --
+-- Name: tasks tasks_look_check_settle; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER tasks_look_check_settle AFTER UPDATE OF status ON public.tasks FOR EACH ROW EXECUTE FUNCTION public.tasks_look_check_settle();
+
+
+--
 -- Name: tasks tasks_record_storage_deletions; Type: TRIGGER; Schema: public; Owner: -
 --
 
@@ -15243,6 +16519,22 @@ CREATE TRIGGER work_orders_follow_approval AFTER UPDATE OF status ON public.appr
 --
 
 CREATE TRIGGER work_orders_follow_run AFTER INSERT OR UPDATE OF status ON public.cmo_runs FOR EACH ROW EXECUTE FUNCTION public.work_orders_follow_run();
+
+
+--
+-- Name: account_metrics account_metrics_social_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_metrics
+    ADD CONSTRAINT account_metrics_social_account_id_fkey FOREIGN KEY (social_account_id) REFERENCES public.social_accounts(id) ON DELETE SET NULL;
+
+
+--
+-- Name: account_metrics account_metrics_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account_metrics
+    ADD CONSTRAINT account_metrics_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -15342,6 +16634,14 @@ ALTER TABLE ONLY public.artifacts
 
 
 --
+-- Name: best_slots best_slots_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.best_slots
+    ADD CONSTRAINT best_slots_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: brand_kits brand_kits_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15363,6 +16663,14 @@ ALTER TABLE ONLY public.caption_translations
 
 ALTER TABLE ONLY public.caption_translations
     ADD CONSTRAINT caption_translations_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: card_budget card_budget_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.card_budget
+    ADD CONSTRAINT card_budget_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -15606,6 +16914,14 @@ ALTER TABLE ONLY public.editor_transcripts
 
 
 --
+-- Name: email_log email_log_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.email_log
+    ADD CONSTRAINT email_log_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: generations generations_after_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15662,6 +16978,30 @@ ALTER TABLE ONLY public.jobs
 
 
 --
+-- Name: look_checks look_checks_order_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.look_checks
+    ADD CONSTRAINT look_checks_order_id_fkey FOREIGN KEY (order_id) REFERENCES public.work_orders(id) ON DELETE SET NULL;
+
+
+--
+-- Name: look_checks look_checks_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.look_checks
+    ADD CONSTRAINT look_checks_task_id_fkey FOREIGN KEY (task_id) REFERENCES public.tasks(id) ON DELETE SET NULL;
+
+
+--
+-- Name: look_checks look_checks_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.look_checks
+    ADD CONSTRAINT look_checks_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: marketing_documents marketing_documents_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -15715,6 +17055,14 @@ ALTER TABLE ONLY public.media_transcripts
 
 ALTER TABLE ONLY public.media_transcripts
     ADD CONSTRAINT media_transcripts_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notify_settings notify_settings_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notify_settings
+    ADD CONSTRAINT notify_settings_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -15827,6 +17175,14 @@ ALTER TABLE ONLY public.projects
 
 ALTER TABLE ONLY public.projects
     ADD CONSTRAINT projects_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+
+
+--
+-- Name: push_subscriptions push_subscriptions_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.push_subscriptions
+    ADD CONSTRAINT push_subscriptions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
 
 
 --
@@ -16142,6 +17498,12 @@ ALTER TABLE ONLY public.zernio_profiles
 
 
 --
+-- Name: account_metrics; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.account_metrics ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: agent_messages; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -16202,6 +17564,12 @@ ALTER TABLE public.approvals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.artifacts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: best_slots; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.best_slots ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: brand_kits; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -16212,6 +17580,12 @@ ALTER TABLE public.brand_kits ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.caption_translations ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: card_budget; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.card_budget ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: clips; Type: ROW SECURITY; Schema: public; Owner: -
@@ -16316,6 +17690,12 @@ ALTER TABLE public.editor_skills ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.editor_transcripts ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: email_log; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.email_log ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: generations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -16326,6 +17706,12 @@ ALTER TABLE public.generations ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.jobs ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: look_checks; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.look_checks ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: marketing_documents; Type: ROW SECURITY; Schema: public; Owner: -
@@ -16363,6 +17749,12 @@ ALTER TABLE public.media_assets ENABLE ROW LEVEL SECURITY;
 --
 
 ALTER TABLE public.media_transcripts ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: notify_settings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.notify_settings ENABLE ROW LEVEL SECURITY;
 
 --
 -- Name: operation_log; Type: ROW SECURITY; Schema: public; Owner: -
@@ -16431,6 +17823,12 @@ ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
 
 --
+-- Name: push_subscriptions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+--
 -- Name: rate_limits; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -16451,10 +17849,31 @@ CREATE POLICY "read own CMO lessons" ON public.cmo_lessons FOR SELECT TO authent
 
 
 --
+-- Name: account_metrics read own account metrics; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own account metrics" ON public.account_metrics FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
 -- Name: approvals read own approvals; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "read own approvals" ON public.approvals FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: best_slots read own best slots; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own best slots" ON public.best_slots FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: card_budget read own card budget; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own card budget" ON public.card_budget FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --
@@ -16479,6 +17898,13 @@ CREATE POLICY "read own draft outcomes" ON public.cmo_draft_outcomes FOR SELECT 
 
 
 --
+-- Name: email_log read own email log; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own email log" ON public.email_log FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
 -- Name: cmo_inbox read own inbox; Type: POLICY; Schema: public; Owner: -
 --
 
@@ -16486,10 +17912,24 @@ CREATE POLICY "read own inbox" ON public.cmo_inbox FOR SELECT TO authenticated U
 
 
 --
+-- Name: look_checks read own look checks; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own look checks" ON public.look_checks FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
 -- Name: media_transcripts read own media transcripts; Type: POLICY; Schema: public; Owner: -
 --
 
 CREATE POLICY "read own media transcripts" ON public.media_transcripts FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: notify_settings read own notify settings; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own notify settings" ON public.notify_settings FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --
@@ -16511,6 +17951,13 @@ CREATE POLICY "read own order usage" ON public.work_order_usage FOR SELECT TO au
 --
 
 CREATE POLICY "read own page captures" ON public.page_captures FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
+
+
+--
+-- Name: push_subscriptions read own push subscriptions; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY "read own push subscriptions" ON public.push_subscriptions FOR SELECT TO authenticated USING ((user_id = ( SELECT auth.uid() AS uid)));
 
 
 --

@@ -103,7 +103,8 @@ export async function subredditDetails(subreddit: string, budget?: ScBudget): Pr
 }
 
 /** Bài + comment (đọc CẢ comment: nhu cầu thật hay nằm ở đó — comment-mining). */
-export async function redditThread(url: string, budget?: ScBudget): Promise<{ post: RedditPost | null; comments: RedditComment[] }> {
+/** `limit`: the top comments by score kept (20 for reading a thread; more to find one's own reply, P6 R3). */
+export async function redditThread(url: string, budget?: ScBudget, limit = 20): Promise<{ post: RedditPost | null; comments: RedditComment[] }> {
   if (!/^https:\/\/(www\.|old\.)?reddit\.com\/r\/[^/]+\/comments\//.test(url)) throw new SocialReadError("Use a full reddit.com thread link.");
   if (scFakeAllowed()) {
     const [post] = await redditSearch("invoices", budget);
@@ -119,10 +120,15 @@ export async function redditThread(url: string, budget?: ScBudget): Promise<{ po
   const root = json && typeof json === "object" ? (json as Record<string, unknown>) : {};
   const postItem = itemsOf(root, ["post"])[0] ?? (root.post && typeof root.post === "object" ? (root.post as Record<string, unknown>) : null);
   const comments = itemsOf(root, ["comments", "data.comments"])
-    .map((c) => ({ author: str(c.author), text: str(c.body ?? c.text).replace(/\s+/g, " ").trim().slice(0, 600), score: num(c.score ?? c.ups) }))
+    .map((c) => ({
+      author: str(c.author),
+      text: str(c.body ?? c.text).replace(/\s+/g, " ").trim().slice(0, 600),
+      score: num(c.score ?? c.ups),
+      ...(Array.isArray(c.replies) ? { replies: c.replies.length } : typeof c.num_replies === "number" ? { replies: num(c.num_replies) } : {}),
+    }))
     .filter((c) => c.text)
     .sort((a, b) => b.score - a.score)
-    .slice(0, 20);
+    .slice(0, Math.max(1, Math.min(limit, 200)));
   return { post: postItem ? redditPost(postItem) : null, comments };
 }
 

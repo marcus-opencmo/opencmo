@@ -9,6 +9,8 @@ import assert from "node:assert/strict";
 import { ScriptSnapshotSchema, PriceSnapshotSchema } from "@/lib/screens/approval-card";
 
 import { pendingVoiceovers, voiceRowMatches } from "./finish";
+import { LOOK_QUESTION_IDS, LookResultSchema, lookNextStep, lookNote, lookSendBack } from "./look-check";
+import { redoable } from "./look-redo";
 import { renderRequestId } from "./render";
 import { stepCard } from "./steps";
 import { mayCall, VideoBriefSchema } from "./types";
@@ -96,4 +98,22 @@ assert.ok(!voiceRowMatches(voice, { model: "el-voice", spec: { ...spec, seed: 8 
 assert.ok(!voiceRowMatches(voice, { model: "other", spec }), "another model");
 assert.ok(!voiceRowMatches(voice, { model: "el-voice", spec: { ...spec, prompt: "Other words." } }));
 
-console.log("studio adapter: access, brief, cards, render ids and finishVideo matching correct");
+// Look check (P6 S4): the full-size export only, one send-back, then the card with the note.
+const clip = "00000000-0000-4000-8000-000000000001";
+const answers = LOOK_QUESTION_IDS.map((id) => ({ id, pass: true, why: "" }));
+const ok = LookResultSchema.parse({ pass: true, round: 0, note: "", files: [{ path: `u/${clip}/t.mp4`, clipId: clip, pass: true, answers, frameTimes: [0, 1.5] }] });
+assert.equal(lookNextStep(ok), "raise_card");
+assert.equal(lookNote(ok), "");
+assert.throws(() => LookResultSchema.parse({ ...ok, files: [{ ...ok.files[0], path: `u/${clip}/t.preview.mp4` }] }), "never the preview file");
+assert.throws(() => LookResultSchema.parse({ ...ok, files: [{ ...ok.files[0], frameTimes: Array.from({ length: 13 }, (_, i) => i) }] }), "at most 12 frames");
+const black = { ...ok.files[0], pass: false, answers: answers.map((a) => (a.id === "no_black_frames" ? { ...a, pass: false, why: "A black stretch of 1.2 s", at: 65 } : a.id === "text_readable" ? { ...a, pass: null } : a)) };
+const failed = LookResultSchema.parse({ pass: false, round: 0, note: "", files: [black] });
+assert.equal(lookNextStep(failed), "send_back");
+assert.equal(lookNextStep({ ...failed, round: 1 }), "raise_card", "only one send-back");
+assert.deepEqual(lookSendBack("finished_video", clip, failed).issues, [{ clipId: clip, path: black.path, reasons: ["A black stretch of 1.2 s"] }], "an unanswered question is not a reason");
+assert.equal(lookNote(failed), "Look check: A black stretch of 1.2 s (at 1:05).");
+assert.ok(redoable({ kind: "finished_video" }, ["sound_present"]), "a late voice-over can be attached");
+assert.ok(!redoable({ kind: "finished_video" }, ["no_black_frames"]), "nothing the squad can change: the card shows the note");
+assert.ok(!redoable({ kind: "shorts_batch" }, ["sound_present"]) && !redoable({ kind: "slideshow" }, ["text_readable"]));
+
+console.log("studio adapter: access, brief, cards, render ids, finishVideo matching and the look check rules correct");

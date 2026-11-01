@@ -240,6 +240,8 @@ export function ApprovalCard({
   const actions: Action[] = (() => {
     switch (card.body.kind) {
       case "post":
+        // A thread (P6 W4) is approved as written: one edited post would no longer match the thread it opens.
+        if (card.body.platforms.some((p) => p.thread)) return [primary("Approve thread"), ...declineAction];
         return [primary(editing ? "Approve edit" : "Approve"), editAction(), ...declineAction];
       case "reply":
         return [
@@ -364,6 +366,13 @@ export function ApprovalCard({
           )}
 
           {foot ? <div className="v2-card-meta">{foot}</div> : null}
+
+          {"lookNote" in card.body && card.body.lookNote ? (
+            <p className="v2-card-state is-expired" data-testid="look-note">
+              <b>Look check</b>
+              <span>{card.body.lookNote.replace(/^look check:\s*/i, "").replace(/^./, (c) => c.toUpperCase())}</span>
+            </p>
+          ) : null}
 
           {card.body.kind === "schedule" && card.body.lastError && !card.problem && card.status === "waiting" && card.body.state !== "waiting" ? (
             <p className={`v2-card-state ${card.body.state === "failed" || card.body.state === "unconfirmed" ? "is-failed" : "is-expired"}`}>

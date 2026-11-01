@@ -1,0 +1,87 @@
+{
+ "$comment": "Recorded from hn.algolia.com/api/v1/search?query=invoice late payments&tags=story on 2026-10-31, trimmed to the fields hn.ts reads. Public data.",
+ "hits": [
+  {
+   "objectID": "8234694",
+   "title": "Ask HN: What are some tips for handling a late invoices",
+   "author": "failedbyfear",
+   "story_text": "I&#x27;ve been working with a startup for several months.  Initially things were going well, but an investor backed out at the last minute a couple months ago. At that point they stopped paying contractors and are 60 days overdue on invoices for several people (including me).<p>They are still paying the employees and they still have a bunch of work that they want me to do. I don&#x27;t mind helping out and am willing to &quot;loan&quot; them some money if they start paying me for future work. The COO and controller have been ignoring my emails and calls about payment.<p>Unfortunately I did not put any clauses on my invoices about due dates or late payment fees.<p>Has anyone had success in working through this type of situation or is it best to just write them off and walk away?",
+   "url": null,
+   "points": 5,
+   "num_comments": 6,
+   "created_at": "2014-08-27T21:01:40Z",
+   "_tags": [
+    "story",
+    "author_failedbyfear",
+    "story_8234694",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "8032114",
+   "title": "What to do when the client is 2 days late on payment?",
+   "author": "Apane",
+   "story_text": "So, I&#x27;ve issued the invoice last Monday, it is now the following Monday. Bare in mind, there is a clause in the contract that states they have 5 days to pay the invoice otherwise they will be charged additional percentage per day late.<p>The invoice was due to be paid on Saturday, and they are two days late. On the Saturday I sent them a reminder that the payment was due - and I&#x27;ve also just sent a notice that the payment is late, and if there is anything I can do to assist them in making the payment.<p>I haven&#x27;t received a response yet - any ideas on what I should do in this case? I&#x27;ve had no problems with them before but I&#x27;m getting a bit worried as this is un-like them.<p>Thanks!",
+   "url": "",
+   "points": 4,
+   "num_comments": 4,
+   "created_at": "2014-07-14T17:38:33Z",
+   "_tags": [
+    "story",
+    "author_Apane",
+    "story_8032114",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "45537969",
+   "title": "Tired of chasing clients for late payments",
+   "author": "jesusfchristn",
+   "story_text": "Each month there is at least one client who does not pay my invoice.<p>I absolutely despise sending follow up reminders it feels needy, awkward, and just a reframing of mental energy.<p>So, I am thinking...what if an AI tool could send those reminders for me?<p>Connect to Stripe or PayPal, it predicts who will likely pay late and automatically sends out a reminder email that gets firmer each time.<p>IM NOT selling anything. Just qualifying if this is a pain point. Would you actually be willing to pay $49&#x2F;mo for it to manage this whole mess for you? Or is this just a nice idea? And it&#x27;s not worth cash?<p>Only be brutally honest please :)",
+   "url": null,
+   "points": 1,
+   "num_comments": 5,
+   "created_at": "2025-10-10T12:03:56Z",
+   "_tags": [
+    "story",
+    "author_jesusfchristn",
+    "story_45537969",
+    "ask_hn"
+   ]
+  },
+  {
+   "objectID": "45704171",
+   "title": "Show HN: MailAI – Automate Any Workflow in Plain English with Gmail and Stripe",
+   "author": "Asquareee",
+   "story_text": "Hey HN,<p>We built MailAI - AI agents that automate workflows in plain English by connecting Gmail and Stripe.<p>The Problem:\nFounders waste 10+ hours weekly on repetitive tasks:\n- Responding to invoice inquiries\n- Tracking payments\n- Sending payment reminders\n- Following up on late payments\n- Managing customer communication<p>Most &quot;automation&quot; tools require complex setup, coding, or learning new interfaces. We wanted something different.<p>The Solution:\nConnect Gmail and Stripe. Describe what you want in plain English. AI automates it 24&#x2F;7.<p>Real Examples:<p>&quot;When a customer emails asking about their invoice, auto-respond with the payment link from Stripe. Track all responses in a spreadsheet.&quot;<p>&quot;Monitor Stripe for new payments. Send a thank you email via Gmail. Update my CRM automatically.&quot;<p>&quot;Track unpaid invoices. Send reminder emails 3 days before due. If overdue, send a follow-up. Escalate after 7 days.&quot;<p>&quot;When a customer replies to an invoice email, check their payment status in Stripe and auto-respond with next steps.&quot;<p>&quot;Monitor subscriptions. If any cancel, send a retention email with a special offer.&quot;<p>But It&#x27;s Not Just Payments:<p>&quot;Auto-respond to customer support questions using my FAQ docs.&quot;\n&quot;Extract data from emails and update my spreadsheet.&quot;\n&quot;Coordinate meeting times automatically.&quot;\n&quot;Track competitor mentions and send me alerts.&quot;<p>Literally anything you can describe in plain English.<p>Technical Details:<p>- OAuth 2.0 authentication (secure, no API keys stored)\n- CASA-verified enterprise security\n- Runs in isolated sandboxes\n- 24&#x2F;7 execution\n- Plain English natural language processing\n- Multi-step workflow support<p>Why This Matters:<p>Unlike other tools that just suggest actions or require complex setup, MailAI actually automates everything. No coding. No complex configuration. Just describe what you want.<p>We&#x27;re a 2-founder team that spent 6 months building this because we were drowning in repetitive tasks ourselves.<p>Try It:\n7-day free trial: <a href=\"https:&#x2F;&#x2F;mailai.live\" rel=\"nofollow\">https:&#x2F;&#x2F;mailai.live</a><p>We&#x27;d Love Feedback On:<p>1. What other integrations would be most useful? (Google Sheets, Slack, Zapier?)\n2. What payment automation pain points are we missing?\n3. What workflows would you automate if you could just describe them?\n4. Security concerns - anything we should address?<p>Built by three engineers who were tired of wasting time on repetitive work.",
+   "url": "https://www.mailai.live/",
+   "points": 1,
+   "num_comments": 0,
+   "created_at": "2025-10-25T14:27:04Z",
+   "_tags": [
+    "story",
+    "author_Asquareee",
+    "story_45704171",
+    "show_hn"
+   ]
+  },
+  {
+   "objectID": "44381839",
+   "title": "Show HN: Delfyn, AI Agent to help businesses get paid faster",
+   "author": "jhack88",
+   "story_text": "Hi HN,<p>I&#x27;m Junior, founder of Delfyn, and I’ve been building an AI-powered agent that helps finance teams get paid on time. If you&#x27;ve ever dealt with slow-paying B2B customers, broken invoice matching, or cash flow uncertainty, this might resonate.<p>The problem:\nIn B2B, waiting 60–90 days to get paid is common. AR teams spend hours manually:<p>- Reconciling payments to invoices<p>- Chasing customers<p>- Updating spreadsheets<p>Explaining why cash flow projections keep being wrong<p>Meanwhile, late payments quietly bankrupt 1 in 4 SMEs in Europe.<p>What Delfyn does:\nWe built an AI agent that helps automate:<p>Invoice-to-payment matching using rules, embeddings (e.g. “0099” → “INV-2023-0099”), and retrieval models<p>Cash flow forecasting with transaction-level granularity<p>Proactive reminders + incentive recommendations to reduce DSO<p>We&#x27;re combining deterministic logic (amount, IBAN, date) with semantic models (e.g. e5-base-v2) and LLMs (for gray-zone explanations only).<p>Who it&#x27;s for:\nFinance teams (esp. in B2B SaaS, agencies, professional services)<p>Founders managing AR themselves<p>Companies tired of relying on NetSuite exports + wishful thinking. \nOr even worst sending payments collections emails to customers who have already paid. I&#x27;ve seen that a lot.",
+   "url": "https://www.delfyn.co/",
+   "points": 1,
+   "num_comments": 0,
+   "created_at": "2025-06-25T21:06:39Z",
+   "_tags": [
+    "story",
+    "author_jhack88",
+    "story_44381839",
+    "show_hn"
+   ]
+  }
+ ],
+ "nbHits": 18,
+ "page": 0
+}

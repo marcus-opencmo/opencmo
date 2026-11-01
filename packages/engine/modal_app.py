@@ -649,6 +649,20 @@ def cmo_schedule() -> None:
     log.info("AI CMO schedule: %s", cmo_dispatch.call_cron(*web, "/api/cron/cmo"))
 
 
+@app.function(secrets=[secret], schedule=modal.Cron("2 * * * *"), timeout=150)
+def cmo_digest() -> None:
+    """Hourly: release cards held past a day's budget, send each founder's digest at their local hour, email the
+    cards about to expire and push new cards (P6). Every send is claimed in SQL, so a second call sends nothing.
+    """
+    from opencmo.worker import cmo_dispatch
+
+    web = cmo_dispatch.web_config(dict(os.environ))
+    if web is None:
+        log.error("OPENCMO_WEB_URL or CRON_SECRET missing: the digest did not run")
+        return
+    log.info("Digest: %s", cmo_dispatch.call_cron(*web, "/api/cron/cmo-digest", timeout=140.0))
+
+
 @app.function(secrets=[secret], schedule=modal.Cron("0 3 * * *"), timeout=90)
 def cleanup() -> None:
     """Daily cleanup of expired files and free accounts (the web route does the work).

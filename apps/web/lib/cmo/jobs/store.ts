@@ -4,7 +4,7 @@ import type { SupabaseClient as BaseClient } from "@supabase/supabase-js";
 
 import { DOCUMENT_KINDS, type DocumentKind } from "../documents";
 import { latestPerTopic } from "./context";
-import type { CmoStore, CompetitorInsight, Documents, NicheVideoInsight, SubredditRule, Goal, InboxState, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
+import type { CmoStore, CompetitorInsight, ConnectedAccountRow, ReplyOutcomeDue, ZernioPostRow, Documents, NicheVideoInsight, SubredditRule, Goal, InboxState, ItemRow, Lesson, MemoryEvent, QueuedRun } from "./types";
 
 const ITEM_COLUMNS =
   "id, run_id, department, platform, day, idea, reason, status, priority, body, final_text, external_url, decided_at, published_at, created_at";
@@ -109,7 +109,7 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       ]);
       // Several measurements per post: keep the highest per post, then add them up.
       const best = new Map<string, number>();
-      for (const row of (measured ?? []) as { item_id: string; views: number }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
+      for (const row of (measured ?? []) as { item_id: string; views: number | null }[]) best.set(row.item_id, Math.max(best.get(row.item_id) ?? 0, Number(row.views)));
       return { posts, replies, views: [...best.values()].reduce((a, b) => a + b, 0) };
     },
     async proposeGoal(userId, runId, week, goal) {
@@ -188,6 +188,22 @@ export function supabaseStore(admin: BaseClient): CmoStore {
       return ((data as { body?: NicheVideoInsight } | null)?.body ?? null);
     },
     saveMetrics: (userId, rows) => rpc<number>("cmo_save_metrics", { p_user: userId, p_rows: rows }),
+    zernioPosts: (userId, since) => rpc<ZernioPostRow[]>("cmo_zernio_posts", { p_user: userId, p_since: since }).then((rows) => rows ?? []),
+    async connectedAccounts(userId) {
+      const [profile, accounts] = await Promise.all([
+        admin.from("zernio_profiles").select("zernio_profile_id").eq("user_id", userId).maybeSingle(),
+        admin.from("social_accounts").select("id, platform, handle, zernio_account_id").eq("user_id", userId).eq("status", "connected"),
+      ]);
+      if (profile.error) throw new Error(`zernio_profiles: ${profile.error.message}`);
+      if (accounts.error) throw new Error(`social_accounts: ${accounts.error.message}`);
+      const id = (profile.data as { zernio_profile_id?: string } | null)?.zernio_profile_id ?? null;
+      return { zernioProfileId: id, accounts: id ? ((accounts.data ?? []) as ConnectedAccountRow[]) : [] };
+    },
+    saveAccountMetrics: (userId, rows) => rpc<number>("cmo_save_account_metrics", { p_user: userId, p_rows: rows }),
+    refreshBestSlots: (userId) => rpc<number>("best_slots_refresh", { p_user: userId }),
+    replyOutcomesDue: (userId, limit) => rpc<ReplyOutcomeDue[]>("cmo_reply_outcomes_due", { p_user: userId, p_limit: limit }).then((rows) => rows ?? []),
+    saveReplyOutcome: (userId, outcomeId, c) =>
+      rpc<boolean>("cmo_save_reply_outcome", { p_user: userId, p_outcome: outcomeId, p_status: c.status, p_votes: c.votes, p_replies: c.replies }),
     async inbox(userId, inboxId) {
       const { data, error } = await admin.from("cmo_inbox").select("answers, memo").eq("id", inboxId).eq("user_id", userId).maybeSingle();
       if (error) throw new Error(`inbox: ${error.message}`);

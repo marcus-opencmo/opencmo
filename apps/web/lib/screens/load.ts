@@ -15,14 +15,18 @@ import { SITE_URL } from "@/lib/site";
 
 import scheduleDefaults from "../../../../packages/contracts/schedule-defaults.json";
 
+import { RangeSchema, type AnalyticsScreen } from "./analytics";
+import { buildAnalytics, buildResults, type AccountDayIn, type AccountIn, type PostIn } from "./analytics-build";
 import type { ApprovalCard } from "./approval-card";
 import type { BrainScreen, OrderRow, OrderState } from "./brain";
+import { buildMeasures, type WeekCounts } from "./brain-measures";
 import { APPROVAL_COLUMNS, approvalToCard, type ApprovalRow } from "./cards";
 import { enrichScheduleCards } from "./schedule-enrich";
 import { signStudioCards } from "./studio-sign";
 import { DEPARTMENTS, TEAM, type CmoState, type Department } from "./common";
 import type { DashboardScreen } from "./dashboard";
 import { SKILL_READERS, type LibraryScreen } from "./library";
+import type { RailStatus } from "./rail";
 import type { ResearchScreen } from "./research";
 import type { SalesScreen } from "./sales";
 import type { ScreenData, ScreenName } from "./registry";
@@ -263,6 +267,10 @@ async function dashboard({ supabase, userId }: LoadContext): Promise<Partial<Das
         }))
         .sort((a, b) => a.at.localeCompare(b.at));
     },
+    results: async () => {
+      const m = await measured(supabase, 7, now);
+      return buildResults({ now, accounts: m.accounts, days: m.days, posts: m.posts });
+    },
     digest: async () => {
       const p = await prof;
       const clock = localClock(now, p.timezone);
@@ -279,11 +287,42 @@ async function dashboard({ supabase, userId }: LoadContext): Promise<Partial<Das
   });
 }
 
+/** One week's counts for the brain's measures, read under the founder's session. */
+async function weekCounts(supabase: SupabaseClient, monday: string, now: Date): Promise<WeekCounts> {
+  const from = `${monday}T00:00:00Z`;
+  const to = new Date(Date.parse(from) + 7 * 86_400_000).toISOString();
+  const [plans, drafts, orders, approved] = await Promise.all([
+    supabase.from("approvals").select("status").eq("kind", "goal").in("status", ["approved", "edited", "skipped"]).gte("decided_at", from).lt("decided_at", to).limit(500),
+    supabase.from("cmo_draft_outcomes").select("similarity").not("similarity", "is", null).gte("decided_at", from).lt("decided_at", to).limit(2000),
+    supabase.from("work_orders").select("id, parent_id, status, due_at, finished_at, spent_credits, brief").eq("week", monday).limit(1000),
+    supabase.from("approvals").select("id", { count: "exact", head: true }).in("status", ["approved", "edited"]).gte("decided_at", from).lt("decided_at", to),
+  ]);
+  const planRows = must(plans, "approvals") as { status: string }[];
+  const draftRows = must(drafts, "cmo_draft_outcomes") as { similarity: number }[];
+  const orderRows = must(orders, "work_orders") as { id: string; parent_id: string | null; status: string; due_at: string | null; finished_at: string | null; spent_credits: number; brief: Record<string, unknown> | null }[];
+  if (approved.error) throw new Error(`approvals: ${approved.error.message}`);
+  const children = orderRows.filter((o) => o.parent_id && o.status !== "cancelled");
+  const due = children.filter((o) => o.due_at && (o.status === "done" || Date.parse(o.due_at) < now.getTime()));
+  return {
+    plans: { asIs: planRows.filter((r) => r.status === "approved").length, decided: planRows.length },
+    drafts: { asIs: draftRows.filter((r) => r.similarity >= 0.95).length, total: draftRows.length },
+    orders: { onTime: due.filter((o) => o.status === "done" && o.finished_at && o.finished_at <= o.due_at!).length, due: due.length },
+    credits: { spent: orderRows.filter((o) => !o.parent_id).reduce((n, o) => n + o.spent_credits, 0), approved: approved.count ?? 0 },
+    replans: children.filter((o) => o.brief && "replan_of" in o.brief).length,
+  };
+}
+
 async function brain({ supabase, userId }: LoadContext): Promise<Partial<BrainScreen>> {
   const now = new Date();
   const prof = profile(supabase, userId);
   const tree = weekTree(supabase);
   return parts<BrainScreen>("brain", {
+    measures: async () => {
+      const monday = mondayOf(now);
+      const before = mondayOf(new Date(Date.parse(`${monday}T00:00:00Z`) - 86_400_000));
+      const [week, last] = await Promise.all([weekCounts(supabase, monday, now), weekCounts(supabase, before, now)]);
+      return buildMeasures(week, last);
+    },
     cmo: () => cmoState(supabase, userId, prof),
     week: async () => {
       const [{ root, orders }, goal, p] = await Promise.all([tree, weekGoal(supabase), prof]);
@@ -635,7 +674,7 @@ function slotStatus(s: SlotDb, waiting: Set<string>): { status: ScheduleScreen["
 
 const SCHEDULE_RULES: string[] = [
   `At most ${scheduleDefaults.platforms.x.dailyCap} posts a day on X; on other platforms as many as their best times. ${scheduleDefaults.minGapHours} hours apart.`,
-  "Times start from common best times (Buffer's 2026 study) in your time zone, until your own results say better.",
+  "Times start from common best times (Buffer's 2026 study) in your time zone. Once a platform has 10 published posts with numbers, your own best hours take over.",
   "A short and its long video never go out on one platform the same day.",
   "Drag a slot to move it. A new time or account asks you again.",
   `A post that misses its time by ${scheduleDefaults.windowMinutes} minutes is never posted late: you get a new time to approve.`,
@@ -819,8 +858,8 @@ async function research({ supabase }: LoadContext): Promise<Partial<ResearchScre
     results: async () => {
       const metrics = must(await supabase.from("post_metrics").select("item_id, views, replies, measured_at").order("measured_at", { ascending: false }).limit(100), "post_metrics") as {
         item_id: string;
-        views: number;
-        replies: number;
+        views: number | null;
+        replies: number | null;
       }[];
       const latestPerItem = [...new Map(metrics.map((m) => [m.item_id, m])).values()].slice(0, 10);
       if (!latestPerItem.length) return [];
@@ -831,7 +870,7 @@ async function research({ supabase }: LoadContext): Promise<Partial<ResearchScre
       }[];
       return latestPerItem.map((m) => {
         const item = items.find((i) => i.id === m.item_id);
-        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "X post").slice(0, 200), platform: "x" as const, views: Number(m.views), replies: Number(m.replies) };
+        return { id: m.item_id, title: (item?.final_text ?? item?.idea ?? "X post").slice(0, 200), platform: "x" as const, views: orNull(m.views), replies: orNull(m.replies) };
       });
     },
   });
@@ -1178,7 +1217,103 @@ async function sales({ supabase }: LoadContext): Promise<Partial<SalesScreen>> {
 }
 
 /**
+ * What Analytics and the Dashboard's results read (P6 A1): accounts, their days and the newest reading of each post
+ * published in twice the range (the second half is the comparison), all under the founder's RLS session. Published
+ * posts come from `my_published_items`: a video's caption item counts once a slot published its clip, though the
+ * caption itself stays `approved` (the slot publishes the clip, not the caption).
+ */
+/** A stored count as a number, or null when it was not reported (bigint columns can arrive as strings). */
+const orNull = (v: number | string | null): number | null => (v === null ? null : Number(v));
+
+async function measured(supabase: SupabaseClient, range: number, now: Date): Promise<{ accounts: AccountIn[]; days: AccountDayIn[]; posts: PostIn[]; published: number }> {
+  const since = new Date(now.getTime() - 2 * range * 86_400_000);
+  const sinceDay = since.toISOString().slice(0, 10);
+  const [accounts, days, items] = await Promise.all([
+    socialAccounts(supabase),
+    supabase
+      .from("account_metrics")
+      .select("social_account_id, platform, handle, day, followers, impressions, engagements, video_views, measured_at")
+      .gte("day", sinceDay)
+      .order("day")
+      .limit(5000),
+    supabase.rpc("my_published_items", { p_since: since.toISOString() }),
+  ]);
+  const itemRows = (must(items, "my_published_items") as { item_id: string; platform: string; idea: string; final_text: string | null; published_at: string }[]).map(
+    ({ item_id, ...rest }) => ({ id: item_id, ...rest }),
+  );
+  const metricRows = itemRows.length
+    ? (must(
+        await supabase
+          .from("post_metrics")
+          .select("item_id, url, views, likes, replies, reposts, impressions, engagements, measured_at")
+          .in("item_id", itemRows.map((i) => i.id))
+          .order("measured_at", { ascending: false })
+          .limit(5000),
+        "post_metrics",
+      ) as { item_id: string; url: string; views: number | null; likes: number | null; replies: number | null; reposts: number | null; impressions: number | null; engagements: number | null }[])
+    : [];
+  const newest = new Map<string, (typeof metricRows)[number]>();
+  for (const m of metricRows) if (!newest.has(m.item_id)) newest.set(m.item_id, m);
+  const posts: PostIn[] = itemRows.flatMap((i) => {
+    const m = newest.get(i.id);
+    // "tiktok_caption" → tiktok: a caption item is measured on its platform.
+    const platform = screenPlatform(i.platform, "x");
+    return m
+      ? [{
+          id: i.id,
+          title: (i.final_text ?? i.idea).split("\n")[0]!.slice(0, 200),
+          platform,
+          publishedAt: new Date(i.published_at).toISOString(),
+          views: orNull(m.views),
+          impressions: orNull(m.impressions),
+          engagements: orNull(m.engagements),
+          likes: orNull(m.likes),
+          replies: orNull(m.replies),
+          reposts: orNull(m.reposts),
+          url: m.url || null,
+        }]
+      : [];
+  });
+  const fromRange = new Date(now.getTime() - range * 86_400_000).toISOString();
+  return {
+    accounts: accounts.map((a) => ({ id: a.id, platform: a.platform, handle: a.handle, avatarUrl: a.avatar_url, status: a.status, updatedAt: a.updated_at })),
+    days: (must(days, "account_metrics") as AccountDayIn[]).map((d) => ({
+      ...d,
+      followers: d.followers === null ? null : Number(d.followers),
+      impressions: d.impressions === null ? null : Number(d.impressions),
+      engagements: d.engagements === null ? null : Number(d.engagements),
+      video_views: d.video_views === null ? null : Number(d.video_views),
+    })),
+    posts,
+    published: itemRows.filter((i) => i.published_at >= fromRange).length,
+  };
+}
+
+async function analytics({ supabase, params }: LoadContext): Promise<Partial<AnalyticsScreen>> {
+  const parsed = RangeSchema.safeParse(Number(params.get("range") ?? 30));
+  const range = parsed.success ? parsed.data : 30;
+  const now = new Date();
+  const m = await measured(supabase, range, now);
+  // `brainReads` is live and empty: no model reads these numbers yet, and a sample line would read as a real finding.
+  return buildAnalytics({ range, now, accounts: m.accounts, days: m.days, posts: m.posts, publishedInRange: m.published });
+}
+
+/**
+ * The rail's two status lines (P6 F14): the next slot waiting to go out (schedule cards wait on the founder, so only
+ * approved slots count) and how many accounts Analytics reads. Null fields draw no line.
+ */
+export async function loadRailStatus({ supabase, userId }: Omit<LoadContext, "params">): Promise<RailStatus> {
+  const [p, next, accounts] = await Promise.all([
+    profile(supabase, userId),
+    supabase.from("schedule_slots").select("publish_at").eq("status", "waiting").gt("publish_at", new Date().toISOString()).order("publish_at").limit(1).maybeSingle(),
+    supabase.from("social_accounts").select("id", { count: "exact", head: true }).eq("status", "connected"),
+  ]);
+  const at = (next.data as { publish_at?: string } | null)?.publish_at ?? null;
+  return { nextPostAt: at ? new Date(at).toISOString() : null, connectedAccounts: accounts.count ? accounts.count : null, timezone: p.timezone };
+}
+
+/**
  * Live readers, one per screen, under the founder's RLS session (no service role). A loader returns only the
  * fields it reads for real; `registry.ts` `live` must list them too before they replace sample data.
  */
-export const LOADERS: { [N in ScreenName]?: Loader<N> } = { dashboard, brain, library, settings, schedule, research, writer, studio: studioScreen, sales };
+export const LOADERS: { [N in ScreenName]?: Loader<N> } = { dashboard, analytics, brain, library, settings, schedule, research, writer, studio: studioScreen, sales };

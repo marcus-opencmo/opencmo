@@ -60,7 +60,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     description: [
       "Hand a task to one of your agents. Each task needs a specific brief: what to make, for whom, and the angle or evidence from your research (with URLs).",
       "planner: plan the next seven days into the calendar (1 credit; when = now only).",
-      "x_writer: draft an X post, three versions, into Approvals (1 credit).",
+      "x_writer: draft an X post, three versions, into Approvals (1 credit). With thread: true, one X thread of 5 to 8 posts instead (1 credit; only when the founder asks for a thread; when = now only).",
       "sales: search Reddit for people describing the problem, score threads with quotes, draft replies the founder posts themselves (5 credits; only when the founder asks).",
       "research: study competitors' X accounts, find posts that beat their baseline and the hooks behind them, and save what works for the planner and X writer (2 credits; pass handles, or it uses the X handles in Competitor Analysis; when = now only).",
       "video: a short-video task. The founder records and uploads their OWN video, so this always becomes a calendar item with an \"Upload video\" button that opens the editor; you cannot upload video for them.",
@@ -73,6 +73,7 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
         brief: { type: "string", description: "One to three sentences. For video: what the video should say." },
         when: { type: "string", description: "\"now\" or a date YYYY-MM-DD." },
         handles: { type: "array", items: { type: "string" }, description: "Research only: up to 4 X handles to study." },
+        thread: { type: "boolean", description: "x_writer only: true when the founder asked for an X thread." },
       },
       required: ["agent", "brief"],
       additionalProperties: false,
@@ -191,6 +192,7 @@ const taskInput = z.object({
   brief: z.string().trim().min(3).max(300),
   when: z.string().trim().regex(/^(now|\d{4}-\d{2}-\d{2})$/).default("now"),
   handles: z.array(z.string().trim().min(1).max(80)).max(4).optional(),
+  thread: z.boolean().optional(),
 });
 const JOB_OF = { planner: "plan_week", x_writer: "post_draft", sales: "sales_scan", research: "competitor_research" } as const;
 const DEPARTMENT_OF = { x_writer: "post", sales: "sales", video: "video" } as const;
@@ -269,6 +271,8 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
       const parsed = taskInput.safeParse(input);
       if (!parsed.success) return invalid("agent must be planner, x_writer, sales, research or video; brief 3-300 characters; when \"now\" or YYYY-MM-DD.");
       const task = parsed.data;
+      if (task.thread && task.agent !== "x_writer") return invalid("thread is for x_writer only.");
+      if (task.thread && task.when !== "now") return invalid("A thread is written now; when must be \"now\".");
       // Video is always scheduled (the user uploads their own video in the editor), with or without a date.
       const scheduled = task.agent === "video" || task.when !== "now";
       try {
@@ -286,9 +290,9 @@ export async function runCmoTool(supabase: SupabaseClient, name: string, input: 
         }
         const kind = JOB_OF[task.agent as keyof typeof JOB_OF];
         const input =
-          kind === "post_draft" ? { idea: task.brief, brief: task.brief } : kind === "competitor_research" ? { brief: task.brief, handles: task.handles ?? [] } : { brief: task.brief };
+          kind === "post_draft" ? { idea: task.brief, brief: task.brief, ...(task.thread ? { thread: true } : {}) } : kind === "competitor_research" ? { brief: task.brief, handles: task.handles ?? [] } : { brief: task.brief };
         const run = await startCmoRun(supabase, kind, turn.brain === "claude" ? { ...input, brain: "claude" } : input);
-        const label = { plan_week: "Planning the week", post_draft: "Drafting a post for X", sales_scan: "Scanning Reddit", competitor_research: "Researching competitors" }[kind];
+        const label = { plan_week: "Planning the week", post_draft: task.thread ? "Writing an X thread" : "Drafting a post for X", sales_scan: "Scanning Reddit", competitor_research: "Researching competitors" }[kind];
         return { ok: true, content: JSON.stringify({ started: true, run_id: run.id, status: run.status }), summary: label };
       } catch (error) {
         return { ok: false, content: JSON.stringify({ error: error instanceof Error ? error.message : "Could not start this task." }), summary: "Could not start" };

@@ -51,7 +51,7 @@ export type FiredSlot = {
   /** The approved card's snapshot. */
   snapshot: ScheduleSnapshot | null;
   /** `schedule_content(deliverable, platform)` now: what would go out if posted this second. */
-  current: { content_hash: string; text: string | null; title: string | null; clip_id: string | null; image?: ScheduleSnapshot["image"] } | null;
+  current: { content_hash: string; text: string | null; title: string | null; clip_id: string | null; image?: ScheduleSnapshot["image"]; thread?: string[] } | null;
 };
 
 /** The finished export of the slot's edit at the approved document, if one is rendered. */
@@ -150,6 +150,8 @@ export function adapterInput(slot: FiredSlot, mediaUrl: string | null, mediaType
       text: slot.current?.text ?? "",
       title: slot.platform === "youtube" ? (slot.current?.title ?? null) : null,
       media: mediaUrl ? [{ url: mediaUrl, contentType: mediaType }] : [],
+      // P6 W4: a thread is in the approved content's hash (`schedule_content`), so it goes out as approved.
+      ...(slot.platform === "x" && slot.current?.thread?.length ? { thread: slot.current.thread } : {}),
     },
     slot: {
       id: slot.id,

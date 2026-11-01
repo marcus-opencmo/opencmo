@@ -17,6 +17,7 @@ import { fakePost } from "../writer/draft";
 import { profileBlock, voiceBlock, writerData, writerMemory } from "../writer/context";
 import { PostDraftSchema } from "../writer/types";
 import { checkRules, correctionsBlock, documentsBlock, insightBlock, postText } from "./context";
+import { writeThread } from "./draft-thread";
 import { genModel, promptVersion } from "./edit-taxonomy";
 import { fakeAllowed, LlmError, structured } from "./llm";
 import type { JobContext, JobOutput } from "./runner";
@@ -130,6 +131,20 @@ export async function draftPost(ctx: JobContext): Promise<JobOutput> {
     profile,
     `<recent_posts>\n${mine.map((i) => `- ${postText(i)}`).join("\n") || "(none)"}\n</recent_posts>`,
   );
+
+  // P6 W4: an X thread instead of three versions, when the founder asked for one ("write a thread about…").
+  if (run.input.thread === true) {
+    if (profile.id !== "x") throw new LlmError("Threads are for X only. Ask for a post on this platform instead.");
+    const body = await writeThread(ctx, { idea, product, docs, context, profile, agent });
+    const threadPriority: ItemRow["priority"] = due ? (due.day < today ? "high" : "medium") : "low";
+    const saved = await ctx.step(
+      "create_card",
+      "Adding the card to Approvals",
+      () => store.saveDraft(run.user_id, run.id, due?.id ?? null, idea || `Thread for ${profile.label}`, body, threadPriority),
+      () => "1 card in Approvals",
+    );
+    return { item_id: saved.id };
+  }
 
   // The model that wrote the text the founder sees: the fix round's, when there is one.
   let answered: string | null = null;

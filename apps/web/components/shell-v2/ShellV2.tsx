@@ -25,6 +25,7 @@ import {
 
 import { ChatPanel, type ChatSource } from "@/components/cmo/workspace/ChatPanel";
 import { studioItemHref } from "@/components/screens/studio/href";
+import type { RailStatus } from "@/lib/screens/rail";
 
 import { CHAT, DEFAULT_PREF, RAIL, applyColumns, clampColumns, readPref, writePref, type ColumnsPref } from "./columns";
 
@@ -92,10 +93,17 @@ function V2Frame({
   } | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const reading = useRef(false);
+  // The rail's Schedule and Analytics lines (P6 F14); read with the account summary, never guessed.
+  const [railStatus, setRailStatus] = useState<RailStatus | null>(null);
 
   const refreshAccount = useCallback(() => {
     if (reading.current) return;
     reading.current = true;
+    void api<RailStatus>("/screens/rail")
+      .then(setRailStatus)
+      .catch(() => {
+        // No line rather than a stale or made-up one.
+      });
     void api<AccountSummary>("/account")
       .then((summary) =>
         setAccount({
@@ -110,6 +118,13 @@ function V2Frame({
       .finally(() => {
         reading.current = false;
       });
+  }, []);
+
+  // Read once on load; `refreshAccount` reads it again when the window comes back.
+  useEffect(() => {
+    void api<RailStatus>("/screens/rail")
+      .then(setRailStatus)
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -300,6 +315,7 @@ function V2Frame({
               pending={state.pending}
               stuck={state.stuck}
               processing={active.length}
+              status={railStatus}
               credits={account.credits}
               email={email ?? null}
               collapsed={columns.railCollapsed}

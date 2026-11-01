@@ -355,6 +355,18 @@ html[data-ui="v2"] body { background: var(--v2-paper); }
 .v2-card-strong { font-weight: 600; }
 .v2-card-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .v2-card-meta { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--v2-ink2); }
+/* A link inside a sentence must not rely on colour alone (WCAG 1.4.1). */
+.v2-card-meta a { text-decoration: underline; text-underline-offset: 2px; }
+/* An X thread (P6 W4): number, post, its length chip; the chip drops under the text on a phone. */
+.v2-card-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.v2-card-thread li { display: grid; grid-template-columns: 24px 1fr auto; gap: 8px; align-items: start; padding: 10px 0; }
+.v2-card-thread li + li { border-top: 1px solid var(--v2-line); }
+.v2-card-thread .v2-card-text { margin: 0; }
+.v2-card-thread-n { font: 500 11px var(--v2-mono); color: var(--v2-ink2); padding-top: 3px; }
+@media (max-width: 480px) {
+  .v2-card-thread li { grid-template-columns: 24px 1fr; }
+  .v2-card-thread li > .v2-chip { grid-column: 2; justify-self: start; }
+}
 .v2-card-versions { display: inline-flex; align-items: center; gap: 8px; }
 .v2-card-link { min-height: 32px; padding: 0; border: 0; background: transparent; color: var(--v2-brand-deep); font: 500 12px var(--v2-sans); cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .v2-card-link:disabled { color: var(--v2-ink2); cursor: not-allowed; }
