@@ -34,11 +34,17 @@ self.addEventListener("notificationclick", (event) => {
   event.waitUntil(
     (async () => {
       const open = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
-      for (const client of open) {
-        if (new URL(client.url).origin === url.origin && "focus" in client) {
-          await client.focus();
-          if ("navigate" in client) await client.navigate(url.href);
+      // A window already on the queue or that card is reused; any other tab (an open editor mid-edit) is left alone.
+      const ours = open.filter((client) => new URL(client.url).origin === url.origin);
+      const target = ours.find((client) => new URL(client.url).pathname === url.pathname) || ours.find((client) => new URL(client.url).pathname === "/app");
+      if (target && "focus" in target) {
+        try {
+          const focused = await target.focus();
+          // navigate() rejects for a window this worker does not control (opened before it, or after a hard reload).
+          if (focused && "navigate" in focused && new URL(focused.url).href !== url.href) await focused.navigate(url.href);
           return;
+        } catch {
+          // Fall through to a new window.
         }
       }
       await self.clients.openWindow(url.href);

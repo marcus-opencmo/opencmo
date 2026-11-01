@@ -1,6 +1,5 @@
-// Câu cảnh báo trong docstring dưới là một comment; comment không chặn được ai.
-// `server-only` thì chặn: import file này từ một client component là lỗi BUILD,
-// không phải một khoá rò ra bundle mà ta phát hiện sau.
+// The warning in the docstring below is a comment, and a comment stops no one. `server-only` does: importing this file
+// from a client component is a BUILD error, not a key leaked into the bundle that we find out about later.
 import "server-only";
 
 import { createClient } from "@supabase/supabase-js";
@@ -21,7 +20,7 @@ import { createClient } from "@supabase/supabase-js";
  */
 export function createAdminClient(signal?: AbortSignal) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!key) throw new Error("Thiếu SUPABASE_SERVICE_ROLE_KEY.");
+  if (!key) throw new Error("SUPABASE_SERVICE_ROLE_KEY is missing.");
 
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, key, {
     auth: { persistSession: false, autoRefreshToken: false },

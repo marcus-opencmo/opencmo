@@ -20,6 +20,9 @@ async function main() {
   const env = { VAPID_PUBLIC_KEY: pub, VAPID_PRIVATE_KEY: jwk.d! };
   assert.equal(vapidFromEnv({}), null, "no keys, no push");
   assert.equal(vapidFromEnv({ ...env, VAPID_PRIVATE_KEY: "short" }), null, "a malformed key is refused");
+  // Review R3: 65 bytes starting 0x04 but not a point on P-256 (a mistyped character) is "not set up", never a throw.
+  const offCurve = Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 1)]).toString("base64url");
+  assert.equal(vapidFromEnv({ ...env, VAPID_PUBLIC_KEY: offCurve }), null, "a key off the curve is refused");
   const vapid = vapidFromEnv(env)!;
 
   const endpoint = "https://fcm.googleapis.com/fcm/send/abc123";

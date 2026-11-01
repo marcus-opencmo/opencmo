@@ -75,6 +75,15 @@ assert.deepEqual(parseZernioEvent(JSON.stringify({ id: "evt_4", event: "account.
 // Not ours or not needed: acknowledged, nothing changes.
 assert.equal(parseZernioEvent(JSON.stringify({ id: "e5", event: "post.published", post: { metadata: { opencmoSlotId: SLOT } } })).kind, "ignored");
 assert.equal(parseZernioEvent(JSON.stringify({ id: "e6", event: "post.platform.published", post: { metadata: {} } })).kind, "ignored");
+// Review R3: "published" carries the account the SQL check compares, from `account` or the post's first target; none at all is refused.
+{
+  const noTop = JSON.parse(published) as Record<string, unknown>;
+  delete noTop.account;
+  const fromTarget = parseZernioEvent(JSON.stringify(noTop));
+  assert.ok(fromTarget.kind === "slot" && fromTarget.zernioAccountId === "acc_tt");
+  const none = { ...noTop, post: { id: "post_1", metadata: { opencmoSlotId: SLOT } } };
+  assert.throws(() => parseZernioEvent(JSON.stringify(none)), WebhookPayloadError);
+}
 assert.equal(parseZernioEvent(JSON.stringify({ id: "e7", event: "post.platform.published", post: { metadata: { opencmoSlotId: "1; drop" } } })).kind, "ignored");
 assert.equal(parseZernioEvent(JSON.stringify({ id: "e8", event: "webhook.test", test: true })).kind, "ignored");
 

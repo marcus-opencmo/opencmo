@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { rpcOrThrow, withApi } from "@/lib/api/handler";
+import { vapidFromEnv } from "@/lib/notify/push";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,9 @@ type Settings = { email_digest: boolean; push: boolean };
 export const GET = withApi({}, async ({ supabase, user }) => {
   const { data } = await supabase.from("notify_settings").select("email_digest, push").eq("user_id", user.id).maybeSingle();
   const row = (data as Settings | null) ?? { email_digest: true, push: true };
-  return { emailDigest: row.email_digest, push: row.push, vapidPublicKey: process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || null };
+  // The key the sender signs with, and only when it can sign: a browser subscribed with another key gets every push
+  // refused, and one subscribed without a server private key never gets one.
+  return { emailDigest: row.email_digest, push: row.push, vapidPublicKey: vapidFromEnv()?.publicKey ?? null };
 });
 
 const body = z.object({ emailDigest: z.boolean(), push: z.boolean() }).strict();

@@ -8514,10 +8514,16 @@ begin
     delete from public.push_subscriptions where id = p_subscription;
     return false;
   end if;
-  update public.push_subscriptions
-  set last_pushed_at = case when p_status between 200 and 299 then now() else last_pushed_at end,
-      failed_at = case when p_status between 200 and 299 then null else now() end
-  where id = p_subscription;
+  if p_status between 200 and 299 then
+    update public.push_subscriptions set last_pushed_at = now(), failed_at = null, failures = 0 where id = p_subscription;
+    return true;
+  end if;
+  -- The third refusal in a row: the push service will not take this subscription, so stop retrying it every hour.
+  delete from public.push_subscriptions where id = p_subscription and failures >= 2;
+  if found then
+    return false;
+  end if;
+  update public.push_subscriptions set failed_at = now(), failures = failures + 1 where id = p_subscription;
   return true;
 end;
 $$;
@@ -8538,7 +8544,8 @@ CREATE FUNCTION public.push_due(p_limit integer) RETURNS TABLE(subscription_id u
     and not exists (select 1 from public.notify_settings n where n.user_id = s.user_id and not n.push)
     and exists (select 1 from public.approvals a where a.user_id = s.user_id and a.status = 'waiting'
                 and coalesce(a.released_at, a.created_at) > coalesce(s.last_pushed_at, s.created_at))
-  order by s.user_id
+  -- Healthy subscriptions first: failing ones cannot crowd them out of the limit.
+  order by s.failures, s.user_id
   limit greatest(1, least(coalesce(p_limit, 200), 1000));
 $$;
 
@@ -14498,6 +14505,7 @@ CREATE TABLE public.push_subscriptions (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     failed_at timestamp with time zone,
     last_pushed_at timestamp with time zone,
+    failures smallint DEFAULT 0 NOT NULL,
     CONSTRAINT push_subscriptions_auth_check CHECK ((auth ~ '^[A-Za-z0-9_-]{8,100}={0,2}$'::text)),
     CONSTRAINT push_subscriptions_endpoint_check CHECK (public.push_endpoint_allowed(endpoint)),
     CONSTRAINT push_subscriptions_p256dh_check CHECK ((p256dh ~ '^[A-Za-z0-9_-]{20,200}={0,2}$'::text)),

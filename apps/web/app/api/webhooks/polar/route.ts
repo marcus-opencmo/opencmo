@@ -24,7 +24,7 @@ function maskEmail(data: Record<string, unknown>): string {
 export async function POST(request: NextRequest) {
   const secret = process.env.POLAR_WEBHOOK_SECRET;
   if (!secret) {
-    console.error("[polar] thiếu cấu hình webhook");
+    console.error("[polar] webhook is not configured");
     return NextResponse.json({ error: "Webhook is not configured." }, { status: 500 });
   }
   // Route này KHÔNG đi qua `withApi`, nên không thừa hưởng trần body 256KB của
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     signature: request.headers.get("webhook-signature"),
   }, secret);
   if (!check.ok) {
-    console.warn("[polar] từ chối webhook:", check.reason);
+    console.warn("[polar] webhook refused:", check.reason);
     return NextResponse.json({ error: check.reason }, { status: 401 });
   }
   let event: { type?: unknown; timestamp?: unknown; data?: unknown };
@@ -85,13 +85,13 @@ export async function POST(request: NextRequest) {
   // acknowledge trước khi có receipt/grant bền vững. 5xx để Polar gửi lại sau
   // khi catalog được cấu hình; lifecycle của product retired vẫn có thể skip.
   if (type === "order.paid" && !purchasePlan) {
-    console.error("[polar] product lạ:", productId, "— chưa map trong pricing.ts", maskEmail(data));
+    console.error("[polar] unknown product:", productId, "is not mapped in pricing.ts", maskEmail(data));
     return NextResponse.json({ error: "Unable to process billing event." }, { status: 500 });
   }
   // Subscription active chưa map không có entitlement nào để đổi. Các event
   // lifecycle khác đi qua RPC: event của subscription cũ giữ plan đã lưu.
   if (type === "subscription.active" && !entitlementPlan) {
-    console.error("[polar] product lạ:", productId, "— chưa map trong pricing.ts", maskEmail(data));
+    console.error("[polar] unknown product:", productId, "is not mapped in pricing.ts", maskEmail(data));
     return NextResponse.json({ ok: true, skipped: "unmapped product" });
   }
   try {
@@ -103,16 +103,16 @@ export async function POST(request: NextRequest) {
     });
     if (error) {
       // DB detail có thể chứa email/payload: chỉ log mã lỗi, không email thô.
-      console.error("[polar] giao dịch billing thất bại", error.code);
+      console.error("[polar] billing transaction failed", error.code);
       return NextResponse.json({ error: "Unable to process billing event." }, { status: 500 });
     }
     if (result && typeof result === "object" && typeof result.skipped === "string") {
       // Không tự tạo hồ sơ ở đây: nó sẽ thuộc về một auth.users không tồn tại.
-      console.warn("[polar] bỏ qua", type, "-", result.skipped, maskEmail(data));
+      console.warn("[polar] skipped", type, "-", result.skipped, maskEmail(data));
     }
     return NextResponse.json(result);
   } catch {
-    console.error("[polar] không kết nối được dịch vụ billing");
+    console.error("[polar] could not reach the billing service");
     return NextResponse.json({ error: "Unable to process billing event." }, { status: 500 });
   }
 }

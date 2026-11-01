@@ -99,6 +99,10 @@ test.describe("paid account", () => {
     expect(await refused.text()).toContain("This app can't connect to OpenCMO.");
     const { data } = await admin().from("mcp_grants").select("client_id").eq("client_id", clientId);
     expect(data).toEqual([]);
+    // Review R3: Deny does not send the founder on to the unsupported app's own URL (no open redirect).
+    const denied = await decide(page, id, "deny");
+    expect(denied.status()).toBe(200);
+    expect(await denied.json()).toMatchObject({ redirect_url: null, denied: true });
   });
 
   test("approving an allowlisted app records the grant, and Disconnect revokes it", async ({ page }) => {
