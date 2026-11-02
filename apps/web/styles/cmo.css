@@ -777,3 +777,9 @@ html[data-theme] .cmo-view h1 { font: 400 clamp(36px, 4vw, 52px) / 1 var(--ds-fo
 .cmo-goal-target input { width: 5.5em; min-height: 32px; padding: 0 8px; border: 1px solid var(--ds-line); border-radius: 8px; background: var(--ds-panel); color: var(--ds-fg-1); font-variant-numeric: tabular-nums; }
 @media (prefers-reduced-motion: reduce) { .cmo-goal-bar span { transition: none; } }
 
+
+/* Decisions confirmed in the chat (plan 2026-11-02-cmo-chat-decisions). */
+.cmo-confirm { display: flex; flex-direction: column; gap: 8px; margin: 0 16px 10px; padding: 10px 12px; border-left: 2px solid var(--ds-gold-500); background: var(--ds-marble-50); font-size: 13px; }
+.cmo-confirm-card ul { margin: 0; padding-left: 18px; }
+.cmo-confirm-card li + li { margin-top: 2px; }
+.cmo-confirm-actions { display: flex; flex-wrap: wrap; gap: 8px; }

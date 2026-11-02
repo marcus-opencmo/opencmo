@@ -24,6 +24,7 @@ import type { LlmUsage } from "@/lib/cmo/jobs/llm";
 
 import { RESEARCH_CALLS_PER_TURN, RESEARCH_TOOLS, runResearchTool } from "./cmo-research";
 import { CMO_TOOL_SPECS, cmoContext, cmoState, isCmoWrite, runCmoTool, type CmoTurn } from "./cmo-tools";
+import { DECISION_WRITES, prepareDecision, readCredits, runDecision, type DecisionCard, type Prepared } from "./cmo-decisions";
 import { CMO_SYSTEM_PROMPT, SYSTEM_PROMPT, projectStateBlock } from "./prompt";
 import type { ToolCall } from "./providers/types";
 import { runSkillTool, SKILL_SPECS, SKILL_TOOLS, skillIndex } from "./skills";
@@ -98,7 +99,7 @@ export type Plan =
   | {
       kind: "approval";
       input: unknown;
-      card: (ReturnType<typeof generateCard> & { sheet?: ContactSheet }) | Awaited<ReturnType<typeof exportCard>> | VideoCard | ReturnType<typeof explainerCard>;
+      card: (ReturnType<typeof generateCard> & { sheet?: ContactSheet }) | Awaited<ReturnType<typeof exportCard>> | VideoCard | ReturnType<typeof explainerCard> | DecisionCard;
     }
   | { kind: "input"; input: unknown; card: QuestionCard }
   | { kind: "invalid"; content: string; summary: string };
@@ -589,10 +590,15 @@ export function cmoScope(supabase: SupabaseClient): Scope {
     system: `${CMO_SYSTEM_PROMPT}\n\nYour playbooks and marketing library (read one with read_skill before planning research, writing a brief or advising on strategy, and no-ai-slop before writing any text that goes out):\n${cmoSkillIndex("cmo")}`,
     context: () => cmoContext(supabase),
     state: () => cmoState(supabase),
-    async plan() {
-      return { kind: "run" };
+    async plan(call) {
+      // A decision (plan 2026-11-02-cmo-chat-decisions) is a confirmation card: nothing writes until the founder
+      // confirms it. The prepared input, with the card's hash read now, stays on the server with the pending call.
+      if (!DECISION_WRITES.has(call.name)) return { kind: "run" };
+      const prepared = await prepareDecision(supabase, call.name, call.input);
+      return prepared.ok ? { kind: "approval", input: prepared.prepared, card: prepared.card } : { kind: "invalid", content: prepared.content, summary: prepared.summary };
     },
     async run(call) {
+      if (call.name === "get_credits") return readCredits(supabase);
       // The in-memory caps above start again on every request (each continue rebuilds the scope); the founder's
       // counters in SQL do not, and the daily cap is shared with MCP (review R4).
       const bucket = chatReadBucket(call.name);
@@ -607,8 +613,17 @@ export function cmoScope(supabase: SupabaseClient): Scope {
       }
       return RESEARCH_TOOLS.has(call.name) ? runResearchTool(call.name, call.input, budget) : runCmoTool(supabase, call.name, call.input, turn);
     },
-    async decide(call) {
-      throw new Error(`CMO scope has no approval tool ${call.name}.`);
+    async decide(call, input, approved) {
+      if (!DECISION_WRITES.has(call.name)) throw new Error(`CMO scope has no approval tool ${call.name}.`);
+      if (!approved) {
+        return {
+          outcome: { ok: false, content: JSON.stringify({ declined: true, message: "The founder cancelled. Nothing changed." }), summary: "Cancelled" },
+          extra: {},
+          wrote: false,
+        };
+      }
+      const outcome = await runDecision(supabase, input as Prepared);
+      return { outcome, extra: {}, wrote: outcome.ok };
     },
     isWrite: isCmoWrite,
   };

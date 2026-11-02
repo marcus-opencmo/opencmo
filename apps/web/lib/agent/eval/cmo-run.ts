@@ -28,7 +28,7 @@ import { CMO_DOCS, CMO_TASKS, gradeCmoTask, type CmoCall, type CmoEvalTask } fro
 type Row = Record<string, unknown>;
 
 /** Every RPC the turn made, with the turn's state, for grading. */
-export type Recording = { rpcs: { name: string; args: Record<string, unknown> }[]; calls: CmoCall[]; messages: StoredMessage[]; turn: { status: string; error: string | null }; costUsd: number };
+export type Recording = { rpcs: { name: string; args: Record<string, unknown> }[]; calls: CmoCall[]; pending: CmoCall[]; messages: StoredMessage[]; turn: { status: string; error: string | null }; costUsd: number };
 
 /**
  * A stand-in for the user's Supabase client: reads come from fixed tables, writes are recorded and
@@ -36,7 +36,7 @@ export type Recording = { rpcs: { name: string; args: Record<string, unknown> }[
  * tables only hold what the case needs.
  */
 export function recordingClient(tables: Record<string, Row[]>): { client: SupabaseClient; ledger: Ledger; recording: Recording } {
-  const recording: Recording = { rpcs: [], calls: [], messages: [], turn: { status: "running", error: null }, costUsd: 0 };
+  const recording: Recording = { rpcs: [], calls: [], pending: [], messages: [], turn: { status: "running", error: null }, costUsd: 0 };
   const source = (table: string): Row[] => {
     if (table === "agent_turns") return [{ ...recording.turn, checkpoint_id: null, hold_credits: 1000 }];
     if (table === "agent_messages") return recording.messages as unknown as Row[];
@@ -73,6 +73,7 @@ export function recordingClient(tables: Record<string, Row[]>): { client: Supaba
     agent_append: (args) => recording.messages.push({ role: args.p_role as StoredMessage["role"], content: args.p_content as unknown[] }) && null,
     agent_record_tool: (args) => {
       if (args.p_status !== "pending") recording.calls.push({ name: String(args.p_name), input: args.p_input, ok: args.p_status === "done" });
+      else recording.pending.push({ name: String(args.p_name), input: args.p_input, ok: false });
       return null;
     },
     agent_finish_turn: (args) => {
@@ -134,11 +135,13 @@ export async function runCmoTasks(provider: Provider, opts: { epoch?: number; ta
       continue;
     }
     opts.log?.(`${task.id}: ${recording.calls.map((call) => `${call.name}${call.ok ? "" : " (failed)"}`).join(", ") || "no tools"} · ${recording.turn.status}`);
-    if (recording.turn.status !== "done") {
+    // A confirmation card ends the turn waiting for the founder; that is the expected end of a decision.
+    const expectedEnd = task.expectedWriteBehavior === "confirm_card" ? "awaiting_approval" : "done";
+    if (recording.turn.status !== expectedEnd) {
       results.push({ ...base, pass: false, decided_by: "error", notes: [`turn ended ${recording.turn.status}${recording.turn.error ? `: ${recording.turn.error}` : ""}`], cost_usd: recording.costUsd });
       continue;
     }
-    const grade = gradeCmoTask(task, recording.calls, isCmoWrite);
+    const grade = gradeCmoTask(task, recording.calls, isCmoWrite, recording.pending);
     results.push({ ...base, pass: grade.pass, decided_by: "code", ...(grade.notes.length ? { notes: grade.notes } : {}), cost_usd: recording.costUsd });
   }
   return results;
