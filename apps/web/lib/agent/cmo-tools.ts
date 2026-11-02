@@ -23,6 +23,9 @@ import { isoDay, type Brain, type CompetitorInsight, type Lesson } from "@/lib/c
 import { CMO_SKILLS } from "@/lib/cmo/skills/index.gen";
 import { SKILL_NAMES, skillText, type SkillName } from "@/lib/cmo/skills";
 
+import { APPROVAL_COLUMNS, approvalToCard, type ApprovalRow } from "@/lib/screens/cards";
+
+import { DECISION_TOOL_SPECS, DECISION_WRITES } from "./cmo-decisions";
 import { RESEARCH_TOOL_SPECS, RESEARCH_TOOLS } from "./cmo-research";
 import { PANEL_SCREENS, PanelOpenSchema, type PanelOpen } from "./panel";
 import type { ToolOutcome, ToolSpec } from "./tools";
@@ -187,9 +190,11 @@ export const CMO_TOOL_SPECS: ToolSpec[] = [
     },
     strict: false,
   },
+  // Decisions from the chat (plan 2026-11-02): last, so the cached prompt prefix stays the same.
+  ...DECISION_TOOL_SPECS,
 ];
 
-const WRITES = new Set(["create_task", "remember", "set_week_goal", "update_document"]);
+const WRITES = new Set(["create_task", "remember", "set_week_goal", "update_document", ...DECISION_WRITES]);
 export const isCmoWrite = (name: string) => WRITES.has(name);
 
 /**
@@ -199,7 +204,8 @@ export const isCmoWrite = (name: string) => WRITES.has(name);
  * `create_task` stays allowed; it only queues our own job.
  */
 export const TAINTING_TOOLS = new Set([...[...RESEARCH_TOOLS].filter((name) => name !== "research_credits"), "read_site"]);
-export const TAINT_GATED_TOOLS = new Set(["remember", "update_document", "set_week_goal"]);
+// Decisions too: after a page or a stranger's post was read, a decision needs the founder's next message.
+export const TAINT_GATED_TOOLS = new Set(["remember", "update_document", "set_week_goal", ...DECISION_WRITES]);
 export const TAINT_MESSAGE = "This came after reading outside content. Ask the founder to confirm it in their next message.";
 
 const readInput = z.object({ kind: z.enum(DOCUMENT_KINDS) });
@@ -308,15 +314,21 @@ async function runTool(supabase: SupabaseClient, name: string, input: unknown, t
         .order("score", { ascending: false })
         .limit(10);
       // The queue the Dashboard shows: every kind of card (goal, schedule, Studio, correction…), not only drafts.
-      const { data: cards } = await supabase
+      const { data: cardRows } = await supabase
         .from("approvals")
-        .select("id, kind, department, ref_kind, ref_id, post_at, expires_at, created_at")
+        .select(APPROVAL_COLUMNS)
         .eq("status", "waiting")
         .order("created_at", { ascending: true })
         .limit(50);
+      // What each card says, as the Dashboard shows it, so "approve the pricing post" can name the right card. Never
+      // its hash: decide_card reads that itself when it shows the founder the card.
+      const cards = ((cardRows ?? []) as ApprovalRow[]).flatMap((row) => {
+        const card = approvalToCard(row);
+        return card ? [{ id: card.id, kind: card.kind, title: card.title, summary: card.summary, meta: card.meta, post_at: card.postAt, price_credits: card.priceCredits, expires_at: card.expiresAt }] : [];
+      });
       return {
         ok: true,
-        content: data({ waiting_cards: cards ?? [], items: rows ?? [], reddit_conversations: threads ?? [] }),
+        content: data({ waiting_cards: cards, items: rows ?? [], reddit_conversations: threads ?? [] }),
         summary: `Read Approvals (${cards?.length ?? 0} waiting)`,
       };
     }

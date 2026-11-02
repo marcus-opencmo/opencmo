@@ -24,7 +24,29 @@ import { ago } from "./time";
 
 const SUGGESTIONS = ["Plan my week", "Draft a post for X about what we shipped", "What should I post today?", "Who is my ideal customer?"];
 
-type TurnView = { number: number; prompt: string; status: string; pause_reason?: string | null; error: string | null; reply: string; actions: { name: string; ok: boolean; summary: string }[] };
+/** A decision the founder confirms in the chat (plan 2026-11-02-cmo-chat-decisions): one line per change. */
+type ConfirmCard = { id: string; name: string; changes: string[]; credits?: number };
+type PendingCall = { id: string; name: string; card?: { changes?: unknown; credits?: unknown } };
+type TurnView = {
+  number: number;
+  prompt: string;
+  status: string;
+  pause_reason?: string | null;
+  error: string | null;
+  reply: string;
+  actions: { name: string; ok: boolean; summary: string }[];
+  pending?: PendingCall[];
+};
+
+/** Pending calls that carry a confirmation card (others are browser tools of the clip Assistant). */
+function confirmCards(pending: PendingCall[] | undefined): ConfirmCard[] {
+  return (pending ?? []).flatMap((call) => {
+    const changes = call.card?.changes;
+    if (!Array.isArray(changes)) return [];
+    const credits = typeof call.card?.credits === "number" ? call.card.credits : undefined;
+    return [{ id: call.id, name: call.name, changes: changes.map(String), ...(credits ? { credits } : {}) }];
+  });
+}
 type SessionView = { id: string; turns: TurnView[] };
 type PastSession = { id: string; title: string; created_at: string };
 type Loaded = { available: boolean; session: SessionView | null; sessions: PastSession[] };
@@ -100,6 +122,8 @@ export function ChatPanel({
   const [busy, setBusy] = useState(false);
   const [working, setWorking] = useState<string | null>(null);
   const [extend, setExtend] = useState<number | null>(null);
+  // Cards waiting for the founder's Approve or Cancel; they survive a reload through the session's pending calls.
+  const [confirm, setConfirm] = useState<ConfirmCard[]>([]);
   const [rated, setRated] = useState<Record<string, "up" | "down">>({});
   const [past, setPast] = useState<PastSession[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -121,6 +145,7 @@ export function ChatPanel({
     const last = loaded.session?.turns.at(-1);
     const paused = last?.status === "awaiting_continue" ? last.pause_reason : null;
     setExtend(paused === "budget" ? 10 : null);
+    setConfirm(last?.status === "awaiting_approval" ? confirmCards(last.pending) : []);
     if (loaded.session && (paused === "time" || paused === "steps")) setResume(loaded.session.id);
   }, []);
 
@@ -203,6 +228,10 @@ export function ChatPanel({
             const opened = data.ok && drivesPanel ? openPanel((data.view as { open?: unknown } | undefined)?.open) : false;
             if (data.ok && (opened || CARD_TOOLS.has(String(data.name)))) void onWorkStarted();
           }
+          if (event === "approval_request") {
+            const [card] = confirmCards([data as PendingCall]);
+            if (card) setConfirm((list) => [...list.filter((c) => c.id !== card.id), card]);
+          }
           if (event === "done") done = data as Done;
         });
       } catch (error) {
@@ -234,6 +263,14 @@ export function ChatPanel({
     setResume(null);
     void stream(resume, "continue", {}, null);
   }, [resume, busy, stream]);
+
+  /** Approve or Cancel every waiting card; the turn then continues on the same stream. */
+  async function decide(approved: boolean) {
+    if (!session || !confirm.length) return;
+    const decisions = confirm.map((card) => ({ tool_use_id: card.id, approved }));
+    setConfirm([]);
+    await stream(session.id, "approvals", { decisions }, null);
+  }
 
   async function send(text: string) {
     const value = text.trim();
@@ -271,6 +308,7 @@ export function ChatPanel({
     try {
       const fresh = await api<SessionView>("/agent/sessions", jsonBody({ scope: "cmo", new: true }));
       setSession(fresh);
+      setConfirm([]);
       setMessages([]);
       setTitle(null);
       setExtend(null);
@@ -381,6 +419,29 @@ export function ChatPanel({
         )}
         {working ? <li className="cmo-msg is-cmo"><p className="cmo-muted">{working}</p></li> : null}
       </ol>
+
+      {confirm.length && session ? (
+        <div className="cmo-confirm" role="group" aria-label="Confirm">
+          {confirm.map((card) => (
+            <div key={card.id} className="cmo-confirm-card">
+              <ul>
+                {card.changes.map((line, i) => (
+                  <li key={i}>{line}</li>
+                ))}
+              </ul>
+              {card.credits ? <p className="cmo-muted">{card.credits} credits</p> : null}
+            </div>
+          ))}
+          <div className="cmo-confirm-actions">
+            <button type="button" className="primary-button" disabled={busy} onClick={() => void decide(true)} data-testid="cmo-confirm-approve">
+              {confirm.length > 1 ? `Approve all ${confirm.length}` : "Approve"}
+            </button>
+            <button type="button" className="secondary-button" disabled={busy} onClick={() => void decide(false)}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {extend !== null && session ? (
         <div className="cmo-extend">

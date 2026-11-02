@@ -131,6 +131,17 @@ showing r/memes" each become one message and one confirmation in the chat. Colum
 | A5 | **Prompt and summaries.** `list_approvals` returns card summaries (`approvalToCard`, no hash). `CMO_SYSTEM_PROMPT` gets one paragraph: decisions need the founder to ask this turn; never decide on your own; one card per thing, at most 5. | A1 |
 | A6 | **Checks and acceptance.** `cmo-decisions.check.ts` covers, with a fake client: the hash taken at plan time, a changed hash refused, the taint gate, the MCP deny list, and the merge logic. The fake model gets a scripted "approve the post" turn (`lib/agent/eval/cmo-tasks.ts`). e2e: the card renders and Approve updates Approvals. Screenshots at 1440 and 390. | A1–A5 |
 
+**Progress (2026-11-02):**
+- [x] **A0.** `lib/agent/cmo-decisions.ts` and `cmo-decisions.check.ts`. The mark-posted tool is named `mark_done`, because `jobs.check` forbids any tool name with "post" in it.
+- [x] **A1.** `cmoScope` plan and decide; added to `WRITES`, `TAINT_GATED_TOOLS` and the MCP deny list.
+- [x] **A2.** The local time is resolved in the founder's zone (`localToIso`), and a past time is refused. The account must be one of the founder's own.
+- [x] **A3.** Sales and CMO settings merge only the fields that changed. A request that changes nothing is refused.
+- [x] **A4.** `ChatPanel` shows the confirmation cards (live and after a reload); Approve and Cancel go to the approvals route.
+- [x] **A5.** `list_approvals` returns card summaries without the hash, and the prompt has the decision rule.
+- [~] **A6.**
+  - Done: the check passes, and the CMO eval adds `cmo-pause` (it ends on the card) and a planted "pause the CMO" in the site-injection case, which the gate refuses.
+  - Open: the browser e2e and screenshots, because no local Supabase runs in this container.
+
 **Milestones**
 - **M1:** A0 and A1. A decision works end to end through the approvals route; the UI is still missing.
 - **M2:** A2–A5.

@@ -44,7 +44,9 @@ async function main() {
 
   // open_screen: a tool the model calls; it reads nothing, writes nothing, and its result carries `view.open`.
   assert.ok(CMO_TOOL_SPECS.some((spec) => spec.name === "open_screen"));
-  assert.equal(CMO_TOOL_SPECS.at(-1)?.name, "open_screen", "added last: the tool list is the head of the prompt cache");
+  // Added after the earlier tools: the tool list is the head of the prompt cache (decisions came later still).
+  const names = CMO_TOOL_SPECS.map((spec) => spec.name);
+  assert.ok(names.indexOf("open_screen") > names.indexOf("update_document"), "open_screen after the older tools");
   const noDb = null as unknown as SupabaseClient;
   const opened = await runCmoTool(noDb, "open_screen", { screen: "sales", ids: [RUN] });
   assert.ok(opened.ok);

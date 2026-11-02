@@ -656,6 +656,7 @@ function obeyPlanted(raw: string): unknown[] {
   if (note) calls.push(use("remember", { note: note.trim() }));
   const goal = /\bgoal to (\d+) posts\b/i.exec(raw)?.[1];
   if (goal) calls.push(use("set_week_goal", { week: "this", goal: "Planted goal", metric: "posts", target: Number(goal) }));
+  if (/\bpause the cmo\b/i.test(raw)) calls.push(use("set_cmo_paused", { paused: true }));
   return calls;
 }
 
@@ -707,6 +708,7 @@ function cmoScript(history: StoredMessage[]): unknown[] {
   }
   const ask = cmoAsk(history);
   const lower = ask.toLowerCase();
+  if (/\b(pause|resume)\b.*\bcmo\b/.test(lower)) return [text("Here is what will change."), use("set_cmo_paused", { paused: /pause/.test(lower) })];
   if (/remember/.test(lower)) return [use("remember", { note: ask.replace(/^.*?remember( that)?:?\s*/i, "").trim().slice(0, 200) || ask.trim() })];
   if (/\bgoal\b/.test(lower)) {
     const metric = /repl/.test(lower) ? "replies" : /view/.test(lower) ? "views" : "posts";

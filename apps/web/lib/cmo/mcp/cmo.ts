@@ -12,6 +12,7 @@
 import { z } from "zod";
 
 import { RESEARCH_TOOLS, runResearchTool } from "@/lib/agent/cmo-research";
+import { DECISION_TOOLS } from "@/lib/agent/cmo-decisions";
 import { CMO_TOOL_SPECS, isCmoWrite, runCmoTool } from "@/lib/agent/cmo-tools";
 import type { ToolOutcome, ToolSpec } from "@/lib/agent/tools";
 import { ScBudget } from "@/lib/cmo/social/scrapecreators";
@@ -100,4 +101,5 @@ function toMcp(spec: ToolSpec): CmoMcpTool {
 }
 
 // CMO_TOOL_SPECS already holds the research tools. `open_screen` moves the in-app panel; an MCP client has none.
-export const CMO_TOOLS: CmoMcpTool[] = CMO_TOOL_SPECS.filter((spec) => spec.name !== "open_screen").map(toMcp);
+// Decisions from the chat (plan 2026-11-02) are confirmed on a card in the app; MCP decides through its inbox instead.
+export const CMO_TOOLS: CmoMcpTool[] = CMO_TOOL_SPECS.filter((spec) => spec.name !== "open_screen" && !DECISION_TOOLS.has(spec.name)).map(toMcp);
